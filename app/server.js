@@ -15,7 +15,8 @@ const { crearPush } = require('./lib/push');
 cargarEnv(__dirname);
 
 function crearApp({ rutaDb, enviarPush } = {}) {
-  const store = crearStore(rutaDb);
+  // DB_PATH: en producción (Railway/VPS) apunta al volumen persistente.
+  const store = crearStore(rutaDb || process.env.DB_PATH);
   const db = store.db;
   const push = crearPush(store, { enviar: enviarPush });
   const app = express();

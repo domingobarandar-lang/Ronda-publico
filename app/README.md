@@ -46,6 +46,7 @@ Cubre los 14 casos de uso del SPEC y los adversariales (permisos cruzados entre 
 | Variable | Default | Qué hace |
 |---|---|---|
 | `PORT` | `3737` | Puerto del servidor |
+| `DB_PATH` | `data/db.json` | Ruta del archivo de datos (en Railway: `/data/db.json`, sobre el volumen persistente) |
 | `MOCK` | `true` | En `true`, los avisos al admin quedan solo en el panel/consola. En `false`, salen por Telegram |
 | `TELEGRAM_BOT_TOKEN` | — | Token del bot que envía los informes (necesario solo con `MOCK=false`) |
 

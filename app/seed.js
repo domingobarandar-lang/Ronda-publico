@@ -7,7 +7,7 @@ const path = require('path');
 const { crearStore, VACIA } = require('./lib/store');
 const { hashPin } = require('./lib/auth');
 
-const RUTA = path.join(__dirname, 'data', 'db.json');
+const RUTA = process.env.DB_PATH || path.join(__dirname, 'data', 'db.json');
 
 function datosSemilla() {
   const db = VACIA();
