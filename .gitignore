@@ -1,0 +1,10 @@
+# Secretos — nunca a git
+.env
+.env.*
+!.env.example
+
+# Dependencias
+node_modules/
+
+# Datos de runtime (todo el estado vive en app/data/db.json — respaldar aparte)
+app/data/
