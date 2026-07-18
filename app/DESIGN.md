@@ -11,23 +11,26 @@ Dos superficies, un sistema. Los tokens viven duplicados (a propósito, sin buil
 
 ## Tokens
 
+Estética v1.2 (inspo de José, 2026-07-18): oscuro profundo + **violeta vibrante**, botones pastilla (`--radio-pill` en todos los .btn), insignia circular de marca (`.logo-badge`) y brillos suaves (`--brillo-marca`). El verde dejó de ser marca: quedó como semántico de éxito ("hecho", "en línea", "Completa").
+
 | Token | Guardia (oscuro) | Admin (claro) | Uso |
 |---|---|---|---|
-| `--marca` | `#22c55e` | `#22c55e` | Acentos, foco, progreso |
-| `--marca-fuerte` | `#15803d` | `#15803d` | Botón principal, links admin |
-| `--marca-suave` | `rgba(34,197,94,.14)` | igual | Fondos de énfasis, ring de foco |
-| `--fondo` | `#0f172a` | `#f8fafc` | Fondo de página |
-| `--panel` | `#1e293b` | `#ffffff` | Tarjetas, tablas, diálogos |
-| `--borde` | `#334155` | `#e2e8f0` | Bordes y divisores |
-| `--texto` / `--texto-suave` | `#e2e8f0` / `#94a3b8` | `#0f172a` / `#64748b` | Jerarquía de texto (AA en ambos temas) |
-| `--peligro` (+`-suave`) | `#ef4444` | `#dc2626` / `#fee2e2` | Incompleto, eliminar, errores |
+| `--marca` | `#a855f7` | `#a855f7` | Acentos, foco, degradado de CTA |
+| `--marca-fuerte` | `#7c3aed` | `#7c3aed` (texto: `--marca-texto #6d28d9`) | Extremo del degradado, pestaña activa |
+| `--marca-suave` | `rgba(168,85,247,.16)` | `rgba(168,85,247,.14)` | Fondos de énfasis, ring de foco |
+| `--brillo-marca` | sombra violeta 24px | versión 25 % | Glow de CTA y `.progreso` |
+| `--fondo` | `#0e0e13` | `#f8f8fb` | Fondo de página |
+| `--panel` / `--panel-alto` | `#17171f` / `#1d1d28` | `#ffffff` / — | Tarjetas, tablas, diálogos |
+| `--borde` | `#272736` | `#e6e4ee` | Bordes y divisores |
+| `--texto` / `--texto-suave` | `#f1f0f5` / `#9d9aad` | `#17141f` / `#6b6880` | Jerarquía de texto (AA en ambos temas) |
+| `--exito` (+`-suave`) | `#22c55e` | `#166534` / `#dcfce7` | Punto hecho, "en línea", chip "Completa" |
+| `--peligro` (+`-suave`) | `#f4435f` | `#dc2626` / `#fee2e2` | Incompleto, eliminar, errores |
 | `--alerta` (+`-suave`/`-texto`) | `#f59e0b` | `#b45309` / `#fef3c7` | Observaciones, offline |
-| `--exito` (+`-suave`) | — (usa marca) | `#166534` / `#dcfce7` | Chip "Completa" |
-| `--info-*` | azul `#60a5fa` | — | Tarjeta de sincronización |
-| `--radio-s / -m / -pill` | 10 / 14 / 999 px | igual | Inputs y cajas / tarjetas y diálogos / chips |
+| `--info-*` | índigo `#818cf8` | — | Tarjeta de sincronización |
+| `--radio-s / -m / -pill` | 14 / 18 / 999 px | 12 / 16 / 999 px | Inputs / tarjetas y diálogos / botones y chips |
 | `--esp-1..6` | 4/8/12/16/20/24 px | igual | Escala de espaciado (base 4) |
 | `--texto-xs..2xl` | 12→24 px | 12→15 px | El guardia lee más grande que el admin |
-| `--sombra-1 / -2` | — (bordes, no sombras) | suaves | Elevación solo en tema claro |
+| `--sombra-1 / -2` | — (bordes + glow de marca) | suaves | Elevación solo en tema claro |
 | `--t` | 150ms ease | igual | Única duración de transición |
 
 ## Componentes

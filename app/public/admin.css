@@ -1,20 +1,22 @@
 /* Rondas QR — panel del administrador + páginas imprimibles (informe, hoja QR).
    Sistema de diseño: tokens compartidos con estilos.css (ver ../DESIGN.md).
-   Superficie de oficina: tema claro, densidad media, imprime bien. */
+   Estética v1.2: acento violeta de marca sobre tema claro de oficina.
+   Densidad media, imprime bien. */
 * { box-sizing: border-box; margin: 0; }
 
 :root {
-  /* Marca (los mismos de la app del guardia) */
-  --marca: #22c55e;
-  --marca-fuerte: #15803d;
-  --marca-suave: rgba(34, 197, 94, 0.14);
+  /* Marca (violeta, la misma de la app del guardia) */
+  --marca: #a855f7;
+  --marca-fuerte: #7c3aed;
+  --marca-texto: #6d28d9;
+  --marca-suave: rgba(168, 85, 247, 0.14);
 
   /* Superficie (tema claro) */
-  --fondo: #f8fafc;
+  --fondo: #f8f8fb;
   --panel: #ffffff;
-  --borde: #e2e8f0;
-  --texto: #0f172a;
-  --texto-suave: #64748b;
+  --borde: #e6e4ee;
+  --texto: #17141f;
+  --texto-suave: #6b6880;
 
   /* Semánticos */
   --peligro: #dc2626;
@@ -25,8 +27,8 @@
   --exito-suave: #dcfce7;
 
   /* Forma y ritmo */
-  --radio-s: 10px;
-  --radio-m: 14px;
+  --radio-s: 12px;
+  --radio-m: 16px;
   --radio-pill: 999px;
   --esp-1: 4px;
   --esp-2: 8px;
@@ -34,8 +36,8 @@
   --esp-4: 16px;
   --esp-5: 20px;
   --esp-6: 24px;
-  --sombra-1: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --sombra-2: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --sombra-1: 0 1px 2px rgba(23, 20, 31, 0.05);
+  --sombra-2: 0 6px 18px rgba(23, 20, 31, 0.08);
 
   /* Tipografía */
   --tipo: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -59,12 +61,12 @@ body {
 .error { color: var(--peligro); font-size: var(--texto-m); margin-top: 10px; }
 .rojo { color: var(--peligro); }
 code {
-  background: #f1f5f9;
+  background: #f1eff7;
   padding: 2px 6px;
   border-radius: 6px;
   font-variant-numeric: tabular-nums;
 }
-a { color: var(--marca-fuerte); }
+a { color: var(--marca-texto); }
 
 /* Login */
 .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -75,8 +77,10 @@ a { color: var(--marca-fuerte); }
   padding: 28px;
   width: min(92vw, 380px);
   box-shadow: var(--sombra-2);
+  text-align: center;
 }
 .login-caja h1 { margin-bottom: var(--esp-1); letter-spacing: -0.2px; }
+.login-caja label { text-align: left; }
 label { display: block; margin: var(--esp-3) 0; font-size: var(--texto-m); color: var(--texto-suave); }
 input, select {
   width: 100%;
@@ -124,7 +128,7 @@ input:focus, select:focus {
 }
 .pestana:hover { color: var(--texto); }
 .pestana:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
-.pestana.activa { color: var(--marca-fuerte); border-bottom-color: var(--marca-fuerte); font-weight: 600; }
+.pestana.activa { color: var(--marca-texto); border-bottom-color: var(--marca-fuerte); font-weight: 600; }
 
 main { max-width: 900px; margin: 0 auto; padding: var(--esp-5); }
 h2 { margin-bottom: 6px; letter-spacing: -0.2px; }
@@ -132,10 +136,10 @@ h3 { font-size: var(--texto-m); margin: 10px 0; color: var(--texto-suave); }
 
 /* Botones */
 .btn {
-  padding: 10px var(--esp-4);
+  padding: 10px 18px;
   font-size: var(--texto-m);
   font-weight: 600;
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-pill);
   border: none;
   cursor: pointer;
   color: #fff;
@@ -146,13 +150,16 @@ h3 { font-size: var(--texto-m); margin: 10px 0; color: var(--texto-suave); }
 }
 .btn:active { transform: scale(0.98); }
 .btn:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
-.btn-principal { background: var(--marca-fuerte); }
-.btn-principal:hover { background: #136b34; }
+.btn-principal {
+  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.25);
+}
+.btn-principal:hover { background: var(--marca-fuerte); }
 .btn-borde { background: #fff; border: 1px solid var(--borde); color: var(--texto); }
-.btn-borde:hover { border-color: var(--texto-suave); }
+.btn-borde:hover { border-color: var(--marca); color: var(--marca-texto); }
 .btn-peligro { background: #fff; border: 1px solid var(--peligro); color: var(--peligro); }
 .btn-peligro:hover { background: var(--peligro-suave); }
-.btn-chico { padding: 6px 10px; font-size: var(--texto-s); }
+.btn-chico { padding: 6px 12px; font-size: var(--texto-s); }
 
 /* Tablas */
 table {
@@ -173,27 +180,26 @@ th, td {
   vertical-align: top;
 }
 th {
-  background: #f1f5f9;
+  background: #f4f2fa;
   font-size: var(--texto-xs);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: var(--texto-suave);
 }
 tbody tr { transition: background var(--t); }
-tbody tr:hover { background: #f8fafc; }
+tbody tr:hover { background: #faf9fd; }
 tr:last-child td { border-bottom: none; }
 td { font-variant-numeric: tabular-nums; }
 
-/* Chips de estado */
-/* Texto de chips más oscuro que los semánticos base: a 12px el AA exige 4.5:1. */
+/* Chips de estado (texto oscurecido: a 12px el AA exige 4.5:1) */
 .chip {
   display: inline-block;
   padding: 3px 10px;
   border-radius: var(--radio-pill);
   font-size: var(--texto-xs);
   font-weight: 600;
-  background: #f1f5f9;
-  color: #475569;
+  background: #f1eff7;
+  color: #55516a;
 }
 .chip-verde { background: var(--exito-suave); color: var(--exito); }
 .chip-ambar { background: var(--alerta-suave); color: #92400e; }
@@ -203,13 +209,13 @@ td { font-variant-numeric: tabular-nums; }
 .fila-form { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; align-items: center; }
 .fila-form input { width: auto; flex: 1; min-width: 140px; margin-top: 0; }
 .check { display: flex; align-items: center; gap: var(--esp-2); margin: 0; }
-.check input { width: auto; margin: 0; }
+.check input { width: auto; margin: 0; accent-color: var(--marca-fuerte); }
 
 /* Editor de rondas */
 .editor-ronda {
   background: var(--panel);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-m);
   padding: var(--esp-4);
   margin: 14px 0;
   box-shadow: var(--sombra-1);
@@ -219,14 +225,14 @@ td { font-variant-numeric: tabular-nums; }
 .lista-botones { display: flex; flex-wrap: wrap; gap: var(--esp-2); }
 .btn-punto {
   padding: var(--esp-2) var(--esp-3);
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-pill);
   border: 1px solid var(--borde);
   background: #fff;
   cursor: pointer;
   font-size: var(--texto-s);
-  transition: border-color var(--t), background var(--t);
+  transition: border-color var(--t), background var(--t), color var(--t);
 }
-.btn-punto:hover:not(:disabled) { border-color: var(--marca-fuerte); background: var(--marca-suave); }
+.btn-punto:hover:not(:disabled) { border-color: var(--marca); background: var(--marca-suave); color: var(--marca-texto); }
 .btn-punto:disabled { opacity: 0.4; cursor: default; }
 #secuencia { padding-left: 22px; }
 #secuencia li { margin: 6px 0; font-size: var(--texto-m); }
@@ -243,7 +249,7 @@ td { font-variant-numeric: tabular-nums; }
 .caja-config {
   background: var(--panel);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-m);
   padding: 14px;
   margin: 14px 0;
   box-shadow: var(--sombra-1);
@@ -251,7 +257,7 @@ td { font-variant-numeric: tabular-nums; }
 .aviso-tarjeta {
   background: var(--panel);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-m);
   padding: var(--esp-3) 14px;
   margin: 10px 0;
   box-shadow: var(--sombra-1);
@@ -271,7 +277,7 @@ td { font-variant-numeric: tabular-nums; }
   transform: translateX(-50%);
   bottom: var(--esp-6);
   padding: var(--esp-3) var(--esp-5);
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-pill);
   font-weight: 600;
   z-index: 60;
   background: var(--texto);
@@ -317,7 +323,7 @@ td { font-variant-numeric: tabular-nums; }
 .hoja { max-width: 800px; margin: 0 auto; padding: var(--esp-6); background: #fff; }
 .grilla-qr { display: grid; grid-template-columns: 1fr 1fr; gap: var(--esp-5); margin-top: 18px; }
 .tarjeta-qr {
-  border: 2px dashed #94a3b8;
+  border: 2px dashed #a9a5bd;
   border-radius: var(--radio-m);
   padding: 18px;
   text-align: center;

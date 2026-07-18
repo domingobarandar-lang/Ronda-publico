@@ -1,36 +1,42 @@
 /* Rondas QR — app del guardia.
    Sistema de diseño: tokens compartidos con admin.css (ver ../DESIGN.md).
-   Superficie nocturna: fondo oscuro, botones grandes, alto contraste,
-   una sola acción importante por pantalla. */
+   Estética v1.2 (inspo de José): oscuro profundo + violeta vibrante,
+   botones pastilla, insignia circular, brillos suaves. Sigue siendo una
+   superficie nocturna: alto contraste, botones grandes, una sola acción
+   importante por pantalla. */
 * { box-sizing: border-box; margin: 0; }
 
 :root {
-  /* Marca */
-  --marca: #22c55e;
-  --marca-fuerte: #15803d;
-  --marca-suave: rgba(34, 197, 94, 0.14);
+  /* Marca (violeta) */
+  --marca: #a855f7;
+  --marca-fuerte: #7c3aed;
+  --marca-suave: rgba(168, 85, 247, 0.16);
+  --brillo-marca: 0 8px 24px rgba(124, 58, 237, 0.35);
 
   /* Superficie (tema nocturno) */
-  --fondo: #0f172a;
-  --panel: #1e293b;
-  --borde: #334155;
-  --texto: #e2e8f0;
-  --texto-suave: #94a3b8;
+  --fondo: #0e0e13;
+  --panel: #17171f;
+  --panel-alto: #1d1d28;
+  --borde: #272736;
+  --texto: #f1f0f5;
+  --texto-suave: #9d9aad;
 
   /* Semánticos */
-  --peligro: #ef4444;
-  --peligro-suave: rgba(239, 68, 68, 0.12);
+  --exito: #22c55e;
+  --exito-suave: rgba(34, 197, 94, 0.14);
+  --peligro: #f4435f;
+  --peligro-suave: rgba(244, 67, 95, 0.12);
   --alerta: #f59e0b;
   --alerta-texto: #fde68a;
   --alerta-suave: rgba(245, 158, 11, 0.12);
-  --info: #60a5fa;
-  --info-fondo: #16263f;
-  --info-borde: #2563eb;
-  --info-texto: #bfdbfe;
+  --info: #818cf8;
+  --info-fondo: #191a2e;
+  --info-borde: #4f46e5;
+  --info-texto: #c7d2fe;
 
   /* Forma y ritmo */
-  --radio-s: 10px;
-  --radio-m: 14px;
+  --radio-s: 14px;
+  --radio-m: 18px;
   --radio-pill: 999px;
   --esp-1: 4px;
   --esp-2: 8px;
@@ -67,10 +73,11 @@ html, body {
   border-bottom: 1px solid var(--borde);
   position: sticky;
   top: 0;
-  background: var(--fondo);
+  background: rgba(14, 14, 19, 0.92);
+  backdrop-filter: blur(8px);
   z-index: 5;
 }
-.cabecera-titulo { font-weight: 700; }
+.cabecera-titulo { font-weight: 700; letter-spacing: -0.2px; }
 
 .chip {
   font-size: var(--texto-xs);
@@ -80,28 +87,52 @@ html, body {
   color: var(--texto-suave);
   transition: color var(--t), border-color var(--t);
 }
-.chip-ok { border-color: var(--marca-fuerte); color: var(--marca); }
-.chip-off { border-color: var(--alerta); color: var(--alerta); }
+.chip-ok { border-color: rgba(34, 197, 94, 0.4); color: var(--exito); background: var(--exito-suave); }
+.chip-off { border-color: rgba(245, 158, 11, 0.4); color: var(--alerta); background: var(--alerta-suave); }
 
 main { padding: var(--esp-4); max-width: 520px; margin: 0 auto; }
 
 .vista.oculta, .modal.oculta, .oculta { display: none !important; }
 
-h1 { font-size: 22px; margin-bottom: var(--esp-3); letter-spacing: -0.2px; }
-h2 { font-size: var(--texto-m); margin: 18px 0 10px; color: var(--texto-suave); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; font-size: var(--texto-s); }
+/* Insignia circular de marca (login) */
+.logo-badge {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  box-shadow: var(--brillo-marca);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  margin: var(--esp-6) auto var(--esp-4);
+}
+#vista-login h1 { text-align: center; }
+#vista-login > .nota { text-align: center; display: block; }
+
+h1 { font-size: var(--texto-2xl); margin-bottom: var(--esp-3); letter-spacing: -0.3px; }
+h2 {
+  margin: 18px 0 10px;
+  color: var(--texto-suave);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-size: var(--texto-xs);
+}
 
 label { display: block; margin: var(--esp-3) 0; font-size: 14px; color: var(--texto-suave); }
 input {
   width: 100%;
   margin-top: 6px;
-  padding: 14px;
-  font-size: 18px;
+  padding: 15px var(--esp-4);
+  font-size: 17px;
   border-radius: var(--radio-s);
   border: 1px solid var(--borde);
   background: var(--panel);
   color: var(--texto);
   transition: border-color var(--t), box-shadow var(--t);
 }
+input::placeholder { color: #5d5a6e; }
 input:focus {
   outline: none;
   border-color: var(--marca);
@@ -110,31 +141,34 @@ input:focus {
 
 .btn {
   width: 100%;
-  padding: 15px;
+  padding: 16px;
   margin-top: var(--esp-3);
   font-size: var(--texto-l);
-  font-weight: 600;
-  border-radius: var(--radio-m);
+  font-weight: 700;
+  border-radius: var(--radio-pill);
   border: none;
   cursor: pointer;
   color: #fff;
-  background: var(--panel);
-  transition: background var(--t), transform var(--t), border-color var(--t), color var(--t);
+  background: var(--panel-alto);
+  transition: background var(--t), transform var(--t), border-color var(--t), color var(--t), box-shadow var(--t);
 }
-.btn:active { transform: scale(0.98); }
+.btn:active { transform: scale(0.97); }
 .btn:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
-.btn-principal { background: linear-gradient(180deg, #1a9b4c, var(--marca-fuerte)); }
-.btn-principal:active { background: var(--marca-fuerte); }
-.btn-borde { background: transparent; border: 1px solid var(--borde); color: var(--texto); }
+.btn-principal {
+  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  box-shadow: var(--brillo-marca);
+}
+.btn-principal:active { background: var(--marca-fuerte); box-shadow: none; }
+.btn-borde { background: var(--panel); border: 1px solid var(--borde); color: var(--texto); }
 .btn-borde:active { border-color: var(--texto-suave); }
-.btn-peligro { background: transparent; border: 1px solid var(--peligro); color: var(--peligro); }
+.btn-peligro { background: transparent; border: 1px solid rgba(244, 67, 95, 0.5); color: var(--peligro); }
 .btn-peligro:active { background: var(--peligro-suave); }
-.btn-chico { width: auto; padding: var(--esp-2) 14px; font-size: 14px; margin: 0; }
+.btn-chico { width: auto; padding: var(--esp-2) 16px; font-size: 14px; margin: 0; font-weight: 600; }
 .btn-gigante { padding: 22px; font-size: var(--texto-xl); }
 
-.error { color: var(--peligro); margin-top: 10px; font-size: 14px; }
+.error { color: var(--peligro); margin-top: 10px; font-size: 14px; text-align: center; }
 .nota { color: var(--texto-suave); font-size: var(--texto-s); }
-.grande { font-size: 18px; font-weight: 700; }
+.grande { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
 .centrado { text-align: center; margin-top: 10px; }
 
 .saludo { display: flex; justify-content: space-between; align-items: center; }
@@ -147,12 +181,12 @@ input:focus {
   background: var(--panel);
   border: 1px solid var(--borde);
   border-radius: var(--radio-m);
-  padding: 14px;
-  margin-bottom: 10px;
+  padding: var(--esp-4);
+  margin-bottom: var(--esp-3);
   transition: border-color var(--t);
 }
-.tarjeta:active { border-color: var(--marca-fuerte); }
-.tarjeta .btn { width: auto; margin: 0; padding: 10px 18px; }
+.tarjeta:active { border-color: var(--marca); }
+.tarjeta .btn { width: auto; margin: 0; padding: 12px 22px; }
 .tarjeta-texto { min-width: 0; }
 
 .tarjeta-sync {
@@ -175,23 +209,23 @@ input:focus {
   font-size: var(--texto-2xl);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  color: var(--marca);
-  background: var(--panel);
-  border: 1px solid var(--borde);
-  padding: var(--esp-2) 14px;
-  border-radius: var(--radio-s);
+  color: #fff;
+  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  box-shadow: var(--brillo-marca);
+  padding: var(--esp-2) var(--esp-4);
+  border-radius: var(--radio-pill);
 }
 
 .punto {
   display: flex;
   align-items: center;
   gap: var(--esp-3);
-  padding: 11px var(--esp-3);
+  padding: var(--esp-3);
   border-bottom: 1px solid var(--borde);
   transition: opacity var(--t);
 }
 .punto-numero {
-  width: 28px; height: 28px;
+  width: 30px; height: 30px;
   border-radius: 50%;
   border: 1px solid var(--borde);
   display: flex; align-items: center; justify-content: center;
@@ -200,9 +234,9 @@ input:focus {
   transition: border-color var(--t), color var(--t), background var(--t);
 }
 .punto-hecho .punto-numero {
-  border-color: var(--marca-fuerte);
-  color: var(--marca);
-  background: var(--marca-suave);
+  border-color: transparent;
+  color: #fff;
+  background: var(--exito);
 }
 .punto-hecho { opacity: 0.85; }
 .punto-texto { flex: 1; min-width: 0; }
@@ -215,13 +249,13 @@ input:focus {
 .caja {
   background: var(--panel);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-s);
-  padding: 14px;
+  border-radius: var(--radio-m);
+  padding: var(--esp-4);
   margin: var(--esp-3) 0;
   line-height: 1.6;
 }
 .caja-alerta {
-  border-color: var(--alerta);
+  border-color: rgba(245, 158, 11, 0.45);
   color: var(--alerta-texto);
   background: var(--alerta-suave);
 }
@@ -242,14 +276,14 @@ input:focus {
   width: min(70vw, 300px);
   aspect-ratio: 1;
   border: 3px solid var(--marca);
-  border-radius: 18px;
-  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+  border-radius: 24px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 .escaner-pie { padding: 14px var(--esp-4) 26px; background: var(--fondo); }
 
 .modal-centrado {
-  background: rgba(2, 6, 23, 0.85);
+  background: rgba(8, 8, 12, 0.88);
   align-items: center;
   justify-content: center;
 }
@@ -260,27 +294,28 @@ input:focus {
   padding: var(--esp-5);
   width: min(90vw, 380px);
 }
-.dialogo input { text-transform: uppercase; letter-spacing: 2px; text-align: center; }
+.dialogo input { text-transform: uppercase; letter-spacing: 3px; text-align: center; }
 
 /* Aviso flotante */
 .aviso {
   position: fixed;
   left: var(--esp-4); right: var(--esp-4); bottom: var(--esp-5);
   padding: 14px;
-  border-radius: var(--radio-s);
+  border-radius: var(--radio-m);
   text-align: center;
   font-weight: 600;
   z-index: 60;
-  background: var(--panel);
+  background: var(--panel-alto);
   border: 1px solid var(--borde);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   animation: aviso-entra 180ms ease;
 }
 @keyframes aviso-entra {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
-.aviso-ok { border-color: var(--marca); color: var(--marca); }
-.aviso-error { border-color: var(--peligro); color: var(--peligro); }
+.aviso-ok { border-color: rgba(34, 197, 94, 0.5); color: var(--exito); }
+.aviso-error { border-color: rgba(244, 67, 95, 0.5); color: var(--peligro); }
 .aviso-info { color: var(--texto); }
 
 @media (prefers-reduced-motion: reduce) {
