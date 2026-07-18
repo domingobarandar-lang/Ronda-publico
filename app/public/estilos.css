@@ -110,6 +110,12 @@ main { padding: var(--esp-4); max-width: 520px; margin: 0 auto; }
 #vista-login h1 { text-align: center; }
 #vista-login > .nota { text-align: center; display: block; }
 
+/* Selector de rol (primera pantalla) */
+#vista-rol h1 { text-align: center; }
+#vista-rol .btn-gigante { margin-top: var(--esp-4); }
+#nota-instalar-ios { margin-top: var(--esp-4); }
+.btn-centrado { display: block; width: auto; margin: var(--esp-5) auto 0; }
+
 h1 { font-size: var(--texto-2xl); margin-bottom: var(--esp-3); letter-spacing: -0.3px; }
 h2 {
   margin: 18px 0 10px;

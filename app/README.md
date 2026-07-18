@@ -9,12 +9,18 @@ npm install
 npm run demo
 ```
 
-Luego abrir:
+Luego abrir http://localhost:3737 — la primera pantalla pregunta **¿Cómo vas a entrar?**:
 
-- **App del guardia** (simula el teléfono): http://localhost:3737 — entrar con `pedro` / `2222`.
-- **Panel del administrador**: http://localhost:3737/admin.html — entrar con `marta` / `1111`.
+- **👷 Soy trabajador** → entrar con `trabajador` / `5678` (la app del guardia).
+- **🗂️ Soy administrador** → entrar con `admin` / `1234` (el panel; ve las rondas de ese mismo trabajador).
 
-La demo trae 2 condominios: Los Aromos (admin `marta`/1111, guardias `pedro`/2222 y `luis`/3333) y Mirador del Valle (admin `carmen`/4444, guardia `jorge`/5555).
+Ambos usuarios son del mismo condominio (Los Aromos), así que lo que marca el trabajador aparece de inmediato en los informes del administrador. La demo también trae los usuarios anteriores: Los Aromos (admin `marta`/1111, guardias `pedro`/2222 y `luis`/3333) y Mirador del Valle (admin `carmen`/4444, guardia `jorge`/5555).
+
+### Instalarla como app
+
+Es una PWA: en la primera pantalla aparece el botón **📲 Instalar la app** (Chrome/Edge, en el PC o Android) — también sirve el ícono de instalar en la barra de direcciones. En iPhone: **Compartir → Añadir a pantalla de inicio**. Queda con su propio ícono y abre en pantalla completa, partiendo por el selector de perfil.
+
+> Ojo: fuera de `localhost` la instalación y la cámara exigen **HTTPS**. Para probar en un teléfono real hay que desplegarla (Railway/VPS con HTTPS) — en el PC se instala directo desde localhost.
 
 Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de QR" (ahí están los QR reales); en el teléfono, iniciar la ronda "Nocturna completa" y escanear los QR desde la pantalla (o usar "Ingresar código a mano" con los códigos de 6 letras, p. ej. `PRT234`). Al terminar, el informe aparece en la pestaña **Informes** del panel y el aviso en **Avisos**.
 
@@ -24,6 +30,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Motor de rondas**: valida cada marca (condominio, ronda, duplicados), y al cierre evalúa puntos faltantes, orden (rondas estrictas) y duración máxima.
 - **Verificación de presencia por GPS** *(v1.1)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), el informe acusa las marcas hechas a más de 75 m ("⚠️ a X m del punto") y las marcas sin GPS. El GPS nunca bloquea una marca.
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
+- **Notificación de ronda incompleta** *(v1.4)*: si un trabajador termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del trabajador y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos. Multi-condominio con aislamiento total.
 
 ## Tests
@@ -53,6 +60,7 @@ lib/store.js     persistencia JSON atómica (migrable a SQLite/Postgres)
 lib/rondas.js    motor: iniciar / escanear / cerrar / evaluar
 lib/informes.js  informe en datos y en texto
 lib/notificar.js aviso al admin (mock | Telegram)
+lib/push.js      push al teléfono del admin cuando una ronda queda incompleta
 lib/auth.js      PIN scrypt + sesiones Bearer
 public/          PWA guardia (index) + panel admin (admin.html) + hoja QR + informe
 test/            suite node --test (mock, $0)

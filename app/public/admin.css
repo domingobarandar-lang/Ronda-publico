@@ -70,6 +70,7 @@ a { color: var(--marca-texto); }
 
 /* Login */
 .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.volver-rol { margin-top: 14px; }
 .login-caja {
   background: var(--panel);
   border: 1px solid var(--borde);

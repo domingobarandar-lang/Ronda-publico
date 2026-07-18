@@ -8,3 +8,4 @@ node_modules/
 
 # Datos de runtime (todo el estado vive en app/data/db.json — respaldar aparte)
 app/data/
+.gstack/

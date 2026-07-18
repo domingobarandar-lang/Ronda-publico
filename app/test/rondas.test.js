@@ -17,6 +17,7 @@ const { datosSemilla } = require('../seed');
 let base;
 let servidor;
 let store;
+const pushEnviados = []; // transporte falso: lo que "llegó" a cada teléfono suscrito
 
 async function api(ruta, { metodo = 'GET', cuerpo, token } = {}) {
   const resp = await fetch(base + ruta, {
@@ -48,7 +49,10 @@ test.before(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
-  const creado = crearApp({ rutaDb });
+  const creado = crearApp({
+    rutaDb,
+    enviarPush: async (suscripcion, payload) => { pushEnviados.push({ suscripcion, payload }); }
+  });
   store = creado.store;
   await new Promise(resolve => { servidor = creado.app.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${servidor.address().port}`;
@@ -390,4 +394,67 @@ test('CU-15/16: verificación de presencia por GPS', async () => {
 
   // Limpiar: quitar la ubicación para no afectar otros escenarios.
   await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+});
+
+test('push: ronda incompleta → notificación al teléfono del admin suscrito', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+
+  // Solo administradores; una suscripción malformada se rechaza.
+  const comoGuardia = await api('/api/admin/push/clave', { token: pedro.token });
+  assert.equal(comoGuardia.status, 403);
+  const malformada = await api('/api/admin/push/suscribir', {
+    metodo: 'POST', token: marta.token, cuerpo: { suscripcion: { endpoint: 'http://inseguro' } }
+  });
+  assert.equal(malformada.status, 422);
+
+  // La clave pública VAPID se genera sola y es estable entre llamadas.
+  const clave = await api('/api/admin/push/clave', { token: marta.token });
+  assert.equal(clave.status, 200);
+  assert.ok(clave.datos.clave.length > 20);
+  const clave2 = await api('/api/admin/push/clave', { token: marta.token });
+  assert.equal(clave2.datos.clave, clave.datos.clave);
+
+  // Marta suscribe su teléfono.
+  const suscripcion = { endpoint: 'https://push.ejemplo/marta-1', keys: { p256dh: 'clave-p256', auth: 'clave-auth' } };
+  const alta = await api('/api/admin/push/suscribir', { metodo: 'POST', token: marta.token, cuerpo: { suscripcion } });
+  assert.equal(alta.status, 201);
+
+  // Pedro cierra la express con 1 de 4 puntos → push con su nombre y los faltantes.
+  const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, { metodo: 'POST', token: pedro.token, cuerpo: { codigo: 'PRT234' } });
+  const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+  assert.equal(cierre.datos.estado, 'incompleta');
+
+  assert.equal(pushEnviados.length, 1);
+  assert.equal(pushEnviados[0].suscripcion.endpoint, suscripcion.endpoint);
+  const payload = JSON.parse(pushEnviados[0].payload);
+  assert.match(payload.titulo, /Ronda incompleta — Pedro Soto/);
+  assert.match(payload.cuerpo, /3 de 4 puntos sin marcar/);
+  assert.match(payload.cuerpo, /Quincho/);
+  assert.equal(payload.url, `informe.html?id=${ini.datos.id}`);
+
+  // Queda constancia en la pestaña Avisos.
+  const registro = store.db.notificaciones.at(-1);
+  assert.equal(registro.medio, 'push');
+  assert.equal(registro.enviada, true);
+  assert.deepEqual(registro.dispositivos, { ok: 1, total: 1 });
+
+  // Una ronda completa NO manda push (el informe normal sigue llegando al registro).
+  const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
+  const express = paquete.rondas.find(r => r.id === 'ronda-express');
+  const ini2 = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  for (const punto of express.puntos) {
+    await api(`/api/ejecuciones/${ini2.datos.id}/escaneos`, { metodo: 'POST', token: pedro.token, cuerpo: { codigo: punto.payload } });
+  }
+  const completa = await api(`/api/ejecuciones/${ini2.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+  assert.equal(completa.datos.estado, 'completa');
+  assert.equal(pushEnviados.length, 1);
+
+  // Baja del dispositivo: la siguiente incompleta ya no llega.
+  await api('/api/admin/push/suscribir', { metodo: 'DELETE', token: marta.token, cuerpo: { endpoint: suscripcion.endpoint } });
+  const ini3 = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  const cierre3 = await api(`/api/ejecuciones/${ini3.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+  assert.equal(cierre3.datos.estado, 'incompleta');
+  assert.equal(pushEnviados.length, 1);
 });

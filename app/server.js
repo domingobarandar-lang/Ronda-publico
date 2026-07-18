@@ -10,12 +10,14 @@ const { codigoCorto, id, payloadQR } = require('./lib/codigos');
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
 const { notificarAdmin } = require('./lib/notificar');
+const { crearPush } = require('./lib/push');
 
 cargarEnv(__dirname);
 
-function crearApp({ rutaDb } = {}) {
+function crearApp({ rutaDb, enviarPush } = {}) {
   const store = crearStore(rutaDb);
   const db = store.db;
+  const push = crearPush(store, { enviar: enviarPush });
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
@@ -98,6 +100,14 @@ function crearApp({ rutaDb } = {}) {
       const alerta = informe.estado === 'incompleta' ? '⚠️ ALERTA: ronda con puntos sin marcar\n\n' : '';
       const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n' : '';
       await notificarAdmin(store, condominio, alerta + nota + informeTexto(informe));
+      if (informe.estado === 'incompleta') {
+        const faltantes = informe.detalle.filter(d => d.faltante).map(d => d.nombre);
+        await push.avisar(condominio, {
+          titulo: `⚠️ Ronda incompleta — ${informe.guardia}`,
+          cuerpo: `"${informe.ronda}": ${faltantes.length} de ${informe.detalle.length} puntos sin marcar (${faltantes.join(', ')})`,
+          url: `informe.html?id=${ejecucion.id}`
+        });
+      }
     }
     return informe;
   }
@@ -354,6 +364,27 @@ function crearApp({ rutaDb } = {}) {
       .filter(n => n.condominioId === miCondominio(req))
       .slice(-50)
       .reverse());
+  });
+
+  // Avisos push de rondas incompletas en el teléfono del administrador.
+
+  app.get('/api/admin/push/clave', ...admin, (req, res) => {
+    res.json({ clave: push.claves().publicKey });
+  });
+
+  app.post('/api/admin/push/suscribir', ...admin, (req, res) => {
+    const registro = push.suscribir({
+      condominioId: miCondominio(req),
+      usuarioId: req.usuario.id,
+      suscripcion: (req.body || {}).suscripcion
+    });
+    if (!registro) return res.status(422).json({ error: 'Suscripción inválida.' });
+    res.status(201).json({ ok: true });
+  });
+
+  app.delete('/api/admin/push/suscribir', ...admin, (req, res) => {
+    push.desuscribir(String((req.body || {}).endpoint || ''));
+    res.json({ ok: true });
   });
 
   // Chat id de Telegram del administrador (para pasar de mock a real).

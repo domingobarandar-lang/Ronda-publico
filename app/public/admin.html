@@ -3,20 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e0e13">
   <title>Rondas QR — Panel del administrador</title>
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icono-192.png">
   <link rel="stylesheet" href="admin.css">
 </head>
 <body>
   <!-- Login -->
   <section id="vista-login" class="login oculta">
     <div class="login-caja">
-      <h1>🛡️ Rondas QR</h1>
-      <p class="nota">Panel del administrador</p>
-      <label>Usuario <input id="campo-usuario" autocapitalize="none"></label>
+      <h1>🗂️ Soy administrador</h1>
+      <p class="nota">Panel del administrador de Rondas QR</p>
+      <label>Usuario <input id="campo-usuario" autocapitalize="none" placeholder="ej: admin"></label>
       <label>PIN <input id="campo-pin" type="password" inputmode="numeric"></label>
       <button id="btn-login" class="btn btn-principal">Entrar</button>
       <p id="error-login" class="error oculta"></p>
+      <p class="nota volver-rol"><a href="./">← Cambiar de perfil</a></p>
     </div>
   </section>
 
@@ -95,6 +99,18 @@
 
       <div id="tab-avisos" class="tab oculta">
         <h2>Avisos al administrador</h2>
+        <div class="caja-config">
+          <p class="nota">
+            <strong>🔔 Avisos en este teléfono:</strong> te llega una notificación cada vez
+            que un trabajador termina una ronda sin escanear todos los puntos, con su nombre
+            y los puntos que faltaron. En iPhone, primero instala el panel en la pantalla de
+            inicio (Compartir → Añadir a pantalla de inicio) y ábrelo desde ahí.
+          </p>
+          <div class="fila-form">
+            <button id="btn-push" class="btn btn-principal">🔔 Activar avisos en este teléfono</button>
+          </div>
+          <p id="estado-push" class="nota"></p>
+        </div>
         <div class="caja-config">
           <p class="nota">
             Los informes llegan aquí y, si está configurado, también por Telegram.

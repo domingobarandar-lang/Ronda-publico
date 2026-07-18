@@ -1,4 +1,4 @@
-// Service worker: deja la app del guardia disponible sin conexión.
+// Service worker: deja la app (guardia + panel admin) disponible sin conexión.
 //
 // Estrategia: network-first con respaldo en caché. Con conexión, siempre se
 // sirve la versión fresca del servidor (los deploys llegan solos a los
@@ -7,15 +7,20 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.4.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   './',
   'index.html',
   'app.js',
   'estilos.css',
+  'admin.html',
+  'admin.js',
+  'admin.css',
   'manifest.webmanifest',
   'icono.svg',
+  'icono-192.png',
+  'icono-512.png',
   'vendor/jsqr.js'
 ];
 
@@ -42,5 +47,29 @@ self.addEventListener('fetch', e => {
         return resp;
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
+  );
+});
+
+// Aviso push del panel admin (ronda incompleta): suena aunque la app esté cerrada.
+self.addEventListener('push', e => {
+  let datos = {};
+  try { datos = e.data ? e.data.json() : {}; } catch { /* payload no JSON: se muestra genérico */ }
+  e.waitUntil(self.registration.showNotification(datos.titulo || 'Rondas QR', {
+    body: datos.cuerpo || '',
+    icon: 'icono-192.png',
+    badge: 'icono-192.png',
+    data: { url: datos.url || 'admin.html' }
+  }));
+});
+
+// Tocar la notificación abre el informe de esa ronda (o enfoca la pestaña si ya está abierta).
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const destino = new URL((e.notification.data || {}).url || 'admin.html', self.registration.scope).href;
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ventanas => {
+      const abierta = ventanas.find(v => v.url === destino);
+      return abierta ? abierta.focus() : clients.openWindow(destino);
+    })
   );
 });

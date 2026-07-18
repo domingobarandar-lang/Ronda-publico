@@ -8,6 +8,8 @@
 const CLAVE = 'rondasqr';
 
 let estado = cargarEstado();
+let rolElegido = null;        // 'trabajador' cuando ya eligió perfil en esta visita
+let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 let sincronizando = false;
 let stream = null;
 let escaneando = false;
@@ -388,9 +390,13 @@ function cicloJsqr() {
 
 function render() {
   pintarConexion();
-  if (!estado.sesion && !estado.paquete) return mostrarVista('vista-login');
+  if (!estado.sesion && !estado.paquete) {
+    // Sin sesión: primero el selector de rol; el login del trabajador después.
+    return mostrarVista(rolElegido === 'trabajador' ? 'vista-login' : 'vista-rol');
+  }
   if (!estado.sesion && estado.cola.length) {
     // Sesión caducada con cola pendiente: pedir login sin perder nada.
+    rolElegido = 'trabajador';
     mostrarVista('vista-login');
     return;
   }
@@ -523,6 +529,39 @@ function volverAlInicio() {
 // ---------- Arranque ----------
 
 document.addEventListener('DOMContentLoaded', () => {
+  $('btn-rol-trabajador').addEventListener('click', () => {
+    rolElegido = 'trabajador';
+    render();
+    $('campo-usuario').focus();
+  });
+  $('btn-rol-admin').addEventListener('click', () => { location.href = 'admin.html'; });
+  $('btn-volver-rol').addEventListener('click', () => {
+    rolElegido = null;
+    render();
+  });
+
+  // Instalación como app (Chrome/Edge disparan beforeinstallprompt; iOS va a mano).
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    promptInstalacion = e;
+    $('btn-instalar').classList.remove('oculta');
+  });
+  window.addEventListener('appinstalled', () => {
+    promptInstalacion = null;
+    $('btn-instalar').classList.add('oculta');
+    aviso('App instalada: ya la tienes como aplicación propia.', 'ok');
+  });
+  $('btn-instalar').addEventListener('click', async () => {
+    if (!promptInstalacion) return;
+    promptInstalacion.prompt();
+    await promptInstalacion.userChoice.catch(() => {});
+    promptInstalacion = null;
+    $('btn-instalar').classList.add('oculta');
+  });
+  const esIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const yaInstalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (esIos && !yaInstalada) $('nota-instalar-ios').classList.remove('oculta');
+
   $('btn-login').addEventListener('click', entrar);
   $('campo-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('btn-salir').addEventListener('click', salir);

@@ -18,6 +18,9 @@ function datosSemilla() {
   );
 
   db.usuarios.push(
+    // Pareja de prueba para recorrer la app con los dos perfiles (mismo condominio):
+    { id: 'u-admin', condominioId: 'aromos', usuario: 'admin', nombre: 'Administrador de prueba', rol: 'admin', pinHash: hashPin('1234') },
+    { id: 'u-trabajador', condominioId: 'aromos', usuario: 'trabajador', nombre: 'Trabajador de prueba', rol: 'guardia', pinHash: hashPin('5678') },
     { id: 'u-marta', condominioId: 'aromos', usuario: 'marta', nombre: 'Marta (administradora)', rol: 'admin', pinHash: hashPin('1111') },
     { id: 'u-pedro', condominioId: 'aromos', usuario: 'pedro', nombre: 'Pedro Soto', rol: 'guardia', pinHash: hashPin('2222') },
     { id: 'u-luis', condominioId: 'aromos', usuario: 'luis', nombre: 'Luis Rojas', rol: 'guardia', pinHash: hashPin('3333') },
@@ -89,6 +92,7 @@ function sembrar({ soloSiVacio = false } = {}) {
   console.log('Base de demo sembrada en', RUTA);
   console.log(`
 Usuarios de prueba (usuario / PIN):
+  Para ti           → administrador: admin / 1234 · trabajador: trabajador / 5678 (mismo condominio)
   Los Aromos        → admin: marta / 1111 · guardias: pedro / 2222, luis / 3333
   Mirador del Valle → admin: carmen / 4444 · guardia: jorge / 5555
 `);

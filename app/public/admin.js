@@ -83,7 +83,7 @@ function salir() {
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
   sesion = null;
   guardarSesion();
-  render();
+  location.href = './'; // vuelve al selector de rol
 }
 
 // ---------- Pestañas ----------
@@ -360,9 +360,83 @@ function limpiarEditorRonda() {
   pintarEditorRonda();
 }
 
+// ---------- Avisos push (rondas incompletas) en este dispositivo ----------
+
+function base64AUint8(base64) {
+  const relleno = '='.repeat((4 - (base64.length % 4)) % 4);
+  const crudo = atob((base64 + relleno).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(crudo, c => c.charCodeAt(0));
+}
+
+function pushSoportado() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+async function suscripcionPushActual() {
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function pintarEstadoPush() {
+  const btn = $('btn-push');
+  const estado = $('estado-push');
+  if (!pushSoportado()) {
+    btn.disabled = true;
+    estado.textContent = 'Este navegador no soporta notificaciones. En iPhone: instala el panel en la pantalla de inicio y ábrelo desde ahí.';
+    return;
+  }
+  try {
+    const sub = await suscripcionPushActual();
+    if (sub) {
+      btn.textContent = '🔕 Desactivar avisos en este teléfono';
+      estado.textContent = 'Avisos activados: si una ronda queda incompleta, te llegará una notificación aquí.';
+    } else {
+      btn.textContent = '🔔 Activar avisos en este teléfono';
+      estado.textContent = Notification.permission === 'denied'
+        ? 'Las notificaciones están bloqueadas para este sitio. Actívalas en la configuración del navegador y recarga.'
+        : '';
+    }
+    btn.disabled = Notification.permission === 'denied';
+  } catch {
+    btn.disabled = true;
+    estado.textContent = 'No se pudo consultar el estado de las notificaciones en este navegador.';
+  }
+}
+
+async function alternarPush() {
+  const btn = $('btn-push');
+  btn.disabled = true;
+  try {
+    const sub = await suscripcionPushActual();
+    if (sub) {
+      await api('/api/admin/push/suscribir', { metodo: 'DELETE', cuerpo: { endpoint: sub.endpoint } });
+      await sub.unsubscribe();
+      aviso('Avisos desactivados en este teléfono.');
+    } else {
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') {
+        aviso('No diste permiso de notificaciones.', 'error');
+        return pintarEstadoPush();
+      }
+      const { clave } = await api('/api/admin/push/clave');
+      const reg = await navigator.serviceWorker.ready;
+      const nueva = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64AUint8(clave)
+      });
+      await api('/api/admin/push/suscribir', { metodo: 'POST', cuerpo: { suscripcion: nueva.toJSON() } });
+      aviso('Listo: cada ronda incompleta llegará como notificación a este teléfono.');
+    }
+  } catch (err) {
+    aviso(err.message || 'No se pudo cambiar el estado de los avisos.', 'error');
+  }
+  pintarEstadoPush();
+}
+
 // ---------- Avisos ----------
 
 async function cargarAvisos() {
+  pintarEstadoPush();
   const avisos = await api('/api/admin/notificaciones');
   if (!avisos.length) {
     $('lista-avisos').innerHTML = '<p class="nota">Todavía no hay avisos. Se generan al cerrar cada ronda.</p>';
@@ -417,6 +491,8 @@ document.addEventListener('DOMContentLoaded', () => {
       cargarGuardias();
     } catch (err) { aviso(err.message, 'error'); }
   });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  $('btn-push').addEventListener('click', alternarPush);
   $('btn-guardar-ronda').addEventListener('click', guardarRonda);
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
   $('btn-guardar-chatid').addEventListener('click', async () => {

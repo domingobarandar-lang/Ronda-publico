@@ -12,7 +12,9 @@ const VACIA = () => ({
   rondas: [],
   ejecuciones: [],
   sesiones: {},
-  notificaciones: []
+  notificaciones: [],
+  pushSuscripciones: [],
+  vapid: null
 });
 
 function crearStore(rutaArchivo) {
