@@ -544,6 +544,12 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-cerrar-ronda').addEventListener('click', cerrarRonda);
   $('btn-volver').addEventListener('click', volverAlInicio);
 
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!$('modal-escaner').classList.contains('oculta')) cerrarEscaner();
+    if (!$('modal-manual').classList.contains('oculta')) $('modal-manual').classList.add('oculta');
+  });
+
   window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
   window.addEventListener('offline', pintarConexion);
   setInterval(sincronizar, 4000);

@@ -151,7 +151,7 @@ h3 { font-size: var(--texto-m); margin: 10px 0; color: var(--texto-suave); }
 .btn:active { transform: scale(0.98); }
 .btn:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
 .btn-principal {
-  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  background: linear-gradient(160deg, #9333ea, var(--marca-fuerte));
   box-shadow: 0 4px 14px rgba(124, 58, 237, 0.25);
 }
 .btn-principal:hover { background: var(--marca-fuerte); }

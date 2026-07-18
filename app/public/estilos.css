@@ -99,7 +99,7 @@ main { padding: var(--esp-4); max-width: 520px; margin: 0 auto; }
   width: 84px;
   height: 84px;
   border-radius: 50%;
-  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  background: linear-gradient(160deg, #9333ea, var(--marca-fuerte));
   box-shadow: var(--brillo-marca);
   display: flex;
   align-items: center;
@@ -155,7 +155,7 @@ input:focus {
 .btn:active { transform: scale(0.97); }
 .btn:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
 .btn-principal {
-  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  background: linear-gradient(160deg, #9333ea, var(--marca-fuerte));
   box-shadow: var(--brillo-marca);
 }
 .btn-principal:active { background: var(--marca-fuerte); box-shadow: none; }
@@ -210,7 +210,7 @@ input:focus {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: #fff;
-  background: linear-gradient(160deg, var(--marca), var(--marca-fuerte));
+  background: linear-gradient(160deg, #9333ea, var(--marca-fuerte));
   box-shadow: var(--brillo-marca);
   padding: var(--esp-2) var(--esp-4);
   border-radius: var(--radio-pill);
