@@ -98,7 +98,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const informe = armarInforme(db, ejecucion);
     if (!r.repetida) {
       const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
-      const alerta = informe.estado === 'incompleta' ? '⚠️ ALERTA: ronda con puntos sin marcar\n\n' : '';
+      let alerta = '';
+      if (informe.estado === 'incompleta') alerta = '⚠️ ALERTA: ronda con puntos sin marcar\n\n';
+      else if (informe.estado === 'sospechosa') alerta = '🔴 ALERTA: ronda con datos sospechosos\n\n';
       const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n' : '';
       await notificarAdmin(store, condominio, alerta + nota + informeTexto(informe));
       if (informe.estado === 'incompleta') {
@@ -106,6 +108,13 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         await push.avisar(condominio, {
           titulo: `⚠️ Ronda incompleta — ${informe.guardia}`,
           cuerpo: `"${informe.ronda}": ${faltantes.length} de ${informe.detalle.length} puntos sin marcar (${faltantes.join(', ')})`,
+          url: `informe.html?id=${ejecucion.id}`
+        });
+      } else if (informe.estado === 'sospechosa') {
+        const motivos = (informe.evaluacion.sospechas || []);
+        await push.avisar(condominio, {
+          titulo: `🔴 Ronda sospechosa — ${informe.guardia}`,
+          cuerpo: `"${informe.ronda}": ${motivos.join('; ')}`,
           url: `informe.html?id=${ejecucion.id}`
         });
       }
@@ -255,7 +264,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   });
 
   function validarRonda(req, res) {
-    const { nombre, puntoIds, ordenEstricto, duracionMaxMin } = req.body || {};
+    const { nombre, puntoIds, ordenEstricto, duracionMaxMin, duracionMinMin } = req.body || {};
     const nombreLimpio = String(nombre || '').trim();
     if (!nombreLimpio) { res.status(422).json({ error: 'La ronda necesita un nombre.' }); return null; }
     if (!Array.isArray(puntoIds) || puntoIds.length === 0) {
@@ -276,7 +285,24 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       res.status(422).json({ error: 'Duración máxima inválida.' });
       return null;
     }
-    return { nombre: nombreLimpio, puntoIds, ordenEstricto: Boolean(ordenEstricto), duracionMaxMin: duracion };
+    // Tiempo mínimo antifraude: una ronda que se cierra más rápido que esto es
+    // físicamente imposible de recorrer a pie.
+    const minima = duracionMinMin ? Number(duracionMinMin) : null;
+    if (minima !== null && (!Number.isFinite(minima) || minima <= 0)) {
+      res.status(422).json({ error: 'Duración mínima inválida.' });
+      return null;
+    }
+    if (minima !== null && duracion !== null && minima >= duracion) {
+      res.status(422).json({ error: 'La duración mínima debe ser menor que la máxima.' });
+      return null;
+    }
+    return {
+      nombre: nombreLimpio,
+      puntoIds,
+      ordenEstricto: Boolean(ordenEstricto),
+      duracionMaxMin: duracion,
+      duracionMinMin: minima
+    };
   }
 
   app.post('/api/admin/rondas', ...admin, (req, res) => {

@@ -78,7 +78,13 @@
           <div class="fila-form">
             <label class="check"><input type="checkbox" id="ronda-estricta"> El orden importa (estricta)</label>
             <input id="ronda-duracion" type="number" min="1" placeholder="Duración máx (min)">
+            <input id="ronda-duracion-min" type="number" min="1" placeholder="Duración mín (min)">
           </div>
+          <p class="nota">
+            La <strong>duración mínima</strong> es antifraude: si la ronda se cierra más rápido que eso,
+            el informe sale marcado como <strong>sospechoso</strong> y te llega un aviso. Déjala vacía si
+            no la quieres usar — igual se detectan los puntos marcados en ráfaga (varios en segundos).
+          </p>
           <div class="dos-columnas">
             <div>
               <h3>Puntos disponibles</h3>

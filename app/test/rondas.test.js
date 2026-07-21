@@ -99,9 +99,12 @@ test('CU-03/04/09: ronda completa en orden → informe "completa" + notificació
   assert.equal(ini.status, 201);
   const ejecucionId = ini.datos.id;
 
+  // Marcas espaciadas como una ronda caminada de verdad (5 min entre punto y
+  // punto): sin esto el control de tiempo (CU-17) la leería como ráfaga.
+  const base = Date.now() - 60 * 60000;
   for (const [i, punto] of nocturna.puntos.entries()) {
     const esc = await api(`/api/ejecuciones/${ejecucionId}/escaneos`, {
-      metodo: 'POST', token, cuerpo: { codigo: punto.payload }
+      metodo: 'POST', token, cuerpo: { codigo: punto.payload, ts: new Date(base + i * 5 * 60000).toISOString() }
     });
     assert.equal(esc.status, 200);
     assert.equal(esc.datos.avance.hechos, i + 1);
@@ -212,10 +215,13 @@ test('orden estricto: marcar fuera de secuencia queda como observación', async 
   const ejecucionId = ini.datos.id;
 
   // Orden real: 1, 3, 2, 4, 5, 6, 7, 8 → "Estacionamiento A" (índice 2) queda fuera de orden.
+  // La hora crece según el orden REAL de marcado (por eso el 3 queda antes que el 2).
   const orden = [0, 2, 1, 3, 4, 5, 6, 7];
-  for (const i of orden) {
+  const base = Date.now() - 60 * 60000;
+  for (const [paso, i] of orden.entries()) {
     const esc = await api(`/api/ejecuciones/${ejecucionId}/escaneos`, {
-      metodo: 'POST', token, cuerpo: { codigo: nocturna.puntos[i].payload }
+      metodo: 'POST', token,
+      cuerpo: { codigo: nocturna.puntos[i].payload, ts: new Date(base + paso * 5 * 60000).toISOString() }
     });
     assert.equal(esc.status, 200);
   }
@@ -444,8 +450,12 @@ test('push: ronda incompleta → notificación al teléfono del admin suscrito',
   const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
   const express = paquete.rondas.find(r => r.id === 'ronda-express');
   const ini2 = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
-  for (const punto of express.puntos) {
-    await api(`/api/ejecuciones/${ini2.datos.id}/escaneos`, { metodo: 'POST', token: pedro.token, cuerpo: { codigo: punto.payload } });
+  const baseOk = Date.now() - 20 * 60000;
+  for (const [i, punto] of express.puntos.entries()) {
+    await api(`/api/ejecuciones/${ini2.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token,
+      cuerpo: { codigo: punto.payload, ts: new Date(baseOk + i * 4 * 60000).toISOString() }
+    });
   }
   const completa = await api(`/api/ejecuciones/${ini2.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
   assert.equal(completa.datos.estado, 'completa');
@@ -457,4 +467,139 @@ test('push: ronda incompleta → notificación al teléfono del admin suscrito',
   const cierre3 = await api(`/api/ejecuciones/${ini3.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
   assert.equal(cierre3.datos.estado, 'incompleta');
   assert.equal(pushEnviados.length, 1);
+});
+
+// ---------- CU-17: antifraude (control de tiempo + GPS fuerte) ----------
+// El fraude que ataca: el guardia le saca foto a todos los QR y los escanea
+// desde el sillón. Dos capas independientes lo delatan.
+
+test('CU-17: marcas en ráfaga → ronda SOSPECHOSA + aviso al admin', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+  const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
+  const express = paquete.rondas.find(r => r.id === 'ronda-express');
+
+  const suscripcion = { endpoint: 'https://push.ejemplo/marta-cu17', keys: { p256dh: 'clave-p256', auth: 'clave-auth' } };
+  await api('/api/admin/push/suscribir', { metodo: 'POST', token: marta.token, cuerpo: { suscripcion } });
+  const pushAntes = pushEnviados.length;
+
+  // El fraude: los 4 puntos marcados con 3 segundos de diferencia.
+  const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  const base = Date.now();
+  for (const [i, punto] of express.puntos.entries()) {
+    const esc = await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token,
+      cuerpo: { codigo: punto.payload, ts: new Date(base + i * 3000).toISOString() }
+    });
+    assert.equal(esc.status, 200, 'el control de tiempo nunca bloquea la marca');
+  }
+  const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+
+  // Marcó todos los puntos, pero la ronda no es creíble.
+  assert.equal(cierre.datos.evaluacion.faltantes.length, 0);
+  assert.equal(cierre.datos.estado, 'sospechosa');
+  assert.ok(cierre.datos.evaluacion.rafaga >= 2);
+  assert.ok(cierre.datos.evaluacion.sospechas.some(s => /segundos/.test(s)));
+  assert.ok(store.db.notificaciones.some(n => /ALERTA: ronda con datos sospechosos/.test(n.texto)));
+
+  // Y le suena el teléfono al administrador con el motivo.
+  assert.equal(pushEnviados.length, pushAntes + 1);
+  const payload = JSON.parse(pushEnviados.at(-1).payload);
+  assert.match(payload.titulo, /Ronda sospechosa — Pedro Soto/);
+  assert.match(payload.cuerpo, /segundos/);
+  assert.equal(payload.url, `informe.html?id=${ini.datos.id}`);
+
+  await api('/api/admin/push/suscribir', { metodo: 'DELETE', token: marta.token, cuerpo: { endpoint: suscripcion.endpoint } });
+});
+
+test('CU-17: GPS fuerte — sin ubicación o lejos en punto verificable → SOSPECHOSA', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+  const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
+  const express = paquete.rondas.find(r => r.id === 'ronda-express');
+
+  // La administradora fija la ubicación de Portería (punto al aire libre).
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
+  });
+
+  // Ronda completa y bien espaciada; solo cambia el GPS de Portería.
+  async function rondaCompleta(gpsPorteria) {
+    const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+    const base = Date.now() - 40 * 60000;
+    for (const [i, punto] of express.puntos.entries()) {
+      await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+        metodo: 'POST', token: pedro.token,
+        cuerpo: {
+          codigo: punto.payload,
+          ts: new Date(base + i * 4 * 60000).toISOString(),
+          gps: punto.nombre === 'Portería' ? gpsPorteria : null
+        }
+      });
+    }
+    const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+    return cierre.datos;
+  }
+
+  // Apagó la ubicación justo donde sí se verifica → sospechosa.
+  const apagado = await rondaCompleta(null);
+  assert.equal(apagado.evaluacion.faltantes.length, 0);
+  assert.equal(apagado.estado, 'sospechosa');
+  assert.ok(apagado.evaluacion.sospechas.some(s => /Sin ubicación GPS/.test(s)));
+
+  // Marcó a ~1,1 km del punto → sospechosa, con la distancia.
+  const lejos = await rondaCompleta({ lat: -33.46, lon: -70.66, acc: 10 });
+  assert.equal(lejos.estado, 'sospechosa');
+  assert.ok(lejos.evaluacion.sospechas.some(s => /lejos del punto/.test(s)));
+
+  // Estuvo donde tenía que estar → ronda limpia, sin ruido para el admin.
+  const cerca = await rondaCompleta({ lat: -33.45027, lon: -70.66, acc: 10 });
+  assert.equal(cerca.estado, 'completa');
+  assert.equal(cerca.evaluacion.sospechas.length, 0);
+
+  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+});
+
+test('CU-17: duración mínima por ronda — cerrarla muy rápido es SOSPECHOSA', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+  const puntos = await api('/api/admin/puntos', { token: marta.token });
+  const idDe = nombre => puntos.datos.find(p => p.nombre === nombre).id;
+
+  // Validaciones del campo nuevo.
+  const negativa = await api('/api/admin/rondas', {
+    metodo: 'POST', token: marta.token,
+    cuerpo: { nombre: 'Mala', puntoIds: [idDe('Portería')], duracionMinMin: -5 }
+  });
+  assert.equal(negativa.status, 422);
+  const cruzada = await api('/api/admin/rondas', {
+    metodo: 'POST', token: marta.token,
+    cuerpo: { nombre: 'Cruzada', puntoIds: [idDe('Portería')], duracionMaxMin: 10, duracionMinMin: 20 }
+  });
+  assert.equal(cruzada.status, 422);
+  assert.match(cruzada.datos.error, /mínima debe ser menor/);
+
+  // Ronda de 2 puntos que no puede tomar menos de 30 min.
+  const ronda = await api('/api/admin/rondas', {
+    metodo: 'POST', token: marta.token,
+    cuerpo: { nombre: 'Con mínimo', puntoIds: [idDe('Portería'), idDe('Quincho')], duracionMinMin: 30 }
+  });
+  assert.equal(ronda.status, 201);
+  assert.equal(ronda.datos.duracionMinMin, 30);
+
+  // El guardia la marca completa y la cierra a los 2 minutos.
+  const inicio = new Date(Date.now() - 2 * 60000).toISOString();
+  const ini = await api('/api/ejecuciones', {
+    metodo: 'POST', token: pedro.token, cuerpo: { rondaId: ronda.datos.id, inicio }
+  });
+  await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, { metodo: 'POST', token: pedro.token, cuerpo: { codigo: 'PRT234' } });
+  await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, { metodo: 'POST', token: pedro.token, cuerpo: { codigo: 'QCH789' } });
+  const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+
+  assert.equal(cierre.datos.evaluacion.faltantes.length, 0);
+  assert.equal(cierre.datos.evaluacion.duracionMin, 2);
+  assert.equal(cierre.datos.estado, 'sospechosa');
+  assert.ok(cierre.datos.evaluacion.sospechas.some(s => /demasiado rápida/.test(s)));
+
+  await api(`/api/admin/rondas/${ronda.datos.id}`, { metodo: 'DELETE', token: marta.token });
 });

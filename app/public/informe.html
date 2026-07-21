@@ -15,6 +15,7 @@
     const CHIPS = {
       completa: '<span class="chip chip-verde">Completa</span>',
       completa_obs: '<span class="chip chip-ambar">Completa con observaciones</span>',
+      sospechosa: '<span class="chip chip-roja">🔴 SOSPECHOSA</span>',
       incompleta: '<span class="chip chip-roja">INCOMPLETA</span>',
       en_curso: '<span class="chip">En curso</span>'
     };
@@ -50,6 +51,9 @@
           <tr><th>Resultado</th><td>${CHIPS[inf.estado] || esc(inf.estado)}</td></tr>
         </table>
         ${faltantes.length ? `<div class="alerta-grande">⚠️ ${faltantes.length} punto(s) sin marcar: ${faltantes.map(f => esc(f.nombre)).join(', ')}</div>` : ''}
+        ${inf.evaluacion && (inf.evaluacion.sospechas || []).length
+          ? `<div class="alerta-grande">🔴 Datos sospechosos — esta ronda no se pudo verificar:<br>${inf.evaluacion.sospechas.map(s => '• ' + esc(s)).join('<br>')}</div>`
+          : ''}
         ${inf.evaluacion && inf.evaluacion.observaciones.length
           ? `<div class="observaciones"><strong>Observaciones</strong><br>${inf.evaluacion.observaciones.map(o => '• ' + esc(o)).join('<br>')}</div>`
           : ''}

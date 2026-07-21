@@ -486,7 +486,12 @@ function renderFinal() {
   const informe = estado.ultimoInforme;
 
   if (informe) {
-    const etiquetas = { completa: '✅ Ronda completa', completa_obs: '🟡 Completa con observaciones', incompleta: '⚠️ Ronda INCOMPLETA' };
+    const etiquetas = {
+      completa: '✅ Ronda completa',
+      completa_obs: '🟡 Completa con observaciones',
+      sospechosa: '🔴 Ronda con alertas de verificación',
+      incompleta: '⚠️ Ronda INCOMPLETA'
+    };
     $('final-titulo').textContent = etiquetas[informe.estado] || informe.estado;
     const faltantes = informe.detalle.filter(d => d.faltante);
     let html = `<p class="nota">${informe.ronda} · ${informe.guardia} · ${informe.evaluacion ? informe.evaluacion.duracionMin + ' min' : ''}</p>`;

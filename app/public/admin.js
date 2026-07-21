@@ -101,6 +101,7 @@ function mostrarTab(nombre) {
 const CHIPS = {
   completa: '<span class="chip chip-verde">Completa</span>',
   completa_obs: '<span class="chip chip-ambar">Con observaciones</span>',
+  sospechosa: '<span class="chip chip-roja">🔴 SOSPECHOSA</span>',
   incompleta: '<span class="chip chip-roja">INCOMPLETA</span>',
   en_curso: '<span class="chip">En curso</span>'
 };
@@ -276,7 +277,7 @@ async function cargarRondas() {
   const filas = rondas.map(r => `
     <tr>
       <td><strong>${esc(r.nombre)}</strong><br><span class="nota">${r.puntoIds.map(nombrePunto).map(esc).join(' → ')}</span></td>
-      <td>${r.ordenEstricto ? 'Estricta' : 'Orden libre'}${r.duracionMaxMin ? ` · máx ${r.duracionMaxMin} min` : ''}</td>
+      <td>${r.ordenEstricto ? 'Estricta' : 'Orden libre'}${r.duracionMaxMin ? ` · máx ${r.duracionMaxMin} min` : ''}${r.duracionMinMin ? ` · mín ${r.duracionMinMin} min` : ''}</td>
       <td>
         <button class="btn btn-borde btn-chico" data-editar="${r.id}">Editar</button>
         <button class="btn btn-peligro btn-chico" data-eliminar="${r.id}">Eliminar</button>
@@ -294,6 +295,7 @@ async function cargarRondas() {
       $('ronda-nombre').value = r.nombre;
       $('ronda-estricta').checked = Boolean(r.ordenEstricto);
       $('ronda-duracion').value = r.duracionMaxMin || '';
+      $('ronda-duracion-min').value = r.duracionMinMin || '';
       secuencia = [...r.puntoIds];
       pintarEditorRonda();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -340,7 +342,8 @@ async function guardarRonda() {
     nombre: $('ronda-nombre').value,
     puntoIds: secuencia,
     ordenEstricto: $('ronda-estricta').checked,
-    duracionMaxMin: $('ronda-duracion').value ? Number($('ronda-duracion').value) : null
+    duracionMaxMin: $('ronda-duracion').value ? Number($('ronda-duracion').value) : null,
+    duracionMinMin: $('ronda-duracion-min').value ? Number($('ronda-duracion-min').value) : null
   };
   try {
     if (rondaEnEdicion) await api(`/api/admin/rondas/${rondaEnEdicion}`, { metodo: 'PUT', cuerpo });
@@ -357,6 +360,7 @@ function limpiarEditorRonda() {
   $('ronda-nombre').value = '';
   $('ronda-estricta').checked = false;
   $('ronda-duracion').value = '';
+  $('ronda-duracion-min').value = '';
   pintarEditorRonda();
 }
 

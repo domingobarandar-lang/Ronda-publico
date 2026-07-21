@@ -4,6 +4,7 @@
 const ETIQUETAS = {
   completa: 'Completa',
   completa_obs: 'Completa con observaciones',
+  sospechosa: 'SOSPECHOSA',
   incompleta: 'INCOMPLETA',
   en_curso: 'En curso'
 };
