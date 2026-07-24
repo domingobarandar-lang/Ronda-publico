@@ -9,6 +9,7 @@ const { hashPin, verificarPin, crearSesion, autenticar, soloAdmin } = require('.
 const { codigoCorto, id, payloadQR } = require('./lib/codigos');
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
+const { generarInformeSemanal } = require('./lib/informe-semanal');
 const { notificarAdmin } = require('./lib/notificar');
 const { crearPush } = require('./lib/push');
 
@@ -420,6 +421,22 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const ejecucion = db.ejecuciones.find(e => e.id === req.params.id && e.condominioId === miCondominio(req));
     if (!ejecucion) return res.status(404).json({ error: 'El informe no existe.' });
     res.json(armarInforme(db, ejecucion));
+  });
+
+  // Informe semanal por condominio en Word (.docx), para enviar por correo al
+  // administrador. Rango de fechas por query (?desde=YYYY-MM-DD&hasta=YYYY-MM-DD);
+  // por defecto, la semana anterior (lunes a domingo).
+  app.get('/api/admin/informe-semanal.docx', ...admin, async (req, res) => {
+    try {
+      const { desde, hasta } = req.query;
+      const { buffer, datos } = await generarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta });
+      const nombre = `Informe-Semanal-${datos.desde}_a_${datos.hasta}.docx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
+      res.send(buffer);
+    } catch (err) {
+      res.status(500).json({ error: 'No se pudo generar el informe semanal.' });
+    }
   });
 
   // Cierre administrativo de una ronda que quedó abierta.

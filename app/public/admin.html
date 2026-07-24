@@ -46,6 +46,20 @@
       <div id="tab-informes" class="tab">
         <h2>Informes de rondas</h2>
         <p class="nota">Cada ronda cerrada genera un informe. Las incompletas quedan marcadas y avisadas.</p>
+
+        <div class="caja-config">
+          <h3 style="margin-top:0; color:var(--texto)">📄 Informe semanal (Word)</h3>
+          <p class="nota">
+            Genera el resumen de la semana en un documento Word con estadísticas, listo para
+            enviar por correo al administrador del condominio. Por defecto trae la semana pasada.
+          </p>
+          <div class="fila-form">
+            <label class="campo-fecha">Desde <input type="date" id="semana-desde"></label>
+            <label class="campo-fecha">Hasta <input type="date" id="semana-hasta"></label>
+            <button id="btn-informe-semanal" class="btn btn-principal">⬇️ Descargar Word</button>
+          </div>
+        </div>
+
         <div id="tabla-informes"></div>
       </div>
 

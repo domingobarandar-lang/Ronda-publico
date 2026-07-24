@@ -106,7 +106,50 @@ const CHIPS = {
   en_curso: '<span class="chip">En curso</span>'
 };
 
+// Deja las fechas del informe semanal en la semana anterior (lunes a domingo).
+function prellenarSemana() {
+  const desde = $('semana-desde'), hasta = $('semana-hasta');
+  if (!desde || !hasta || desde.value || hasta.value) return;
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hoy = new Date();
+  const lunEsta = new Date(hoy); lunEsta.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7));
+  const lunAnt = new Date(lunEsta); lunAnt.setDate(lunEsta.getDate() - 7);
+  const domAnt = new Date(lunAnt); domAnt.setDate(lunAnt.getDate() + 6);
+  desde.value = iso(lunAnt);
+  hasta.value = iso(domAnt);
+}
+
+async function descargarInformeSemanal() {
+  const desde = $('semana-desde').value, hasta = $('semana-hasta').value;
+  if (!desde || !hasta) { aviso('Elige las fechas de la semana.', 'error'); return; }
+  const btn = $('btn-informe-semanal');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Generando…';
+  try {
+    const resp = await fetch(`/api/admin/informe-semanal.docx?desde=${desde}&hasta=${hasta}`, {
+      headers: { authorization: `Bearer ${sesion.token}` }
+    });
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      throw new Error(d.error || 'No se pudo generar el informe.');
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Informe-Semanal-${desde}_a_${hasta}.docx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    aviso('Informe descargado. Ya puedes adjuntarlo a un correo.');
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = textoOriginal;
+  }
+}
+
 async function cargarInformes() {
+  prellenarSemana();
   const lista = await api('/api/admin/ejecuciones');
   if (!lista.length) {
     $('tabla-informes').innerHTML = '<p class="nota">Todavía no hay rondas registradas.</p>';
@@ -521,6 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
     guardarCodigoRegistro({ generar: true }, 'Código nuevo generado. El anterior ya no sirve.'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('btn-push').addEventListener('click', alternarPush);
+  $('btn-informe-semanal').addEventListener('click', descargarInformeSemanal);
   $('btn-guardar-ronda').addEventListener('click', guardarRonda);
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
   $('btn-guardar-chatid').addEventListener('click', async () => {
