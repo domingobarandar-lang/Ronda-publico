@@ -600,8 +600,8 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
   });
 
-  // Registro (autoservicio del guardia)
-  $('btn-ir-registro').addEventListener('click', irARegistro);
+  // Registro (autoservicio del guardia) — accesible desde la pantalla principal
+  $('btn-rol-registro').addEventListener('click', irARegistro);
   $('btn-registrar').addEventListener('click', registrar);
   $('btn-volver-login').addEventListener('click', () => { rolElegido = 'guardia'; render(); });
   $('registro-pin2').addEventListener('keydown', e => { if (e.key === 'Enter') registrar(); });
