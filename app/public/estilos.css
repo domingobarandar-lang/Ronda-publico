@@ -145,6 +145,23 @@ input:focus {
   box-shadow: 0 0 0 3px var(--marca-suave);
 }
 
+select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 15px var(--esp-4);
+  font-size: 17px;
+  border-radius: var(--radio-s);
+  border: 1px solid var(--borde);
+  background: var(--panel);
+  color: var(--texto);
+  transition: border-color var(--t), box-shadow var(--t);
+}
+select:focus {
+  outline: none;
+  border-color: var(--marca);
+  box-shadow: 0 0 0 3px var(--marca-suave);
+}
+
 .btn {
   width: 100%;
   padding: 16px;

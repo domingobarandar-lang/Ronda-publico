@@ -11,10 +11,10 @@ npm run demo
 
 Luego abrir http://localhost:3737 — la primera pantalla pregunta **¿Cómo vas a entrar?**:
 
-- **👷 Soy trabajador** → entrar con `trabajador` / `5678` (la app del guardia).
-- **🗂️ Soy administrador** → entrar con `admin` / `1234` (el panel; ve las rondas de ese mismo trabajador).
+- **👷 Soy guardia** → entrar con `guardia` / `5678` (la app del guardia). Un guardia nuevo también puede **crear su propio usuario** desde ahí ("🆕 Crear mi usuario"): elige su condominio, escribe el **código del condominio** (el administrador se lo entrega — en la demo, `AROMOS` para Los Aromos y `MIRADOR` para Mirador del Valle), define usuario y PIN, y queda guardado.
+- **🗂️ Soy administrador** → entrar con `admin` / `1234` (el panel; ve las rondas de ese mismo guardia). En la pestaña **Guardias** ve y cambia el código de registro que entrega a sus guardias.
 
-Ambos usuarios son del mismo condominio (Los Aromos), así que lo que marca el trabajador aparece de inmediato en los informes del administrador. La demo también trae los usuarios anteriores: Los Aromos (admin `marta`/1111, guardias `pedro`/2222 y `luis`/3333) y Mirador del Valle (admin `carmen`/4444, guardia `jorge`/5555).
+Ambos usuarios son del mismo condominio (Los Aromos), así que lo que marca el guardia aparece de inmediato en los informes del administrador. La demo también trae los usuarios anteriores: Los Aromos (admin `marta`/1111, guardias `pedro`/2222 y `luis`/3333) y Mirador del Valle (admin `carmen`/4444, guardia `jorge`/5555).
 
 ### Instalarla como app
 
@@ -30,7 +30,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Motor de rondas**: valida cada marca (condominio, ronda, duplicados), y al cierre evalúa puntos faltantes, orden (rondas estrictas) y duración máxima.
 - **Verificación de presencia por GPS** *(v1.1)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), el informe acusa las marcas hechas a más de 75 m ("⚠️ a X m del punto") y las marcas sin GPS. El GPS nunca bloquea una marca.
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
-- **Notificación de ronda incompleta** *(v1.4)*: si un trabajador termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del trabajador y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
+- **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos. Multi-condominio con aislamiento total.
 
 ## Tests

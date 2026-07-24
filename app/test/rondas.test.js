@@ -274,6 +274,90 @@ test('CU-11: CRUD de puntos, guardias y rondas del panel admin', async () => {
   await api(`/api/admin/guardias/${diego.datos.id}`, { metodo: 'DELETE', token });
 });
 
+test('registro autoservicio: código del condominio + alta de la cuenta', async () => {
+  // La lista de condominios es pública (la usa el selector del formulario)
+  // y NUNCA expone el código de registro ni el hash del PIN.
+  const condominios = await api('/api/condominios');
+  assert.equal(condominios.status, 200);
+  assert.ok(condominios.datos.some(c => c.id === 'aromos'));
+  assert.ok(condominios.datos.every(c => c.id && c.nombre && c.codigoRegistro === undefined && c.pinHash === undefined));
+
+  // Sin el código correcto → 403, y NO se crea nada (ni siquiera se revela si el usuario existe).
+  const malCodigo = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'mirador', usuario: 'rosa', pin: '7788', codigo: 'XXXX' } });
+  assert.equal(malCodigo.status, 403);
+  assert.ok(!store.db.usuarios.some(u => u.usuario === 'rosa'));
+
+  // Condominio inexistente → 422.
+  const sinCondo = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'no-existe', usuario: 'nuevo', pin: '4321', codigo: 'MIRADOR' } });
+  assert.equal(sinCondo.status, 422);
+
+  // PIN inválido (con código correcto) → 422.
+  const malPin = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'aromos', usuario: 'sofia', pin: '12', codigo: 'AROMOS' } });
+  assert.equal(malPin.status, 422);
+
+  // Alta correcta: el código se compara sin distinguir mayúsculas.
+  const alta = await api('/api/registro', {
+    metodo: 'POST', cuerpo: { condominioId: 'mirador', usuario: 'ROSA', nombre: 'Rosa Vera', pin: '7788', codigo: 'mirador' }
+  });
+  assert.equal(alta.status, 201);
+  assert.equal(alta.datos.usuario, 'rosa'); // usuario se normaliza a minúsculas
+  const guardada = store.db.usuarios.find(u => u.id === alta.datos.id);
+  assert.equal(guardada.rol, 'guardia');
+  assert.equal(guardada.condominioId, 'mirador');
+
+  // Puede entrar de inmediato con lo que definió.
+  const sesion = await login('rosa', '7788');
+  assert.equal(sesion.rol, 'guardia');
+  assert.equal(sesion.condominio.id, 'mirador');
+
+  // Usuario repetido (código correcto) → 409.
+  const repetido = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'mirador', usuario: 'rosa', pin: '9999', codigo: 'MIRADOR' } });
+  assert.equal(repetido.status, 409);
+
+  // Limpieza: rosa es de Mirador, la borra su admin (carmen).
+  const carmen = await login('carmen', '4444');
+  await api(`/api/admin/guardias/${alta.datos.id}`, { metodo: 'DELETE', token: carmen.token });
+});
+
+test('el administrador ve, cambia y regenera el código de registro', async () => {
+  const marta = await login('marta', '1111');
+
+  // Ve el código vigente del condominio (el de la demo).
+  const actual = await api('/api/admin/registro', { token: marta.token });
+  assert.equal(actual.status, 200);
+  assert.equal(actual.datos.codigo, 'AROMOS');
+
+  // Un guardia no puede verlo ni cambiarlo.
+  const pedro = await login('pedro', '2222');
+  const prohibido = await api('/api/admin/registro', { token: pedro.token });
+  assert.equal(prohibido.status, 403);
+
+  // Código con caracteres inválidos → 422.
+  const invalido = await api('/api/admin/registro', { metodo: 'PUT', token: marta.token, cuerpo: { codigo: 'los-aromos' } });
+  assert.equal(invalido.status, 422);
+
+  // Cambiarlo por uno personalizado (se normaliza a mayúsculas).
+  const cambio = await api('/api/admin/registro', { metodo: 'PUT', token: marta.token, cuerpo: { codigo: 'aromos7' } });
+  assert.equal(cambio.status, 200);
+  assert.equal(cambio.datos.codigo, 'AROMOS7');
+
+  // El código viejo ya no sirve para registrarse; el nuevo sí.
+  const conViejo = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'aromos', usuario: 'test1', pin: '1234', codigo: 'AROMOS' } });
+  assert.equal(conViejo.status, 403);
+  const conNuevo = await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId: 'aromos', usuario: 'test1', pin: '1234', codigo: 'AROMOS7' } });
+  assert.equal(conNuevo.status, 201);
+
+  // Generar al azar entrega un código legible y distinto.
+  const gen = await api('/api/admin/registro', { metodo: 'PUT', token: marta.token, cuerpo: { generar: true } });
+  assert.equal(gen.status, 200);
+  assert.match(gen.datos.codigo, /^[A-Z0-9]{4,12}$/);
+  assert.notEqual(gen.datos.codigo, 'AROMOS7');
+
+  // Restaurar el código de la demo y limpiar el guardia de prueba.
+  await api('/api/admin/registro', { metodo: 'PUT', token: marta.token, cuerpo: { codigo: 'AROMOS' } });
+  await api(`/api/admin/guardias/${conNuevo.datos.id}`, { metodo: 'DELETE', token: marta.token });
+});
+
 test('CU-12: la hoja de QR trae una imagen por punto', async () => {
   const { token } = await login('marta', '1111');
   const { status, datos } = await api('/api/admin/hoja-qr', { token });

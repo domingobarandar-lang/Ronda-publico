@@ -1,7 +1,7 @@
 {
   "name": "Rondas QR",
   "short_name": "Rondas",
-  "description": "Control de rondas de seguridad con QR — trabajador y administrador en una sola app",
+  "description": "Control de rondas de seguridad con QR — guardia y administrador en una sola app",
   "lang": "es",
   "id": "./",
   "scope": "./",

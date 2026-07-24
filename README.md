@@ -1,6 +1,6 @@
 # Rondas QR
 
-Control de rondas de seguridad con QR para condominios: reemplaza las chapitas físicas (iButton) + lectora por QR impresos y el teléfono del guardia. Una sola app instalable (PWA offline-first) con selector de perfil al entrar — **Soy trabajador** (la app del guardia) o **Soy administrador** (panel con informes y alertas). Usuarios de prueba: `trabajador`/5678 y `admin`/1234.
+Control de rondas de seguridad con QR para condominios: reemplaza las chapitas físicas (iButton) + lectora por QR impresos y el teléfono del guardia. Una sola app instalable (PWA offline-first) con selector de perfil al entrar — **Soy guardia** (la app del guardia, donde además puede crear su propio usuario) o **Soy administrador** (panel con informes y alertas). Usuarios de prueba: `guardia`/5678 y `admin`/1234.
 
 - **La app y cómo correrla**: [app/README.md](app/README.md) — `cd app && npm install && npm run demo`
 - **Qué se pidió y qué hace**: [BRIEF.md](BRIEF.md) · [SPEC.md](SPEC.md) · [QA.md](QA.md)

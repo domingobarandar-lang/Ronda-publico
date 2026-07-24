@@ -28,6 +28,32 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   const admin = [auth, soloAdmin];
   const miCondominio = req => req.usuario.condominioId;
 
+  // Alta de un guardia con validación de usuario/PIN. Compartido por el panel
+  // del administrador y el registro público (autoservicio del guardia).
+  // Devuelve { error, codigo } si no valida, o { guardia } si lo crea.
+  function nuevoGuardia({ condominioId, usuario, nombre, pin }) {
+    const nombreUsuario = String(usuario || '').toLowerCase().trim();
+    if (!/^[a-z0-9._-]{3,20}$/.test(nombreUsuario)) {
+      return { codigo: 422, error: 'Usuario inválido (3 a 20 caracteres: letras, números, punto o guión).' };
+    }
+    if (!/^\d{4,8}$/.test(String(pin || ''))) {
+      return { codigo: 422, error: 'El PIN debe tener entre 4 y 8 dígitos.' };
+    }
+    if (db.usuarios.some(u => u.usuario === nombreUsuario)) {
+      return { codigo: 409, error: 'Ese usuario ya existe. Elige otro.' };
+    }
+    const guardia = {
+      id: id(),
+      condominioId,
+      usuario: nombreUsuario,
+      nombre: String(nombre || '').trim() || nombreUsuario,
+      rol: 'guardia',
+      pinHash: hashPin(pin)
+    };
+    db.usuarios.push(guardia);
+    return { guardia };
+  }
+
   // ---------- Sesión ----------
 
   app.post('/api/login', (req, res) => {
@@ -52,6 +78,33 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     delete db.sesiones[req.token];
     store.guardar();
     res.json({ ok: true });
+  });
+
+  // ---------- Registro de guardias (autoservicio, sin administrador) ----------
+  // El guardia crea su propia cuenta desde la app: elige su condominio de la
+  // lista y define usuario + PIN. Queda guardado en la base como cualquier otro.
+
+  app.get('/api/condominios', (req, res) => {
+    res.json(db.condominios.map(c => ({ id: c.id, nombre: c.nombre })));
+  });
+
+  app.post('/api/registro', (req, res) => {
+    const { condominioId, usuario, nombre, pin, codigo } = req.body || {};
+    const condominio = db.condominios.find(c => c.id === condominioId);
+    if (!condominio) return res.status(422).json({ error: 'Elige tu condominio de la lista.' });
+    // El código del condominio verifica que quien se registra es un guardia real:
+    // lo entrega el administrador. Se compara sin distinguir mayúsculas/espacios.
+    const codigoDado = String(codigo || '').trim().toUpperCase();
+    if (!condominio.codigoRegistro) {
+      return res.status(403).json({ error: 'Este condominio todavía no permite crear cuentas. Pídele el código a tu administrador.' });
+    }
+    if (codigoDado !== condominio.codigoRegistro) {
+      return res.status(403).json({ error: 'El código del condominio no es correcto. Pídeselo a tu administrador.' });
+    }
+    const r = nuevoGuardia({ condominioId: condominio.id, usuario, nombre, pin });
+    if (r.error) return res.status(r.codigo).json({ error: r.error });
+    store.guardar();
+    res.status(201).json({ id: r.guardia.id, usuario: r.guardia.usuario, nombre: r.guardia.nombre });
   });
 
   // ---------- Guardia: paquete de rondas descargable ----------
@@ -202,6 +255,30 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Admin: guardias ----------
 
+  // Código de registro del condominio: el administrador lo ve, lo cambia o lo
+  // regenera, y se lo entrega a sus guardias para que creen su cuenta solos.
+  app.get('/api/admin/registro', ...admin, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req)) || {};
+    res.json({ codigo: condominio.codigoRegistro || null });
+  });
+
+  app.put('/api/admin/registro', ...admin, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    const cuerpo = req.body || {};
+    let codigo;
+    if (cuerpo.generar) {
+      codigo = codigoCorto(); // uno al azar, legible (sin 0/O/1/I)
+    } else {
+      codigo = String(cuerpo.codigo || '').trim().toUpperCase();
+      if (!/^[A-Z0-9]{4,12}$/.test(codigo)) {
+        return res.status(422).json({ error: 'El código debe tener de 4 a 12 letras o números (sin espacios ni símbolos).' });
+      }
+    }
+    condominio.codigoRegistro = codigo;
+    store.guardar();
+    res.json({ codigo });
+  });
+
   app.get('/api/admin/guardias', ...admin, (req, res) => {
     res.json(db.usuarios
       .filter(u => u.condominioId === miCondominio(req) && u.rol === 'guardia')
@@ -210,27 +287,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   app.post('/api/admin/guardias', ...admin, (req, res) => {
     const { usuario, nombre, pin } = req.body || {};
-    const nombreUsuario = String(usuario || '').toLowerCase().trim();
-    if (!/^[a-z0-9._-]{3,20}$/.test(nombreUsuario)) {
-      return res.status(422).json({ error: 'Usuario inválido (3 a 20 caracteres: letras, números, punto o guión).' });
-    }
-    if (!/^\d{4,8}$/.test(String(pin || ''))) {
-      return res.status(422).json({ error: 'El PIN debe tener entre 4 y 8 dígitos.' });
-    }
-    if (db.usuarios.some(u => u.usuario === nombreUsuario)) {
-      return res.status(409).json({ error: 'Ese usuario ya existe.' });
-    }
-    const guardia = {
-      id: id(),
-      condominioId: miCondominio(req),
-      usuario: nombreUsuario,
-      nombre: String(nombre || '').trim() || nombreUsuario,
-      rol: 'guardia',
-      pinHash: hashPin(pin)
-    };
-    db.usuarios.push(guardia);
+    const r = nuevoGuardia({ condominioId: miCondominio(req), usuario, nombre, pin });
+    if (r.error) return res.status(r.codigo).json({ error: r.error });
     store.guardar();
-    res.status(201).json({ id: guardia.id, usuario: guardia.usuario, nombre: guardia.nombre });
+    res.status(201).json({ id: r.guardia.id, usuario: r.guardia.usuario, nombre: r.guardia.nombre });
   });
 
   app.put('/api/admin/guardias/:id', ...admin, (req, res) => {

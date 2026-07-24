@@ -22,7 +22,7 @@
       <div class="logo-badge">🛡️</div>
       <h1>Rondas QR</h1>
       <p class="nota centrado">¿Cómo vas a entrar?</p>
-      <button id="btn-rol-trabajador" class="btn btn-principal btn-gigante">👷 Soy trabajador</button>
+      <button id="btn-rol-guardia" class="btn btn-principal btn-gigante">👷 Soy guardia</button>
       <button id="btn-rol-admin" class="btn btn-borde btn-gigante">🗂️ Soy administrador</button>
       <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>
       <p id="nota-instalar-ios" class="nota centrado oculta">
@@ -30,20 +30,49 @@
       </p>
     </section>
 
-    <!-- Login del trabajador -->
+    <!-- Login del guardia -->
     <section id="vista-login" class="vista oculta">
       <div class="logo-badge">👷</div>
-      <h1>Soy trabajador</h1>
+      <h1>Soy guardia</h1>
       <p class="nota">Necesitas conexión solo para entrar. La ronda funciona sin señal.</p>
       <label>Usuario
-        <input id="campo-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: trabajador">
+        <input id="campo-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: guardia">
       </label>
       <label>PIN
         <input id="campo-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
       </label>
       <button id="btn-login" class="btn btn-principal">Entrar</button>
       <p id="error-login" class="error oculta"></p>
+      <button id="btn-ir-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
       <button id="btn-volver-rol" class="btn btn-borde btn-chico btn-centrado">← Cambiar de perfil</button>
+    </section>
+
+    <!-- Registro del guardia (autoservicio) -->
+    <section id="vista-registro" class="vista oculta">
+      <div class="logo-badge">🆕</div>
+      <h1>Crear mi usuario</h1>
+      <p class="nota">Crea tu cuenta de guardia. La usarás para entrar cada vez.</p>
+      <label>Condominio donde trabajas
+        <select id="registro-condominio"></select>
+      </label>
+      <label>Código del condominio
+        <input id="registro-codigo" autocapitalize="characters" autocomplete="off" placeholder="te lo entrega tu administrador">
+      </label>
+      <label>Tu nombre
+        <input id="registro-nombre" autocomplete="name" autocapitalize="words" placeholder="ej: Pedro Soto">
+      </label>
+      <label>Usuario (con el que entrarás)
+        <input id="registro-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: pedro">
+      </label>
+      <label>PIN (entre 4 y 8 números)
+        <input id="registro-pin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="****">
+      </label>
+      <label>Repite el PIN
+        <input id="registro-pin2" type="password" inputmode="numeric" autocomplete="new-password" placeholder="****">
+      </label>
+      <button id="btn-registrar" class="btn btn-principal">Crear mi usuario y entrar</button>
+      <p id="error-registro" class="error oculta"></p>
+      <button id="btn-volver-login" class="btn btn-borde btn-chico btn-centrado">← Ya tengo usuario</button>
     </section>
 
     <!-- Inicio: rondas disponibles -->

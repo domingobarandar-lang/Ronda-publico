@@ -222,7 +222,27 @@ async function cargarPuntos() {
 
 // ---------- Guardias ----------
 
+async function cargarCodigoRegistro() {
+  try {
+    const { codigo } = await api('/api/admin/registro');
+    $('campo-codigo-registro').value = codigo || '';
+    $('estado-codigo').textContent = codigo
+      ? 'Código vigente. Compártelo solo con tus guardias.'
+      : 'Aún no hay código: escribe uno (o genéralo) y guárdalo para permitir el autoservicio.';
+  } catch { /* sesión caduca: render() ya redirige al login */ }
+}
+
+async function guardarCodigoRegistro(cuerpo, mensaje) {
+  try {
+    const { codigo } = await api('/api/admin/registro', { metodo: 'PUT', cuerpo });
+    $('campo-codigo-registro').value = codigo;
+    $('estado-codigo').textContent = 'Código vigente. Compártelo solo con tus guardias.';
+    aviso(mensaje);
+  } catch (err) { aviso(err.message, 'error'); }
+}
+
 async function cargarGuardias() {
+  await cargarCodigoRegistro();
   const guardias = await api('/api/admin/guardias');
   if (!guardias.length) {
     $('tabla-guardias').innerHTML = '<p class="nota">Aún no hay guardias registrados.</p>';
@@ -495,6 +515,10 @@ document.addEventListener('DOMContentLoaded', () => {
       cargarGuardias();
     } catch (err) { aviso(err.message, 'error'); }
   });
+  $('btn-guardar-codigo').addEventListener('click', () =>
+    guardarCodigoRegistro({ codigo: $('campo-codigo-registro').value }, 'Código guardado. Entrégaselo a tus guardias.'));
+  $('btn-generar-codigo').addEventListener('click', () =>
+    guardarCodigoRegistro({ generar: true }, 'Código nuevo generado. El anterior ya no sirve.'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('btn-push').addEventListener('click', alternarPush);
   $('btn-guardar-ronda').addEventListener('click', guardarRonda);

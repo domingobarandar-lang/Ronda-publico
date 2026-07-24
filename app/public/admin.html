@@ -61,6 +61,21 @@
 
       <div id="tab-guardias" class="tab oculta">
         <h2>Guardias</h2>
+        <div class="caja-config">
+          <p class="nota">
+            <strong>🔑 Código para que los guardias creen su cuenta solos:</strong>
+            entrégaselo a tus guardias. Con este código, cada uno crea su usuario desde la app
+            (👷 Soy guardia → 🆕 Crear mi usuario), sin que tú tengas que agregarlo aquí.
+            Si se filtra, genera uno nuevo y el anterior deja de servir.
+          </p>
+          <div class="fila-form">
+            <input id="campo-codigo-registro" placeholder="código del condominio" autocapitalize="characters" maxlength="12">
+            <button id="btn-guardar-codigo" class="btn btn-principal">Guardar código</button>
+            <button id="btn-generar-codigo" class="btn btn-borde">🎲 Generar al azar</button>
+          </div>
+          <p id="estado-codigo" class="nota"></p>
+        </div>
+        <p class="nota">O agrégalos tú mismo:</p>
         <form id="form-guardia" class="fila-form">
           <input id="guardia-usuario" placeholder="usuario (ej: pedro)" required>
           <input id="guardia-nombre" placeholder="Nombre completo">
@@ -108,7 +123,7 @@
         <div class="caja-config">
           <p class="nota">
             <strong>🔔 Avisos en este teléfono:</strong> te llega una notificación cada vez
-            que un trabajador termina una ronda sin escanear todos los puntos, con su nombre
+            que un guardia termina una ronda sin escanear todos los puntos, con su nombre
             y los puntos que faltaron. En iPhone, primero instala el panel en la pantalla de
             inicio (Compartir → Añadir a pantalla de inicio) y ábrelo desde ahí.
           </p>

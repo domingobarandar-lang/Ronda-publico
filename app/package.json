@@ -1,6 +1,6 @@
 {
   "name": "rondas-qr",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Control de rondas de seguridad con QR — PWA del guardia + panel del administrador",
   "scripts": {

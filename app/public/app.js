@@ -8,7 +8,7 @@
 const CLAVE = 'rondasqr';
 
 let estado = cargarEstado();
-let rolElegido = null;        // 'trabajador' cuando ya eligió perfil en esta visita
+let rolElegido = null;        // 'guardia' cuando ya eligió perfil en esta visita
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 let sincronizando = false;
 let stream = null;
@@ -127,25 +127,80 @@ function pintarConexion() {
 
 // ---------- Sesión ----------
 
+// Inicia sesión de guardia y descarga sus rondas. Compartido por el login y el
+// registro (que entra solo después de crear la cuenta). Lanza si algo falla.
+async function iniciarSesionGuardia(usuario, pin) {
+  const r = await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } });
+  if (r.rol === 'admin') {
+    location.href = '/admin.html';
+    return;
+  }
+  estado.sesion = r;
+  guardarEstado();
+  await bajarPaquete(true);
+  render();
+}
+
 async function entrar() {
   const usuario = $('campo-usuario').value.trim();
   const pin = $('campo-pin').value.trim();
   $('error-login').classList.add('oculta');
   if (!usuario || !pin) return;
   try {
-    const r = await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } });
-    if (r.rol === 'admin') {
-      location.href = '/admin.html';
-      return;
-    }
-    estado.sesion = r;
-    guardarEstado();
-    await bajarPaquete(true);
-    render();
+    await iniciarSesionGuardia(usuario, pin);
   } catch (err) {
     const el = $('error-login');
     el.textContent = err.status ? err.message : 'No se pudo conectar al servidor.';
     el.classList.remove('oculta');
+  }
+}
+
+// ---------- Registro (autoservicio del guardia) ----------
+
+function errorRegistro(texto) {
+  const el = $('error-registro');
+  el.textContent = texto;
+  el.classList.remove('oculta');
+}
+
+// Muestra la pantalla de registro y carga la lista de condominios en el selector.
+async function irARegistro() {
+  $('error-registro').classList.add('oculta');
+  const sel = $('registro-condominio');
+  sel.innerHTML = '<option value="">Cargando condominios…</option>';
+  mostrarVista('vista-registro');
+  try {
+    const condominios = await api('/api/condominios');
+    sel.innerHTML = condominios.length
+      ? condominios.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')
+      : '<option value="">(no hay condominios)</option>';
+  } catch {
+    sel.innerHTML = '<option value="">— sin conexión —</option>';
+    errorRegistro('Necesitas conexión para crear tu usuario.');
+  }
+}
+
+async function registrar() {
+  $('error-registro').classList.add('oculta');
+  const condominioId = $('registro-condominio').value;
+  const codigo = $('registro-codigo').value.trim();
+  const nombre = $('registro-nombre').value.trim();
+  const usuario = $('registro-usuario').value.trim().toLowerCase();
+  const pin = $('registro-pin').value.trim();
+  const pin2 = $('registro-pin2').value.trim();
+  if (!condominioId) return errorRegistro('Elige tu condominio.');
+  if (!codigo) return errorRegistro('Escribe el código del condominio (te lo entrega tu administrador).');
+  if (!/^[a-z0-9._-]{3,20}$/.test(usuario)) {
+    return errorRegistro('El usuario debe tener 3 a 20 caracteres: letras, números, punto o guión.');
+  }
+  if (!/^\d{4,8}$/.test(pin)) return errorRegistro('El PIN debe tener entre 4 y 8 números.');
+  if (pin !== pin2) return errorRegistro('Los dos PIN no coinciden.');
+  try {
+    await api('/api/registro', { metodo: 'POST', cuerpo: { condominioId, codigo, usuario, nombre, pin } });
+    aviso('Usuario creado. Entrando…', 'ok');
+    await iniciarSesionGuardia(usuario, pin);
+  } catch (err) {
+    errorRegistro(err.status ? err.message : 'No se pudo conectar al servidor.');
   }
 }
 
@@ -391,12 +446,12 @@ function cicloJsqr() {
 function render() {
   pintarConexion();
   if (!estado.sesion && !estado.paquete) {
-    // Sin sesión: primero el selector de rol; el login del trabajador después.
-    return mostrarVista(rolElegido === 'trabajador' ? 'vista-login' : 'vista-rol');
+    // Sin sesión: primero el selector de rol; el login del guardia después.
+    return mostrarVista(rolElegido === 'guardia' ? 'vista-login' : 'vista-rol');
   }
   if (!estado.sesion && estado.cola.length) {
     // Sesión caducada con cola pendiente: pedir login sin perder nada.
-    rolElegido = 'trabajador';
+    rolElegido = 'guardia';
     mostrarVista('vista-login');
     return;
   }
@@ -534,8 +589,8 @@ function volverAlInicio() {
 // ---------- Arranque ----------
 
 document.addEventListener('DOMContentLoaded', () => {
-  $('btn-rol-trabajador').addEventListener('click', () => {
-    rolElegido = 'trabajador';
+  $('btn-rol-guardia').addEventListener('click', () => {
+    rolElegido = 'guardia';
     render();
     $('campo-usuario').focus();
   });
@@ -544,6 +599,12 @@ document.addEventListener('DOMContentLoaded', () => {
     rolElegido = null;
     render();
   });
+
+  // Registro (autoservicio del guardia)
+  $('btn-ir-registro').addEventListener('click', irARegistro);
+  $('btn-registrar').addEventListener('click', registrar);
+  $('btn-volver-login').addEventListener('click', () => { rolElegido = 'guardia'; render(); });
+  $('registro-pin2').addEventListener('keydown', e => { if (e.key === 'Enter') registrar(); });
 
   // Instalación como app (Chrome/Edge disparan beforeinstallprompt; iOS va a mano).
   window.addEventListener('beforeinstallprompt', e => {
