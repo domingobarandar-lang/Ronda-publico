@@ -10,6 +10,8 @@ const { codigoCorto, id, payloadQR } = require('./lib/codigos');
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
+const correo = require('./lib/correo');
+const programador = require('./lib/programador');
 const { notificarAdmin } = require('./lib/notificar');
 const { crearPush } = require('./lib/push');
 
@@ -439,6 +441,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
   });
 
+  // Enviar el informe semanal por correo ahora mismo (para probar el envío o
+  // mandarlo a demanda). Usa INFORME_TO salvo que se pase otro destino.
+  app.post('/api/admin/informe-semanal/enviar', ...admin, async (req, res) => {
+    if (!correo.configurado()) {
+      return res.status(422).json({ error: 'El correo no está configurado todavía (faltan credenciales SMTP).' });
+    }
+    const { desde, hasta, to } = req.body || {};
+    const r = await correo.enviarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta, to });
+    if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
+    res.json({ ok: true, to: r.to, rango: r.datos.rango });
+  });
+
   // Cierre administrativo de una ronda que quedó abierta.
   app.post('/api/admin/ejecuciones/:id/cerrar', ...admin, async (req, res) => {
     const ejecucion = db.ejecuciones.find(e => e.id === req.params.id && e.condominioId === miCondominio(req));
@@ -513,6 +527,7 @@ if (require.main === module) {
     console.log(`  Notificaciones: ${modo}`);
     console.log(`  Base de datos: ${store.ruta}`);
   });
+  programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)
 }
 
 module.exports = { crearApp };
