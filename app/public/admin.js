@@ -193,15 +193,26 @@ async function cargarPuntos() {
     $('tabla-puntos').innerHTML = '<p class="nota">Aún no hay puntos. Agrega el primero arriba.</p>';
     return;
   }
+  // Tres estados posibles de verificación por punto (CU-19):
+  //   sin ubicación → no se verifica
+  //   exacta        → hay que estar sobre el punto (20 m)
+  //   por entrada   → punto bajo techo: basta haber pasado por la entrada
+  const verificacionTexto = p => {
+    if (p.lat == null) return '<span class="nota">sin verificar</span>';
+    const mapa = `<a href="https://maps.google.com/?q=${p.lat},${p.lon}" target="_blank">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</a>`;
+    return p.verificacion === 'anclaje'
+      ? `🏠 <strong>Por entrada</strong> · ${p.radioM || 40} m · ${p.ventanaMin || 15} min<br><span class="nota">${mapa}</span>`
+      : `📍 <strong>Exacta</strong> · ${p.radioM || 20} m<br><span class="nota">${mapa}</span>`;
+  };
   const filas = puntosCache.map(p => `
     <tr>
       <td>${esc(p.nombre)}</td>
       <td><code>${esc(p.codigoCorto)}</code></td>
-      <td>${p.lat != null
-        ? `<a href="https://maps.google.com/?q=${p.lat},${p.lon}" target="_blank">📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</a>`
-        : '<span class="nota">sin verificar</span>'}</td>
+      <td>${verificacionTexto(p)}</td>
       <td>
-        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}">📍 Fijar aquí</button>
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 Fijar aquí</button>
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="anclaje">🏠 Fijar entrada</button>
+        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-ajustar="${p.id}">Ajustar</button>` : ''}
         ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : ''}
         <button class="btn btn-borde btn-chico" data-renombrar="${p.id}">Renombrar</button>
         <button class="btn btn-peligro btn-chico" data-eliminar="${p.id}">Eliminar</button>
@@ -209,26 +220,71 @@ async function cargarPuntos() {
     </tr>`).join('');
   $('tabla-puntos').innerHTML = `
     <table>
-      <thead><tr><th>Punto</th><th>Código</th><th>Ubicación (verificación GPS)</th><th></th></tr></thead>
+      <thead><tr><th>Punto</th><th>Código</th><th>Verificación de presencia</th><th></th></tr></thead>
       <tbody>${filas}</tbody>
     </table>`;
   for (const btn of $('tabla-puntos').querySelectorAll('[data-ubicar]')) {
     btn.addEventListener('click', () => {
       const punto = puntosCache.find(p => p.id === btn.dataset.ubicar);
+      const anclaje = btn.dataset.modo === 'anclaje';
       if (!('geolocation' in navigator)) return aviso('Este navegador no entrega ubicación.', 'error');
-      if (!confirm(`Fijar la ubicación de "${punto.nombre}" en donde estás parado AHORA.\n\nHazlo desde un teléfono, de pie junto al punto. ¿Continuar?`)) return;
+      const pregunta = anclaje
+        ? `Fijar la ENTRADA de "${punto.nombre}" donde estás parado AHORA.\n\n`
+          + 'Úsalo para puntos bajo techo (subterráneos, salas de calderas, interiores) donde el GPS no llega.\n\n'
+          + 'Párate en el último lugar del recorrido donde el teléfono TODAVÍA tiene señal — la puerta del recinto o la rampa de bajada. '
+          + 'El guardia podrá marcar el punto si pasó por acá en los últimos minutos.\n\n¿Continuar?'
+        : `Fijar la ubicación EXACTA de "${punto.nombre}" donde estás parado AHORA.\n\n`
+          + 'Hazlo desde un teléfono, de pie junto al punto. El guardia solo podrá marcar estando encima.\n\n¿Continuar?';
+      if (!confirm(pregunta)) return;
       aviso('Obteniendo ubicación…');
       navigator.geolocation.getCurrentPosition(async pos => {
         try {
           await api(`/api/admin/puntos/${punto.id}`, {
             metodo: 'PUT',
-            cuerpo: { lat: pos.coords.latitude, lon: pos.coords.longitude }
+            cuerpo: {
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              verificacion: anclaje ? 'anclaje' : 'gps'
+            }
           });
-          aviso('Ubicación fijada: las marcas en este punto ahora se verifican por distancia.');
+          aviso(anclaje
+            ? 'Entrada fijada: este punto se marca habiendo pasado por acá hace poco.'
+            : 'Ubicación fijada: las marcas en este punto ahora se verifican por distancia.');
           cargarPuntos();
         } catch (err) { aviso(err.message, 'error'); }
       }, () => aviso('No se pudo obtener la ubicación (¿permiso denegado?).', 'error'),
         { enableHighAccuracy: true, timeout: 15000 });
+    });
+  }
+  for (const btn of $('tabla-puntos').querySelectorAll('[data-ajustar]')) {
+    btn.addEventListener('click', async () => {
+      const punto = puntosCache.find(p => p.id === btn.dataset.ajustar);
+      const anclado = punto.verificacion === 'anclaje';
+      const radio = prompt(
+        anclado
+          ? `Radio alrededor de la entrada de "${punto.nombre}", en metros.\n\nVacío = usar el valor por defecto (40 m).`
+          : `Radio alrededor de "${punto.nombre}", en metros.\n\nVacío = usar el valor por defecto (20 m).`,
+        punto.radioM || ''
+      );
+      if (radio === null) return;
+      let ventana = null;
+      if (anclado) {
+        ventana = prompt(
+          `¿Cuántos MINUTOS vale la señal tomada en la entrada de "${punto.nombre}"?\n\n`
+          + 'Es el tiempo máximo entre pasar por la entrada y marcar el punto. '
+          + 'Más bajo = control más estricto, pero más riesgo de rechazar marcas legítimas.\n\n'
+          + 'Vacío = usar el valor por defecto (15 min).',
+          punto.ventanaMin || ''
+        );
+        if (ventana === null) return;
+      }
+      try {
+        const cuerpo = { radioM: radio.trim() === '' ? null : radio.trim() };
+        if (anclado) cuerpo.ventanaMin = ventana.trim() === '' ? null : ventana.trim();
+        await api(`/api/admin/puntos/${punto.id}`, { metodo: 'PUT', cuerpo });
+        aviso('Umbrales actualizados. Los guardias los reciben al actualizar rondas.');
+        cargarPuntos();
+      } catch (err) { aviso(err.message, 'error'); }
     });
   }
   for (const btn of $('tabla-puntos').querySelectorAll('[data-desubicar]')) {

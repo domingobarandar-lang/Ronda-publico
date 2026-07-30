@@ -28,7 +28,8 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 
 - **PWA del guardia**: la ronda queda descargada en el teléfono; funciona sin señal (los escaneos se encolan y se sincronizan solos al volver la conexión). Escáner con la cámara (jsQR + BarcodeDetector) y entrada manual de respaldo con el código impreso bajo cada QR.
 - **Motor de rondas**: valida cada marca (condominio, ronda, duplicados), y al cierre evalúa puntos faltantes, orden (rondas estrictas) y duración máxima.
-- **Verificación de presencia por GPS** *(v1.1)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), el informe acusa las marcas hechas a más de 75 m ("⚠️ a X m del punto") y las marcas sin GPS. El GPS nunca bloquea una marca.
+- **Verificación de presencia por GPS** *(v1.1, bloqueante desde v1.9)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), **la app no deja marcar ese punto desde más de 20 m** ni sin señal GPS: le muestra al guardia a cuántos metros está y no encola nada. El servidor revalida con el mismo umbral. Umbrales ajustables por `.env`, ver tabla abajo.
+- **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos. Multi-condominio con aislamiento total.
@@ -49,6 +50,14 @@ Cubre los 14 casos de uso del SPEC y los adversariales (permisos cruzados entre 
 | `DB_PATH` | `data/db.json` | Ruta del archivo de datos (en Railway: `/data/db.json`, sobre el volumen persistente) |
 | `MOCK` | `true` | En `true`, los avisos al admin quedan solo en el panel/consola. En `false`, salen por Telegram |
 | `TELEGRAM_BOT_TOKEN` | — | Token del bot que envía los informes (necesario solo con `MOCK=false`) |
+| `GPS_RADIO_M` | `20` | Metros máximos entre el teléfono y el punto para poder marcar |
+| `GPS_MARGEN_MAX_M` | `0` | Cuánta imprecisión declarada por el GPS se perdona (se **suma** al radio). `0` = radio estricto |
+| `GPS_FRESCO_MS` | `20000` | Antigüedad máxima del fix GPS para poder marcar |
+| `GPS_BLOQUEA` | `1` | `1` = rechaza la marca lejos/sin GPS. `0` = la acepta y solo la deja observada en el informe (comportamiento v1.8) |
+| `GPS_ANCLA_RADIO_M` | `40` | Radio alrededor del ancla en los puntos con verificación por entrada |
+| `GPS_ANCLA_VENTANA_MIN` | `15` | Minutos que vale la señal tomada en la entrada |
+
+> Los umbrales de GPS viajan al teléfono en el paquete de rondas, así que basta cambiarlos en el servidor: la app se alinea al actualizar rondas, sin volver a desplegar nada. Si en terreno el bloqueo resulta demasiado duro (GPS con ±30-40 m de precisión junto a muros o torres), subir `GPS_RADIO_M` o dar aire con `GPS_MARGEN_MAX_M` antes de apagar `GPS_BLOQUEA`.
 
 Para activar Telegram: `MOCK=false`, token en `.env`, y en el panel (pestaña Avisos) guardar el `chat_id` del administrador (se obtiene cuando el admin le escribe `/start` al bot).
 

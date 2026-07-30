@@ -121,13 +121,33 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         nombre: r.nombre,
         ordenEstricto: Boolean(r.ordenEstricto),
         duracionMaxMin: r.duracionMaxMin || null,
-        puntos: motor.puntosDeRonda(db, r).map(p => ({
-          id: p.id, nombre: p.nombre, codigoCorto: p.codigoCorto, payload: payloadQR(p)
-        }))
+        // lat/lon y los umbrales de cada punto viajan al teléfono para que la app
+        // pueda verificar la presencia ANTES de marcar, también sin señal
+        // (CU-18/19). lat null = el administrador no fijó ubicación: no se
+        // verifica. verificacion 'anclaje' = la ubicación es la entrada.
+        puntos: motor.puntosDeRonda(db, r).map(p => {
+          const cfg = motor.configGps();
+          const { anclado, radioM, ventanaMs } = motor.umbralesDe(p, cfg);
+          return {
+            id: p.id,
+            nombre: p.nombre,
+            codigoCorto: p.codigoCorto,
+            payload: payloadQR(p),
+            lat: p.lat != null ? p.lat : null,
+            lon: p.lon != null ? p.lon : null,
+            verificacion: motor.modoVerificacion(p),
+            radioM: p.lat != null ? radioM : null,
+            ventanaMs: p.lat != null ? ventanaMs : null,
+            anclado
+          };
+        })
       }));
     res.json({
       generado: new Date().toISOString(),
       condominio: { id: condominio.id, nombre: condominio.nombre },
+      // Mismos umbrales que aplica el servidor: la app no puede quedar
+      // desalineada con el motor ni aceptar lo que el servidor va a rechazar.
+      gps: motor.configGps(),
       rondas
     });
   });
@@ -193,7 +213,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     if (!ejecucion) return;
     const { codigo, ts, offline, gps } = req.body || {};
     const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps });
-    if (r.error) return res.status(r.codigo).json({ error: r.error });
+    // presencia: cuando el rechazo es por GPS viaja el detalle (distancia y tope)
+    // para que la app pueda explicarle al guardia cuánto le falta acercarse.
+    if (r.error) return res.status(r.codigo).json({ error: r.error, presencia: r.presencia || null });
     store.guardar();
     res.json({
       duplicado: Boolean(r.duplicado),
@@ -228,12 +250,16 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.put('/api/admin/puntos/:id', ...admin, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
-    const { lat, lon, quitarUbicacion } = req.body || {};
+    const { lat, lon, quitarUbicacion, verificacion, radioM, ventanaMin } = req.body || {};
     const nombre = String((req.body || {}).nombre || '').trim();
     if (nombre) punto.nombre = nombre;
     if (quitarUbicacion) {
       punto.lat = null;
       punto.lon = null;
+      // Sin ubicación no hay modo ni umbrales que guardar.
+      delete punto.verificacion;
+      delete punto.radioM;
+      delete punto.ventanaMin;
     } else if (lat !== undefined || lon !== undefined) {
       const la = Number(lat);
       const lo = Number(lon);
@@ -243,6 +269,33 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       punto.lat = la;
       punto.lon = lo;
     }
+
+    // Modo de verificación (CU-19): 'gps' = la ubicación es el punto exacto;
+    // 'anclaje' = es la entrada al recinto, para puntos bajo techo. 'gps' no se
+    // guarda: es el default deducido de tener lat/lon.
+    if (verificacion !== undefined) {
+      if (!['gps', 'anclaje'].includes(verificacion)) {
+        return res.status(422).json({ error: 'Modo de verificación inválido.' });
+      }
+      if (verificacion === 'anclaje') punto.verificacion = 'anclaje';
+      else delete punto.verificacion;
+    }
+
+    // Umbrales propios del punto, para calibrar en terreno. null/0 vuelve al
+    // default del entorno.
+    for (const [campo, valor, max] of [['radioM', radioM, 500], ['ventanaMin', ventanaMin, 120]]) {
+      if (valor === undefined) continue;
+      if (valor === null || valor === '' || Number(valor) === 0) {
+        delete punto[campo];
+        continue;
+      }
+      const n = Number(valor);
+      if (!Number.isFinite(n) || n < 1 || n > max) {
+        return res.status(422).json({ error: `Valor inválido para ${campo} (1 a ${max}).` });
+      }
+      punto[campo] = Math.round(n);
+    }
+
     store.guardar();
     res.json(punto);
   });

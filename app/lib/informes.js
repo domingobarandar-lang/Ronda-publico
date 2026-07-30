@@ -27,6 +27,11 @@ function armarInforme(db, ejecucion) {
       offline: esc ? esc.offline : false,
       gps: esc ? esc.gps || null : null,
       distanciaM: esc && esc.distanciaM != null ? esc.distanciaM : null,
+      // anclado: la distancia es a la ENTRADA del recinto, no al punto. El
+      // informe lo dice explícito para que el administrador sepa que ahí la
+      // verificación es "pasó por la entrada", no "estuvo en el punto".
+      anclado: Boolean(esc && esc.anclado),
+      edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
       lejos: lejosIds.has(pid),
       faltante: !esc
     };
@@ -62,9 +67,15 @@ function informeTexto(inf) {
   lineas.push(`Inicio: ${hora(inf.inicio)} · Fin: ${hora(inf.fin)} · Duración: ${duracion}`);
   lineas.push('');
   for (const d of inf.detalle) {
-    lineas.push(d.faltante
-      ? `❌ ${d.orden}. ${d.nombre} — FALTANTE`
-      : `✅ ${d.orden}. ${d.nombre} — ${hora(d.hora)}${d.offline ? ' (offline)' : ''}${d.lejos ? ` ⚠️ a ${d.distanciaM} m del punto` : ''}`);
+    if (d.faltante) {
+      lineas.push(`❌ ${d.orden}. ${d.nombre} — FALTANTE`);
+      continue;
+    }
+    const marcas = [];
+    if (d.offline) marcas.push('(offline)');
+    if (d.lejos) marcas.push(`⚠️ a ${d.distanciaM} m ${d.anclado ? 'de la entrada' : 'del punto'}`);
+    else if (d.anclado) marcas.push('📍 por entrada');
+    lineas.push(`✅ ${d.orden}. ${d.nombre} — ${hora(d.hora)}${marcas.length ? ' ' + marcas.join(' ') : ''}`);
   }
   if (inf.evaluacion && inf.evaluacion.observaciones.length) {
     lineas.push('');

@@ -34,15 +34,21 @@ Tres piezas, una sola app Node:
 - **CU-12 Hoja de QR**: el admin genera una hoja imprimible con el QR de cada punto (+ código corto al pie) para pegar en los sectores.
 - **CU-13 Entrada manual de respaldo**: si la cámara falla o el QR está dañado, el guardia tipea el código corto de 6 caracteres impreso bajo el QR — misma validación que el escaneo.
 - **CU-14 Aislamiento multi-condominio**: usuarios, puntos, rondas e informes de un condominio jamás se ven ni se validan desde otro.
-- **CU-15 GPS en cada marca** *(v1.1)*: al marcar un punto, la app adjunta la ubicación GPS del teléfono (lat/lon/precisión) si está disponible. **El GPS nunca bloquea la marca**: sin señal GPS la marca vale igual y queda etiquetada "sin ubicación".
-- **CU-16 Verificación de presencia** *(v1.1)*: el administrador puede fijar la ubicación real de cada punto (desde su teléfono parado en el lugar, o quitarla). Si un punto tiene ubicación y la marca llegó con GPS, el servidor calcula la distancia: a más de 75 m (+ margen por precisión del GPS, tope 50 m) la marca queda **"lejos del punto"** — observación destacada en el informe y en el aviso al administrador. Marcas sin GPS sobre puntos georreferenciados también quedan observadas.
+- **CU-15 GPS en cada marca** *(v1.1)*: al marcar un punto, la app adjunta la ubicación GPS del teléfono (lat/lon/precisión) si está disponible. El fix debe ser reciente (20 s): con un radio de 20 m, una posición vieja ya no describe dónde está el guardia.
+- **CU-16 Verificación de presencia** *(v1.1, endurecida en v1.9)*: el administrador puede fijar la ubicación real de cada punto (desde su teléfono parado en el lugar, o quitarla). Si un punto tiene ubicación, el servidor calcula la distancia de cada marca: a más de **20 m** queda **"lejos del punto"** — observación destacada en el informe y en el aviso al administrador. Marcas sin GPS sobre puntos georreferenciados también quedan observadas. El radio es estricto: por defecto no se perdona la imprecisión declarada por el teléfono.
+- **CU-18 El GPS bloquea la marca** *(v1.9)*: sobre un punto **con ubicación fijada**, la app **no deja marcar** —ni por QR ni por código a mano— si el teléfono está a más de 20 m del punto o si no hay un fix GPS reciente. El guardia ve la distancia exacta que le falta acercarse. El bloqueo se aplica en la app (antes de encolar, funciona sin señal) y se revalida en el servidor con los mismos umbrales, que viajan en el paquete de rondas. Ajustable por entorno (`GPS_RADIO_M`, `GPS_MARGEN_MAX_M`, `GPS_FRESCO_MS`, `GPS_BLOQUEA`) sin tocar código.
+- **CU-19 Verificación por entrada (anclaje)** *(v1.10)*: para los puntos **bajo techo** —subterráneos, salas de calderas, interiores de torre— donde el GPS no llega y el radio de 20 m es inalcanzable. El administrador fija la **entrada** del recinto (o el último lugar del recorrido con señal) con "🏠 Fijar entrada" en vez de "📍 Fijar aquí". Ese punto se valida distinto: se acepta el fix que el teléfono tomó **hasta 15 min antes**, siempre que esté dentro de **40 m del ancla**. Prueba que el guardia pasó físicamente por la entrada hace poco, no que esté sobre el punto — es deliberadamente más débil que CU-18, y la alternativa real era no verificar nada. Cada punto puede tener su propio radio y su propia ventana (`radioM`, `ventanaMin`) para calibrar en terreno; los defaults son `GPS_ANCLA_RADIO_M` y `GPS_ANCLA_VENTANA_MIN`.
+  - Un punto anclado **exige** que la app informe la antigüedad del fix (`edadMs`, como duración para que el reloj del teléfono no la falsee). Sin ese dato la marca se rechaza: la edad es el control.
+  - El informe lo dice explícito (`anclado: true`, "📍 por entrada"): el administrador tiene que saber que ahí la verificación es más laxa.
+  - Queda un hueco conocido: el guardia puede quedarse en la entrada y escanear ahí la foto del QR de adentro. Se aprieta bajando la ventana; eliminarlo requiere NFC (v2).
 
 ## Reglas de negocio
 
 - **QR = punto**: payload `RQR:<condominioId>:<puntoId>:<codigoCorto>`. El código corto (6 caracteres, sin ambiguos 0/O/1/I) va impreso bajo el QR y sirve para la entrada manual.
 - **Ronda estricta**: el orden importa; marcar fuera de orden genera *observación* en el informe (el punto igual cuenta como hecho).
 - **Duración máxima**: excederla genera *observación*; no invalida la ronda.
-- **Duplicados**: gana el primer escaneo.
+- **Duplicados**: gana el primer escaneo. El reenvío de un punto ya marcado **no** se re-verifica por GPS: sale por duplicado antes, para que la cola offline siga siendo idempotente aunque el guardia ya se haya alejado.
+- **Presencia GPS**: en un punto con ubicación exacta, estar a más de 20 m (o sin fix reciente) **impide** la marca. En un punto anclado, basta haber estado a menos de 40 m de la entrada en los últimos 15 min. Un punto sin ubicación fijada no se verifica.
 - **Timestamps offline**: son los del teléfono; el informe los distingue con la marca `offline`.
 - **Estados del informe**: `Incompleta` si falta ≥1 punto; `Completa con observaciones` si no falta nada pero hubo orden violado o exceso de duración; `Completa` si todo limpio.
 
@@ -50,9 +56,9 @@ Tres piezas, una sola app Node:
 
 - `condominios`: id, nombre, adminTelegramChatId (opcional).
 - `usuarios`: id, condominioId, usuario, pinHash, rol (`guardia`|`admin`), nombre.
-- `puntos`: id, condominioId, nombre, codigoCorto.
+- `puntos`: id, condominioId, nombre, codigoCorto; `lat`/`lon` si tiene verificación de presencia; `verificacion` (`'anclaje'`, o ausente = ubicación exacta); `radioM`/`ventanaMin` opcionales por punto. El modo se **deduce**: sin lat/lon no se verifica, con lat/lon y sin `verificacion` es exacto. Así los puntos que ya existían siguen funcionando sin migración.
 - `rondas` (plantillas): id, condominioId, nombre, puntoIds (ordenados), ordenEstricto, duracionMaxMin.
-- `ejecuciones`: id, rondaId, condominioId, guardiaId, inicio, fin, estado, escaneos [{puntoId, ts, offline}], evaluacion {faltantes, fueraDeOrden, duracionMin, observaciones}.
+- `ejecuciones`: id, rondaId, condominioId, guardiaId, inicio, fin, estado, escaneos [{puntoId, ts, offline, gps {lat, lon, acc, edadMs}, distanciaM, anclado, edadGpsMs}], evaluacion {faltantes, fueraDeOrden, gpsLejos, sinGps, rafaga, duracionMin, observaciones, sospechas}.
 - Persistencia v1: archivo JSON con escritura atómica (cero dependencias nativas). Migración a SQLite/Postgres documentada para producción de volumen.
 
 ## Datos semilla (demo)

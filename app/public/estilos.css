@@ -191,6 +191,8 @@ select:focus {
 
 .error { color: var(--peligro); margin-top: 10px; font-size: 14px; text-align: center; }
 .nota { color: var(--texto-suave); font-size: var(--texto-s); }
+/* Nota que el guardia no puede pasar por alto: sin GPS no va a poder marcar. */
+.nota-alerta { color: var(--alerta-texto); }
 .grande { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
 .centrado { text-align: center; margin-top: 10px; }
 

@@ -38,6 +38,6 @@ Queda en `http://localhost:3737`. Ya hay un informe de ejemplo cargado (una rond
 
 ## Preguntas típicas
 
-- **"¿Y si el guardia le saca foto al QR y marca desde la caseta?"** — Igual que hoy con las chapitas, el sistema registra hora exacta y orden; los saltos de orden y tiempos raros quedan en observaciones. La versión 2 puede sumar verificación por GPS.
+- **"¿Y si el guardia le saca foto al QR y marca desde la caseta?"** — **No le va a funcionar.** Cada punto queda georreferenciado y la app no acepta la marca si el teléfono está a más de 20 metros del punto, ni si el guardia apaga la ubicación para evitarlo: le muestra a cuántos metros está y no registra nada. Además, las marcas hechas en ráfaga (varios puntos en segundos) dejan la ronda marcada como sospechosa y le avisan al administrador. Y para los puntos bajo techo —subterráneos, salas de calderas— donde el GPS no llega, se ancla el punto a la **entrada del recinto**: el guardia solo puede marcarlo si pasó por esa puerta en los últimos 15 minutos. Ahí la prueba es "pasó por la entrada", no "estuvo en el punto"; si el condominio necesita más que eso, se suma un tag NFC en el punto (hay que confirmar que los guardias usen Android).
 - **"¿Sirve para varios condominios?"** — Sí, cada uno con sus guardias, puntos e informes, totalmente separados (está probado).
 - **"¿Qué necesito para partir?"** — Lista de sectores, nómina de guardias y cómo son las rondas. El resto lo montamos nosotros.

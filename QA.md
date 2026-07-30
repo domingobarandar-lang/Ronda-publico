@@ -39,6 +39,41 @@
 - Cámara física del teléfono (getUserMedia) — el pipeline de decodificación quedó verificado con el round-trip anterior; la captura de cámara se prueba en el teléfono de José en la revisión (DEMO.md, paso 3).
 - Notificación Telegram real — queda en MOCK hasta que José apruebe activarla (token 2 del pool ya está en el `.env`, falta solo `MOCK=false` + chat_id del admin).
 
+## Actualización v1.9 — GPS bloqueante (2026-07-29)
+
+La suite quedó en **20/20 en verde**. Cambios de cobertura respecto a la tabla de arriba:
+
+| Escenario | Casos del SPEC | Resultado |
+|---|---|---|
+| El GPS **bloquea**: a 1,1 km, a 30 m, sin GPS y con GPS basura → `422`, con la distancia en el mensaje | CU-15, CU-16, CU-18 | ✅ |
+| A ~11 m del punto → marca aceptada, informe sin observaciones de GPS | CU-18 | ✅ |
+| Punto **sin** ubicación fijada → se marca sin GPS (válvula de escape para bajo techo) | CU-18 | ✅ |
+| Reenvío de un punto ya marcado desde lejos → duplicado idempotente, no se re-verifica | CU-07, CU-18 | ✅ |
+| El paquete del teléfono trae `lat/lon` por punto y los umbrales del servidor | CU-02, CU-18 | ✅ |
+| Marca que se cuela (ubicación fijada **después** de la ronda) → sigue saliendo `SOSPECHOSA` | CU-17 | ✅ |
+| `GPS_MARGEN_MAX_M` y `GPS_BLOQUEA=0` cambian el comportamiento sin tocar código | CU-18 | ✅ |
+
+**Pendiente de terreno** (no se puede automatizar): el radio de 20 m contra la precisión real de los teléfonos de los guardias. Es el objetivo de la prueba en el condominio de demo.
+
+## Actualización v1.10 — verificación por entrada (2026-07-29)
+
+**22/22 en verde.** Cubre los puntos bajo techo, donde el radio de 20 m es inalcanzable:
+
+| Escenario | Casos del SPEC | Resultado |
+|---|---|---|
+| Ancla en la entrada: fix de hace 4 min a 11 m → marca aceptada | CU-19 | ✅ |
+| A 35 m del ancla (dentro de los 40 m) → aceptada | CU-19 | ✅ |
+| Fix de hace 20 min (ventana de 15) → `422` "hace 20 min" | CU-19 | ✅ |
+| Marca desde 780 m con señal perfecta → `422` "de la entrada" | CU-19 | ✅ |
+| Ubicación apagada toda la ronda → `422` | CU-19 | ✅ |
+| App que no informa la antigüedad del fix → `422` (la edad **es** el control) | CU-19 | ✅ |
+| `radioM`/`ventanaMin` por punto mandan sobre los defaults; vaciarlos vuelve al default | CU-19 | ✅ |
+| Modo inválido y radio fuera de rango → `422` | CU-19 | ✅ |
+| El informe marca `anclado: true` y la distancia es a la entrada, no al punto | CU-09, CU-19 | ✅ |
+| Quitar la ubicación limpia también el modo y los umbrales | CU-19 | ✅ |
+
+**Pendiente de terreno**: dónde queda el ancla de cada punto de Condominio Piloto (se define caminando la ronda con el teléfono) y si 15 min es la ventana correcta para la caldera de la Torre 4.
+
 ## Bugs encontrados y corregidos durante QA
 
 - `npm test` con `node --test test/` no resuelve en Windows → script cambiado a `node --test` (autodescubre `test/`). Sin otros hallazgos: la suite pasó completa a la primera tras ese ajuste.

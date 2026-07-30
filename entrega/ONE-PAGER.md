@@ -12,7 +12,7 @@ Las rondas se controlan con botones físicos ("chapitas") y una lectora que hay 
 - **El teléfono en vez de la lectora**: el guardia escanea cada punto con una app simple, hecha para uso nocturno (pantalla oscura, botones grandes). Si un QR está dañado, tipea el código de respaldo.
 - **Funciona sin señal**: la ronda va descargada en el teléfono; las marcas se guardan y se envían solas al volver la conexión.
 - **Informe automático al cierre de cada ronda**: qué punto se marcó y a qué hora, cuáles faltaron, si se respetó el orden y cuánto demoró. Estado claro: Completa / Con observaciones / **INCOMPLETA**.
-- **Verificación de presencia por GPS**: cada marca registra dónde se hizo. Si alguien marca lejos del punto (por ejemplo, desde una foto del QR), el informe lo acusa con la distancia exacta.
+- **El QR solo se puede marcar estando ahí**: cada punto queda georreferenciado, y la app **no acepta la marca** si el teléfono está a más de 20 metros o si tiene la ubicación apagada. La foto del QR escaneada desde la caseta no sirve.
 - **Alerta inmediata si se saltó un punto**: en el panel y, si quiere, directo a su Telegram.
 - **Panel del administrador**: usted mismo administra guardias, puntos y rondas, e imprime los QR. Sin depender de nadie.
 

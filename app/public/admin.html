@@ -66,6 +66,12 @@
       <div id="tab-puntos" class="tab oculta">
         <h2>Puntos de control</h2>
         <p class="nota">Un punto = un QR pegado en un sector. <a href="hoja-qr.html" target="_blank">🖨️ Imprimir hoja de QR</a></p>
+        <div class="caja">
+          <strong>Verificación de presencia</strong> — que el guardia no pueda marcar sin estar ahí. Se fija <em>desde un teléfono, caminando la ronda</em>:
+          <br>📍 <strong>Fijar aquí</strong>: para puntos al aire libre. El guardia solo marca estando a menos de 20 m.
+          <br>🏠 <strong>Fijar entrada</strong>: para puntos bajo techo (subterráneos, salas de calderas, interiores) donde el GPS no llega. Se fija la puerta o el último lugar con señal, y el guardia puede marcar el punto si pasó por ahí en los últimos 15 min.
+          <br><span class="nota">Un punto sin ubicación no se verifica por GPS. "Ajustar" cambia el radio y los minutos de cada punto.</span>
+        </div>
         <form id="form-punto" class="fila-form">
           <input id="punto-nombre" placeholder="Nombre del punto (ej: Piscina)" required>
           <button class="btn btn-principal">Agregar punto</button>

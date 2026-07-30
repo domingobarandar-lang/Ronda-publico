@@ -16,22 +16,69 @@ let escaneando = false;
 let ultimoCodigoLeido = { valor: null, ts: 0 };
 let gpsWatchId = null;
 let gpsActual = null;
+let gpsMotivoFalla = null;
 
-// ---------- GPS (CU-15): se observa mientras hay ronda activa ----------
-// Nunca bloquea una marca: si no hay señal GPS, la marca vale igual.
+// ---------- GPS (CU-15 / CU-18): se observa mientras hay ronda activa ----------
+// Desde v1.9 el GPS SÍ bloquea. En un punto al que el administrador le fijó
+// ubicación, la app no deja marcar si el teléfono está a más del radio
+// configurado (20 m por defecto) o si no hay un fix reciente: la foto del QR
+// escaneada desde la caseta ya no entra. Los puntos SIN ubicación fijada —los de
+// bajo techo, donde el GPS no llega— se marcan igual que antes.
+
+// Umbrales que manda el servidor en el paquete. Los defaults calzan con
+// configGps() de lib/rondas.js para que un paquete viejo en caché no acepte
+// marcas que el servidor va a rechazar después.
+function cfgGps() {
+  const c = (estado.paquete && estado.paquete.gps) || {};
+  return {
+    radioOkM: Number.isFinite(c.radioOkM) ? c.radioOkM : 20,
+    margenMaxM: Number.isFinite(c.margenMaxM) ? c.margenMaxM : 0,
+    frescoMs: Number.isFinite(c.frescoMs) ? c.frescoMs : 20000,
+    bloquea: c.bloquea !== false
+  };
+}
+
+// Umbrales del punto (los calcula el servidor y viajan en el paquete). Un
+// paquete viejo en caché no los trae: se cae a la config general.
+function umbralesDe(punto) {
+  const cfg = cfgGps();
+  const anclado = punto.verificacion === 'anclaje';
+  return {
+    anclado,
+    radioM: Number.isFinite(punto.radioM) ? punto.radioM : cfg.radioOkM,
+    ventanaMs: Number.isFinite(punto.ventanaMs) ? punto.ventanaMs : cfg.frescoMs
+  };
+}
 
 function iniciarGps() {
-  if (gpsWatchId !== null || !('geolocation' in navigator)) return;
+  if (!('geolocation' in navigator)) {
+    gpsMotivoFalla = 'este teléfono no entrega ubicación';
+    return;
+  }
+  if (gpsWatchId !== null) return;
   gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
       gpsActual = {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude,
         acc: Math.round(pos.coords.accuracy || 0),
-        ts: Date.now()
+        // pos.timestamp es la hora REAL del fix según el sistema operativo. Usar
+        // Date.now() haría pasar por nuevo un fix cacheado que el SO acaba de
+        // entregar, y la antigüedad es justo el criterio de un punto anclado.
+        // Se acota a "no futuro" por si el reloj del teléfono va adelantado.
+        ts: Math.min(pos.timestamp || Date.now(), Date.now())
       };
+      gpsMotivoFalla = null;
+      pintarGps();
     },
-    () => {},
+    err => {
+      // 1 = PERMISSION_DENIED. Se distingue porque es el único caso que el
+      // guardia puede resolver solo (y el que usaría para saltarse el control).
+      gpsMotivoFalla = err && err.code === 1
+        ? 'falta el permiso de ubicación'
+        : 'no hay señal todavía';
+      pintarGps();
+    },
     { enableHighAccuracy: true, maximumAge: 15000, timeout: 12000 }
   );
 }
@@ -42,12 +89,87 @@ function detenerGps() {
   }
   gpsWatchId = null;
   gpsActual = null;
+  gpsMotivoFalla = null;
 }
 
-// Última posición si tiene menos de 1 minuto; si no, nada.
+// Último fix conocido con su antigüedad, sin filtrar. Quién puede usarlo y hasta
+// qué edad lo decide cada punto: 20 s en uno exacto, 15 min en uno anclado.
+function gpsUltimo() {
+  if (!gpsActual) return null;
+  return {
+    lat: gpsActual.lat,
+    lon: gpsActual.lon,
+    acc: gpsActual.acc,
+    edadMs: Math.max(0, Date.now() - gpsActual.ts)
+  };
+}
+
+// Fix reciente según la config general. Se usa para lo informativo (marcas en
+// puntos sin ubicación fijada) y para la línea de estado.
 function gpsFresco() {
-  if (!gpsActual || Date.now() - gpsActual.ts > 60000) return null;
-  return { lat: gpsActual.lat, lon: gpsActual.lon, acc: gpsActual.acc };
+  const g = gpsUltimo();
+  if (!g || g.edadMs > cfgGps().frescoMs) return null;
+  return g;
+}
+
+// Haversine en metros. Réplica deliberada de lib/rondas.js: la app tiene que
+// poder decidir sin conexión y public/ no comparte módulos con el servidor.
+function distanciaM(a, b) {
+  const rad = x => (x * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
+}
+
+function minutos(ms) {
+  const min = Math.round(ms / 60000);
+  return min >= 1 ? `${min} min` : `${Math.round(ms / 1000)} s`;
+}
+
+// Qué ubicación se adjunta a la marca. En un punto anclado sirve el último fix
+// aunque esté viejo: es precisamente el que tomó al pasar por la entrada, antes
+// de que el GPS se cortara adentro. En el resto, solo uno reciente.
+// edadMs viaja como duración, así el reenvío desde la cola offline horas después
+// sigue informando la misma antigüedad del momento del escaneo.
+function gpsParaMarca(punto) {
+  if (punto.lat != null && umbralesDe(punto).anclado) return gpsUltimo();
+  return gpsFresco();
+}
+
+// Espejo de verificarPresencia() de lib/rondas.js. null = el punto no tiene
+// ubicación fijada, no hay nada que verificar.
+function verificarPresencia(punto) {
+  if (punto.lat == null || punto.lon == null) return null;
+  const cfg = cfgGps();
+  const { anclado, radioM, ventanaMs } = umbralesDe(punto);
+  const g = gpsUltimo();
+  if (!g) {
+    return {
+      ok: false,
+      motivo: anclado
+        ? `📍 Sin ubicación (${gpsMotivoFalla || 'buscando señal'}): para "${punto.nombre}" el teléfono tiene que haber tomado señal en la entrada. Actívala antes de iniciar la ronda.`
+        : `📍 Sin ubicación (${gpsMotivoFalla || 'buscando señal'}): "${punto.nombre}" no se puede marcar hasta confirmar que estás ahí.`
+    };
+  }
+  if (g.edadMs > ventanaMs) {
+    return {
+      ok: false,
+      motivo: anclado
+        ? `📍 Tu última ubicación es de hace ${minutos(g.edadMs)} y el máximo para "${punto.nombre}" son ${minutos(ventanaMs)}. Sal a donde haya señal y vuelve a entrar.`
+        : `📍 Tu ubicación es de hace ${minutos(g.edadMs)}: hace falta una más reciente para marcar "${punto.nombre}".`
+    };
+  }
+  const d = distanciaM(g, punto);
+  const topeM = anclado ? radioM : radioM + Math.min(g.acc || 0, cfg.margenMaxM);
+  return {
+    ok: d <= topeM,
+    motivo: anclado
+      ? `📍 Estás a ${d} m de la entrada de "${punto.nombre}" (máximo ${topeM} m). Pasa por la entrada del recinto y vuelve a escanear.`
+      : `📍 Estás a ${d} m de "${punto.nombre}". Hay que estar a menos de ${topeM} m para marcar.`
+  };
 }
 
 // ---------- Estado persistente ----------
@@ -77,12 +199,12 @@ function mostrarVista(id) {
 }
 
 let avisoTimer = null;
-function aviso(texto, tipo = 'info') {
+function aviso(texto, tipo = 'info', ms = 3200) {
   const el = $('aviso');
   el.textContent = texto;
   el.className = `aviso aviso-${tipo}`;
   clearTimeout(avisoTimer);
-  avisoTimer = setTimeout(() => el.classList.add('oculta'), 3200);
+  avisoTimer = setTimeout(() => el.classList.add('oculta'), ms);
 }
 
 function hora(ts) {
@@ -275,8 +397,22 @@ function procesarCodigo(texto) {
     return;
   }
 
+  // Verificación de presencia BLOQUEANTE (CU-18). Mismo criterio que el servidor,
+  // aplicado antes de encolar: el guardia se entera al instante y la marca
+  // rechazada nunca entra a la cola offline. Cubre el escaneo por cámara y el
+  // código a mano — los dos pasan por acá, así no queda una puerta de atrás.
+  if (cfgGps().bloquea) {
+    const presencia = verificarPresencia(punto);
+    if (presencia && !presencia.ok) {
+      aviso(presencia.motivo, 'error', 6000);
+      navigator.vibrate && navigator.vibrate([80, 60, 80, 60, 80]);
+      pintarGps();
+      return;
+    }
+  }
+
   const ts = new Date().toISOString();
-  const gps = gpsFresco();
+  const gps = gpsParaMarca(punto);
   ejecucion.escaneos.push({ puntoId: punto.id, ts, offline: !navigator.onLine, gps });
   estado.cola.push({
     tipo: 'escaneo',
@@ -350,6 +486,14 @@ async function sincronizar() {
         } else if (err.status) {
           // El servidor rechazó el evento (p. ej. validación): no bloquear la cola.
           console.warn('Evento rechazado por el servidor:', evento, err.message);
+          // Una marca rechazada acá ya se le mostró como ✅ al guardia y no va a
+          // salir en el informe, así que hay que decírselo. Normalmente no pasa
+          // (la app aplica el mismo control antes de encolar); sí ocurre si el
+          // administrador movió la ubicación del punto mientras la ronda iba sin
+          // señal.
+          if (evento.tipo === 'escaneo') {
+            aviso(`El servidor rechazó una marca: ${err.message}`, 'error', 7000);
+          }
           estado.cola.shift();
           guardarEstado();
         } else {
@@ -508,6 +652,42 @@ function renderSync() {
   }
 }
 
+// Estado del GPS durante la ronda. Con el bloqueo activo el guardia NECESITA
+// ver esto: es la diferencia entre "puedo marcar" y "no me va a dejar".
+function pintarGps() {
+  const el = $('ronda-gps');
+  if (!el) return;
+  const cfg = cfgGps();
+  const ronda = rondaActual();
+  const conUbicacion = ronda ? ronda.puntos.filter(p => p.lat != null) : [];
+  const anclados = conUbicacion.filter(p => umbralesDe(p).anclado).length;
+  if (!cfg.bloquea || !conUbicacion.length) {
+    el.textContent = conUbicacion.length
+      ? ''
+      : 'Ningún punto de esta ronda tiene ubicación fijada: no se verifica por GPS.';
+    el.className = 'nota';
+    return;
+  }
+  const ultimo = gpsUltimo();
+  const detalleAnclados = anclados
+    ? ` · ${anclados} punto(s) bajo techo se marcan con la señal que tomaste en la entrada`
+    : '';
+  if (!ultimo) {
+    el.textContent = `📍 Sin ubicación (${gpsMotivoFalla || 'buscando señal'}): ${conUbicacion.length} punto(s) de esta ronda no se podrán marcar hasta que haya señal.`;
+    el.className = 'nota nota-alerta';
+    return;
+  }
+  if (ultimo.edadMs <= cfg.frescoMs) {
+    el.textContent = `📍 Ubicación activa (±${ultimo.acc != null ? ultimo.acc : '?'} m) · hay que estar a menos de ${cfg.radioOkM} m del punto${detalleAnclados}`;
+    el.className = 'nota';
+  } else {
+    // Señal perdida pero con fix guardado: es la situación normal bajo techo, y
+    // el guardia necesita saber cuánto le queda de ventana para los anclados.
+    el.textContent = `📍 Sin señal ahora · última ubicación hace ${minutos(ultimo.edadMs)}${anclados ? `, sirve para los ${anclados} punto(s) bajo techo` : ''}. Los puntos a cielo abierto necesitan señal fresca.`;
+    el.className = 'nota nota-alerta';
+  }
+}
+
 function renderRonda() {
   mostrarVista('vista-ronda');
   iniciarGps(); // cubre recarga de página con ronda activa
@@ -515,8 +695,9 @@ function renderRonda() {
   const ejecucion = estado.ejecucion;
   $('ronda-nombre').textContent = ronda.nombre;
   const hechos = ejecucion.escaneos.length;
-  $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}${gpsActual ? ' · 📍 GPS' : ''}`;
+  $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}`;
   $('ronda-progreso').textContent = `${hechos}/${ronda.puntos.length}`;
+  pintarGps();
 
   const lista = $('lista-puntos');
   lista.innerHTML = '';
@@ -658,6 +839,9 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
   window.addEventListener('offline', pintarConexion);
   setInterval(sincronizar, 4000);
+  // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
+  // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
+  setInterval(pintarGps, 3000);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
