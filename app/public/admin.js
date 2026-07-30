@@ -375,18 +375,21 @@ async function cargarRondas() {
   }
 }
 
+// Los puntos se escriben a mano: el atajo de "puntos ya creados" solo aparece
+// cuando queda alguno del condominio fuera de la secuencia.
 function pintarEditorRonda() {
   const disponibles = $('puntos-disponibles');
+  const restantes = puntosCache.filter(p => !secuencia.includes(p.id));
   disponibles.innerHTML = '';
-  for (const p of puntosCache) {
+  for (const p of restantes) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn-punto';
     btn.textContent = p.nombre;
-    btn.disabled = secuencia.includes(p.id);
     btn.addEventListener('click', () => { secuencia.push(p.id); pintarEditorRonda(); });
     disponibles.appendChild(btn);
   }
+  $('puntos-ya-creados').classList.toggle('oculta', !restantes.length);
   const ol = $('secuencia');
   ol.innerHTML = '';
   secuencia.forEach((pid, i) => {
@@ -396,8 +399,31 @@ function pintarEditorRonda() {
     li.querySelector('.quitar').addEventListener('click', () => { secuencia.splice(i, 1); pintarEditorRonda(); });
     ol.appendChild(li);
   });
-  if (!secuencia.length) ol.innerHTML = '<li class="nota vacio">Toca puntos de la izquierda para armar la secuencia.</li>';
+  if (!secuencia.length) ol.innerHTML = '<li class="nota vacio">Vacía: escribe el primer punto a la izquierda.</li>';
   $('btn-guardar-ronda').textContent = rondaEnEdicion ? 'Guardar cambios' : 'Guardar ronda';
+}
+
+// Escribir un punto a mano: si el nombre ya existe en el condominio se reutiliza
+// ese punto (para no duplicar QR); si no, se crea y queda listo para imprimir.
+async function agregarPuntoAMano() {
+  const campo = $('ronda-punto-nuevo');
+  const nombre = campo.value.trim();
+  if (!nombre) return;
+  const igual = (a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }) === 0;
+  const existente = puntosCache.find(p => igual(p.nombre, nombre));
+  try {
+    let punto = existente;
+    if (!punto) {
+      punto = await api('/api/admin/puntos', { metodo: 'POST', cuerpo: { nombre } });
+      puntosCache.push(punto);
+      aviso(`Punto "${punto.nombre}" creado. Reimprime la hoja de QR para pegarlo.`);
+    }
+    if (secuencia.includes(punto.id)) aviso(`"${punto.nombre}" ya está en la secuencia.`, 'error');
+    else secuencia.push(punto.id);
+    campo.value = '';
+    pintarEditorRonda();
+  } catch (err) { aviso(err.message, 'error'); }
+  campo.focus();
 }
 
 async function guardarRonda() {
@@ -421,6 +447,7 @@ function limpiarEditorRonda() {
   rondaEnEdicion = null;
   secuencia = [];
   $('ronda-nombre').value = '';
+  $('ronda-punto-nuevo').value = '';
   $('ronda-estricta').checked = false;
   $('ronda-duracion').value = '';
   $('ronda-duracion-min').value = '';
@@ -565,6 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('btn-push').addEventListener('click', alternarPush);
   $('btn-informe-semanal').addEventListener('click', descargarInformeSemanal);
+  $('form-punto-ronda').addEventListener('submit', e => { e.preventDefault(); agregarPuntoAMano(); });
   $('btn-guardar-ronda').addEventListener('click', guardarRonda);
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
   $('btn-guardar-chatid').addEventListener('click', async () => {

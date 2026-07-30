@@ -101,7 +101,7 @@
 
       <div id="tab-rondas" class="tab oculta">
         <h2>Rondas</h2>
-        <p class="nota">Define qué puntos se recorren y en qué orden. Toca los puntos disponibles para armar la secuencia.</p>
+        <p class="nota">Define qué puntos se recorren y en qué orden. Escribe cada punto con el nombre que uses en tu condominio.</p>
         <div class="editor-ronda">
           <input id="ronda-nombre" placeholder="Nombre de la ronda (ej: Nocturna completa)">
           <div class="fila-form">
@@ -116,8 +116,19 @@
           </p>
           <div class="dos-columnas">
             <div>
-              <h3>Puntos disponibles</h3>
-              <div id="puntos-disponibles" class="lista-botones"></div>
+              <h3>Puntos de la ronda</h3>
+              <form id="form-punto-ronda" class="fila-form">
+                <input id="ronda-punto-nuevo" placeholder="Escribe un punto y presiona Enter" autocomplete="off">
+                <button class="btn btn-borde">+ Agregar</button>
+              </form>
+              <p class="nota">
+                Cada nombre que escribas se crea como punto de control con su propio QR y se
+                suma al final de la secuencia. Si el nombre ya existe, se reutiliza ese punto.
+              </p>
+              <div id="puntos-ya-creados" class="oculta">
+                <h3>Puntos ya creados <span class="nota">(toca para sumarlos)</span></h3>
+                <div id="puntos-disponibles" class="lista-botones"></div>
+              </div>
             </div>
             <div>
               <h3>Secuencia de la ronda</h3>

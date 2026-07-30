@@ -225,6 +225,7 @@ td { font-variant-numeric: tabular-nums; }
 }
 .dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: var(--esp-4); margin: 10px 0; }
 @media (max-width: 600px) { .dos-columnas { grid-template-columns: 1fr; } }
+.editor-ronda h3 .nota { font-weight: 400; }
 .lista-botones { display: flex; flex-wrap: wrap; gap: var(--esp-2); }
 .btn-punto {
   padding: var(--esp-2) var(--esp-3);
