@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e0e13">
+  <title>Rondas QR — Fábrica</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="icono-panel.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <!-- Login de la operación (no es el panel del administrador) -->
+  <section id="vista-login" class="login oculta">
+    <div class="login-caja">
+      <h1>🏭 Fábrica</h1>
+      <p class="nota">Alta de condominios y de sus administradores</p>
+      <label>Usuario <input id="campo-usuario" autocapitalize="none" autocomplete="username"></label>
+      <label>PIN <input id="campo-pin" type="password" inputmode="numeric" autocomplete="current-password"></label>
+      <button id="btn-login" class="btn btn-principal">Entrar</button>
+      <p id="error-login" class="error oculta"></p>
+      <p class="nota volver-rol">
+        Esta pantalla es solo para la operación. Los administradores entran por
+        <a href="/panel">el panel</a>.
+      </p>
+    </div>
+  </section>
+
+  <section id="vista-fabrica" class="oculta">
+    <header class="barra">
+      <div>
+        <strong>🏭 Rondas QR — Fábrica</strong>
+        <span id="texto-sesion" class="nota"></span>
+      </div>
+      <button id="btn-salir" class="btn btn-borde btn-chico">Salir</button>
+    </header>
+
+    <main>
+      <h2>Dar de alta un condominio</h2>
+      <div class="caja-config">
+        <p class="nota">
+          Con el nombre y el correo ya queda listo: el código de registro para los
+          guardias se genera solo, y el condominio aparece de inmediato en el
+          selector de tu panel para armarle los puntos y la ronda. El administrador
+          no necesita cuenta si solo va a recibir el informe por correo.
+        </p>
+        <label>Nombre del condominio
+          <input id="alta-nombre" placeholder="ej: Condominio Portal Norte">
+        </label>
+        <div class="fila-form">
+          <input id="alta-correos" placeholder="Correo(s) del informe, separados por comas">
+        </div>
+        <details>
+          <summary class="nota">Darle además una cuenta de panel al cliente (casi nunca)</summary>
+          <p class="nota">
+            ⚠️ Cualquier cuenta de panel ve <strong>todos</strong> los condominios, no solo
+            el suyo. Créala únicamente si ese cliente va a operar su propio panel.
+          </p>
+          <div class="fila-form">
+            <input id="alta-usuario" autocapitalize="none" placeholder="Usuario (ej: ana-portal)">
+            <input id="alta-pin" inputmode="numeric" placeholder="PIN inicial (4-8 dígitos)">
+            <button id="btn-pin-azar" class="btn btn-borde btn-chico" type="button">🎲 Generar PIN</button>
+          </div>
+        </details>
+        <div class="fila-form">
+          <button id="btn-alta" class="btn btn-principal">Crear condominio</button>
+        </div>
+        <div id="alta-resultado" class="oculta"></div>
+      </div>
+
+      <h2>Condominios</h2>
+      <p id="estado-correo" class="nota"></p>
+      <div id="lista-condominios"></div>
+    </main>
+  </section>
+
+  <div id="aviso" class="aviso oculta"></div>
+  <script src="fabrica.js"></script>
+</body>
+</html>

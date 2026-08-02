@@ -12,6 +12,7 @@ const { armarInforme, informeTexto } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
 const correo = require('./lib/correo');
 const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
+const fabrica = require('./lib/fabrica');
 const programador = require('./lib/programador');
 const { notificarAdmin } = require('./lib/notificar');
 const { crearPush } = require('./lib/push');
@@ -31,10 +32,48 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // teléfono y la que el administrador guarda. La app instalada arranca en
   // /admin.html (start_url del panel.webmanifest), así que acá solo se redirige.
   app.get('/panel', (req, res) => res.redirect(302, '/admin.html'));
+  // Pantalla de la operación (alta de condominios). No se enlaza desde ninguna
+  // parte de la app: se entra por esta dirección y detrás hay login con rol.
+  app.get('/fabrica', (req, res) => res.redirect(302, '/fabrica.html'));
 
   const auth = autenticar(store);
   const admin = [auth, soloAdmin];
-  const miCondominio = req => req.usuario.condominioId;
+
+  // Sobre qué condominio trabaja esta petición.
+  //
+  // El GUARDIA queda siempre amarrado al suyo, pase lo que pase en la cabecera:
+  // su paquete de rondas lleva los payloads de los QR, así que dejarlo pedir
+  // otro condominio sería entregarle los códigos del vecino. Ese aislamiento es
+  // el que sostiene el antifraude y no se toca.
+  //
+  // El ADMINISTRADOR, en cambio, puede pararse en cualquier condominio: el panel
+  // manda el elegido en `x-condominio`. Es una decisión de producto tomada a
+  // sabiendas (v1.12) para que la operación pueda ir condominio por condominio
+  // fijando las ubicaciones de los puntos sin cambiar de cuenta. El costo es
+  // explícito: entre administradores ya NO hay aislamiento — cualquiera de ellos
+  // ve los informes, guardias y códigos de registro de todos. Si algún día vuelve
+  // a haber clientes con panel propio, esto se restringe al rol de la operación.
+  const miCondominio = req => {
+    if (req.usuario.rol !== 'admin') return req.usuario.condominioId;
+    const pedido = String(req.headers['x-condominio'] || '').trim();
+    if (pedido && db.condominios.some(c => c.id === pedido)) return pedido;
+    return req.usuario.condominioId;
+  };
+
+  // Rol 'fabrica': el único que crea condominios y cuentas de administrador.
+  // No pertenece a ningún condominio, así que NO pasa por soloAdmin y no puede
+  // tocar los datos de nadie (informes, puntos, rondas, guardias).
+  function soloFabrica(req, res, next) {
+    if (req.usuario.rol !== 'fabrica') return res.status(403).json({ error: 'Solo para la fábrica.' });
+    next();
+  }
+  const deFabrica = [auth, soloFabrica];
+  const ayudantes = { hashPin, verificarPin, id, codigoCorto };
+
+  // La cuenta de fábrica se crea (o se recupera) desde el entorno al arrancar:
+  // FABRICA_USUARIO + FABRICA_PIN. Sin script de alta y sin PIN escrito en git.
+  const estadoFabrica = fabrica.asegurarFabrica(db, process.env, ayudantes);
+  if (estadoFabrica.creada || estadoFabrica.actualizada) store.guardar();
 
   // Alta de un guardia con validación de usuario/PIN. Compartido por el panel
   // del administrador y el registro público (autoservicio del guardia).
@@ -64,12 +103,48 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Sesión ----------
 
+  // Límite de intentos de login. El PIN es de 4 a 8 dígitos y la app está en
+  // internet: sin esto, probar 10.000 PIN de 4 dígitos es cuestión de minutos.
+  // Se cuenta por usuario + IP; 10 fallos seguidos bloquean 15 minutos y un
+  // acierto limpia la cuenta. Vive en memoria: un redespliegue lo reinicia (para
+  // fuerza bruta sostenida haría falta llevarlo a la base).
+  const MAX_INTENTOS = 10;
+  const BLOQUEO_MS = 15 * 60 * 1000;
+  const intentos = new Map();
+
+  function estadoIntentos(clave) {
+    const registro = intentos.get(clave);
+    if (!registro) return null;
+    if (registro.hasta && registro.hasta <= Date.now()) { intentos.delete(clave); return null; }
+    return registro;
+  }
+
+  function anotarFallo(clave) {
+    const registro = estadoIntentos(clave) || { fallos: 0, hasta: 0 };
+    registro.fallos++;
+    if (registro.fallos >= MAX_INTENTOS) registro.hasta = Date.now() + BLOQUEO_MS;
+    intentos.set(clave, registro);
+    // Poda barata para que el mapa no crezca sin límite con IPs al azar.
+    if (intentos.size > 5000) {
+      for (const [k, v] of intentos) if (!v.hasta || v.hasta <= Date.now()) intentos.delete(k);
+    }
+  }
+
   app.post('/api/login', (req, res) => {
     const { usuario, pin } = req.body || {};
-    const u = db.usuarios.find(x => x.usuario === String(usuario || '').toLowerCase().trim());
+    const nombreUsuario = String(usuario || '').toLowerCase().trim();
+    const clave = `${req.ip}|${nombreUsuario}`;
+    const bloqueo = estadoIntentos(clave);
+    if (bloqueo && bloqueo.hasta) {
+      const minutos = Math.max(1, Math.ceil((bloqueo.hasta - Date.now()) / 60000));
+      return res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${minutos} minuto(s) y vuelve a probar.` });
+    }
+    const u = db.usuarios.find(x => x.usuario === nombreUsuario);
     if (!u || !verificarPin(pin, u.pinHash)) {
+      anotarFallo(clave);
       return res.status(401).json({ error: 'Usuario o PIN incorrectos.' });
     }
+    intentos.delete(clave);
     const token = crearSesion(db, u);
     store.guardar();
     const condominio = db.condominios.find(c => c.id === u.condominioId) || {};
@@ -157,7 +232,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
-  // Permisos sobre una ejecución: el guardia dueño, o un admin del mismo condominio.
+  // Permisos sobre una ejecución: el guardia dueño, o cualquier administrador
+  // (desde v1.12 los administradores trabajan sobre todos los condominios; ver
+  // miCondominio). Un guardia sigue sin poder tocar la ronda de otro.
   function ejecucionAutorizada(req, res) {
     const ejecucion = db.ejecuciones.find(e => e.id === req.params.id);
     if (!ejecucion) {
@@ -165,8 +242,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       return null;
     }
     const esDueno = ejecucion.guardiaId === req.usuario.id;
-    const esAdminDelCondominio = req.usuario.rol === 'admin' && req.usuario.condominioId === ejecucion.condominioId;
-    if (!esDueno && !esAdminDelCondominio) {
+    const esAdmin = req.usuario.rol === 'admin';
+    if (!esDueno && !esAdmin) {
       res.status(403).json({ error: 'Esta ronda no te pertenece.' });
       return null;
     }
@@ -233,6 +310,19 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     res.json(await cerrarYNotificar(ejecucion, { fin: (req.body || {}).fin }));
+  });
+
+  // ---------- Admin: en qué condominio se está parado ----------
+
+  // Los condominios entre los que puede moverse el panel, y cuál está activo
+  // según la cabecera que mandó. El selector del panel se arma con esto.
+  app.get('/api/admin/condominios', ...admin, (req, res) => {
+    res.json({
+      activo: miCondominio(req),
+      condominios: db.condominios
+        .map(c => ({ id: c.id, nombre: c.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+    });
   });
 
   // ---------- Admin: puntos ----------
@@ -595,6 +685,130 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.delete('/api/admin/push/suscribir', ...admin, (req, res) => {
     push.desuscribir(String((req.body || {}).endpoint || ''));
     res.json({ ok: true });
+  });
+
+  // ---------- Fábrica: alta de condominios y de sus administradores ----------
+  // Solo para la operación (rol 'fabrica', pantalla /fabrica). Es el único lugar
+  // de la app que crea condominios y cuentas con rol 'admin'.
+
+  app.get('/api/fabrica/condominios', ...deFabrica, (req, res) => {
+    const cuenta = (lista, cid) => lista.filter(x => x.condominioId === cid).length;
+    res.json({
+      envioActivo: correo.configurado(),
+      respaldo: normalizarCorreos(process.env.INFORME_TO)[0] || null,
+      condominios: db.condominios.map(c => ({
+        id: c.id,
+        nombre: c.nombre,
+        codigoRegistro: c.codigoRegistro || null,
+        correosInforme: normalizarCorreos(c.correosInforme),
+        administradores: db.usuarios
+          .filter(u => u.condominioId === c.id && u.rol === 'admin')
+          .map(u => ({ id: u.id, usuario: u.usuario, nombre: u.nombre })),
+        guardias: db.usuarios.filter(u => u.condominioId === c.id && u.rol === 'guardia').length,
+        puntos: cuenta(db.puntos, c.id),
+        rondas: cuenta(db.rondas, c.id),
+        // Para ver de un vistazo si el condominio está andando o quedó a medias.
+        ultimaRonda: db.ejecuciones.filter(e => e.condominioId === c.id)
+          .map(e => e.inicio).sort().slice(-1)[0] || null
+      }))
+    });
+  });
+
+  // Alta de un condominio: nombre, código de registro y correos del informe.
+  // Sin cuenta de panel, salvo que se pidan adminUsuario + adminPin: la operación
+  // entra con su propia cuenta y lo elige en el selector (v1.12).
+  app.post('/api/fabrica/condominios', ...deFabrica, (req, res) => {
+    const r = fabrica.altaCondominio(db, req.body || {}, ayudantes);
+    if (r.error) return res.status(r.codigo || 422).json({ error: r.error });
+    store.guardar();
+    console.log(`[fabrica] alta de "${r.condominio.nombre}" (${r.condominio.id}) por ${req.usuario.usuario}`);
+    res.status(201).json({
+      condominio: {
+        id: r.condominio.id,
+        nombre: r.condominio.nombre,
+        codigoRegistro: r.condominio.codigoRegistro,
+        correosInforme: r.condominio.correosInforme
+      },
+      admin: r.admin ? { id: r.admin.id, usuario: r.admin.usuario, nombre: r.admin.nombre } : null,
+      pin: r.pin
+    });
+  });
+
+  // Cuenta de panel para un condominio, para el caso excepcional de un cliente
+  // que quiera operar el suyo. Ojo: desde la v1.12 cualquier cuenta de
+  // administrador ve TODOS los condominios (ver miCondominio arriba).
+  app.post('/api/fabrica/condominios/:id/administradores', ...deFabrica, (req, res) => {
+    const cuerpo = req.body || {};
+    const r = fabrica.nuevoAdmin(db, {
+      condominioId: req.params.id,
+      usuario: cuerpo.usuario,
+      nombre: cuerpo.nombre,
+      pin: cuerpo.pin
+    }, ayudantes);
+    if (r.error) return res.status(r.codigo || 422).json({ error: r.error });
+    store.guardar();
+    res.status(201).json({ admin: { id: r.admin.id, usuario: r.admin.usuario, nombre: r.admin.nombre }, pin: r.pin });
+  });
+
+  // Correos del informe de cualquier condominio: si el administrador solo recibe
+  // el correo y no entra al panel, los carga la fábrica.
+  app.put('/api/fabrica/condominios/:id/correos', ...deFabrica, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === req.params.id);
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    const r = fabrica.validarCorreos((req.body || {}).correos);
+    if (r.error) return res.status(422).json({ error: r.error });
+    condominio.correosInforme = r.correos;
+    store.guardar();
+    res.json({ correos: condominio.correosInforme });
+  });
+
+  // Cambiar el PIN de un administrador (el admin no puede cambiarse el suyo).
+  app.put('/api/fabrica/administradores/:id/pin', ...deFabrica, (req, res) => {
+    const usuario = db.usuarios.find(u => u.id === req.params.id && u.rol === 'admin');
+    if (!usuario) return res.status(404).json({ error: 'Ese administrador no existe.' });
+    const p = fabrica.validarPin((req.body || {}).pin);
+    if (p.error) return res.status(422).json({ error: p.error });
+    usuario.pinHash = hashPin(p.pin);
+    // Las sesiones abiertas con el PIN viejo se cierran.
+    for (const [token, sesion] of Object.entries(db.sesiones || {})) {
+      if (sesion.usuarioId === usuario.id) delete db.sesiones[token];
+    }
+    store.guardar();
+    res.json({ ok: true, usuario: usuario.usuario, pin: p.pin });
+  });
+
+  // Quitar una cuenta de panel. Importa desde la v1.12: como cualquier cuenta
+  // 'admin' ve todos los condominios, cada una que sobra (la de una demo, la de
+  // un cliente que solo recibe el informe) es otra llave que abre todo. No se
+  // deja borrar la última: sin ninguna cuenta 'admin' no se puede entrar al panel.
+  app.delete('/api/fabrica/administradores/:id', ...deFabrica, (req, res) => {
+    const usuario = db.usuarios.find(u => u.id === req.params.id && u.rol === 'admin');
+    if (!usuario) return res.status(404).json({ error: 'Ese administrador no existe.' });
+    if (db.usuarios.filter(u => u.rol === 'admin').length <= 1) {
+      return res.status(409).json({ error: 'Es la última cuenta de panel: si la borras, nadie puede entrar al panel. Crea otra primero.' });
+    }
+    db.usuarios = db.usuarios.filter(u => u.id !== usuario.id);
+    for (const [token, sesion] of Object.entries(db.sesiones || {})) {
+      if (sesion.usuarioId === usuario.id) delete db.sesiones[token];
+    }
+    store.guardar();
+    console.log(`[fabrica] cuenta de panel "${usuario.usuario}" eliminada por ${req.usuario.usuario}`);
+    res.json({ ok: true, usuario: usuario.usuario });
+  });
+
+  // Enviar el informe de un condominio ahora mismo, para probar que el correo
+  // llega antes de esperar al lunes.
+  app.post('/api/fabrica/condominios/:id/informe-prueba', ...deFabrica, async (req, res) => {
+    const condominio = db.condominios.find(c => c.id === req.params.id);
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    if (!correo.configurado()) {
+      return res.status(422).json({ error: 'El envío por correo no está configurado en el servidor (falta RESEND_API_KEY).' });
+    }
+    const destinos = correosDelCondominio(condominio, process.env.INFORME_TO);
+    if (!destinos.length) return res.status(422).json({ error: 'Ese condominio no tiene correos cargados.' });
+    const r = await correo.enviarInforme(db, { condominioIds: [condominio.id], to: destinos });
+    if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
+    res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   });
 
   // Chat id de Telegram del administrador (para pasar de mock a real).

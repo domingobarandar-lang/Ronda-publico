@@ -29,9 +29,20 @@ function aviso(texto, tipo = 'ok') {
   avisoTimer = setTimeout(() => el.classList.add('oculta'), 3000);
 }
 
+// Condominio sobre el que está trabajando el panel. Vive dentro de la sesión
+// guardada para que informe.html y hoja-qr.html —que abren en otra pestaña— lean
+// el mismo y no impriman los QR del condominio equivocado.
+function condominioActivo() {
+  if (!sesion) return null;
+  return (sesion.condominioActivo && sesion.condominioActivo.id) ||
+    (sesion.condominio && sesion.condominio.id) || null;
+}
+
 async function api(ruta, opciones = {}) {
   const cabeceras = { 'content-type': 'application/json' };
   if (sesion) cabeceras.authorization = `Bearer ${sesion.token}`;
+  const activo = condominioActivo();
+  if (activo) cabeceras['x-condominio'] = activo;
   const resp = await fetch(ruta, {
     method: opciones.metodo || 'GET',
     headers: cabeceras,
@@ -67,6 +78,11 @@ async function entrar() {
       metodo: 'POST',
       cuerpo: { usuario: $('campo-usuario').value, pin: $('campo-pin').value }
     });
+    if (r.rol === 'fabrica') {
+      // La cuenta de la operación tiene su propia pantalla (alta de condominios).
+      location.href = '/fabrica';
+      return;
+    }
     if (r.rol !== 'admin') {
       $('error-login').innerHTML =
         'Este panel es solo para administradores. Los guardias entran por ' +
@@ -131,7 +147,9 @@ async function descargarInformeSemanal() {
   btn.disabled = true; btn.textContent = 'Generando…';
   try {
     const resp = await fetch(`/api/admin/informe-semanal.docx?desde=${desde}&hasta=${hasta}`, {
-      headers: { authorization: `Bearer ${sesion.token}` }
+      // No pasa por api() porque baja un .docx, así que la cabecera del
+      // condominio activo se pone a mano.
+      headers: { authorization: `Bearer ${sesion.token}`, 'x-condominio': condominioActivo() || '' }
     });
     if (!resp.ok) {
       const d = await resp.json().catch(() => ({}));
@@ -642,6 +660,45 @@ async function cargarAvisos() {
     </div>`).join('');
 }
 
+// ---------- Selector de condominio ----------
+
+// Carga los condominios en el selector de la barra. Si el guardado ya no existe
+// (lo borraron desde la fábrica), se cae al primero de la lista.
+async function cargarSelectorCondominios() {
+  const sel = $('selector-condominio');
+  let datos;
+  try {
+    datos = await api('/api/admin/condominios');
+  } catch {
+    sel.innerHTML = `<option>${esc((sesion.condominio && sesion.condominio.nombre) || '—')}</option>`;
+    return;
+  }
+  const lista = datos.condominios || [];
+  sel.innerHTML = lista.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('');
+  const elegido = lista.some(c => c.id === condominioActivo())
+    ? condominioActivo()
+    : (datos.activo || (lista[0] && lista[0].id));
+  sel.value = elegido;
+  const nombre = (lista.find(c => c.id === elegido) || {}).nombre || '';
+  sesion.condominioActivo = { id: elegido, nombre };
+  guardarSesion();
+}
+
+// Cambiar de condominio recarga la pestaña en la que está: todo lo que se ve
+// —informes, puntos, guardias, rondas, avisos— es de un condominio a la vez.
+function cambiarCondominio() {
+  const sel = $('selector-condominio');
+  sesion.condominioActivo = {
+    id: sel.value,
+    nombre: sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : ''
+  };
+  guardarSesion();
+  limpiarEditorRonda();
+  const activa = document.querySelector('.pestana.activa');
+  mostrarTab(activa ? activa.dataset.tab : 'informes');
+  aviso(`Trabajando en ${sesion.condominioActivo.nombre}.`);
+}
+
 // ---------- Render y arranque ----------
 
 function render() {
@@ -652,14 +709,14 @@ function render() {
   }
   $('vista-login').classList.add('oculta');
   $('vista-panel').classList.remove('oculta');
-  $('texto-condominio').textContent = ` · ${sesion.condominio.nombre}`;
-  mostrarTab('informes');
+  cargarSelectorCondominios().finally(() => mostrarTab('informes'));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   $('btn-login').addEventListener('click', entrar);
   $('campo-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('btn-salir').addEventListener('click', salir);
+  $('selector-condominio').addEventListener('change', cambiarCondominio);
   for (const p of document.querySelectorAll('.pestana')) {
     p.addEventListener('click', () => mostrarTab(p.dataset.tab));
   }

@@ -111,6 +111,19 @@ input:focus, select:focus {
   background: var(--panel);
   border-bottom: 1px solid var(--borde);
 }
+/* Selector de condominio: manda sobre todo lo que muestra el panel, así que va
+   en la barra, pegado a la marca y siempre a la vista. */
+.barra-titulo { display: flex; align-items: center; gap: var(--esp-4); flex-wrap: wrap; }
+.selector-condominio { display: flex; align-items: center; gap: var(--esp-2); margin: 0; }
+.selector-condominio select {
+  width: auto;
+  min-width: 180px;
+  max-width: 60vw;
+  margin-top: 0;
+  padding: 6px var(--esp-3);
+  font-size: var(--texto-m);
+  font-weight: 600;
+}
 .pestanas {
   display: flex;
   gap: var(--esp-1);

@@ -1,6 +1,6 @@
 {
   "name": "rondas-qr",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "description": "Control de rondas de seguridad con QR — app del guardia + app del panel del administrador",
   "scripts": {

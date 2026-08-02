@@ -28,7 +28,12 @@
       const id = new URLSearchParams(location.search).get('id');
       const sesion = JSON.parse(localStorage.getItem('rondasqr-admin') || 'null');
       if (!id || !sesion) { cont.innerHTML = '<p class="nota">Abre este informe desde el panel del administrador.</p>'; return; }
-      const resp = await fetch('/api/admin/informes/' + id, { headers: { authorization: 'Bearer ' + sesion.token } });
+      // Mismo condominio que el panel (el informe se busca dentro de ese).
+      const activo = (sesion.condominioActivo && sesion.condominioActivo.id) ||
+        (sesion.condominio && sesion.condominio.id) || '';
+      const resp = await fetch('/api/admin/informes/' + id, {
+        headers: { authorization: 'Bearer ' + sesion.token, ...(activo ? { 'x-condominio': activo } : {}) }
+      });
       if (!resp.ok) { cont.innerHTML = '<p class="nota">No se pudo cargar el informe (¿sesión caducada?).</p>'; return; }
       const inf = await resp.json();
 

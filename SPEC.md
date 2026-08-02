@@ -15,8 +15,9 @@ Tres piezas, una sola app Node:
 ## Actores
 
 - **Guardia**: usuario con PIN; ejecuta rondas escaneando QR.
-- **Administrador**: usuario con PIN; configura su condominio y recibe informes.
-- Cada usuario pertenece a **un** condominio. Una instalación sirve a varios condominios sin mezclarlos.
+- **Administrador**: usuario con PIN; configura los condominios y recibe informes. Desde la v1.12 el panel lo operan **solo la operación y su equipo**: una cuenta alcanza para todos los condominios (CU-22). Los administradores de los condominios no entran al panel — reciben el informe semanal por correo (CU-20).
+- **Fábrica** *(v1.11)*: la operación dando de alta condominios desde `/fabrica`. Es el único rol que **no** pertenece a ningún condominio y, justamente por eso, no puede ver los datos de ninguno.
+- Cada **guardia** pertenece a **un** condominio y no sale de ahí. Una instalación sirve a varios condominios: los datos de cada uno están separados, pero el panel los recorre todos.
 
 ## Casos de uso (verificables)
 
@@ -33,7 +34,7 @@ Tres piezas, una sola app Node:
 - **CU-11 Panel admin**: alta/edición de puntos, guardias y rondas del condominio; listado de informes con estado visible de un vistazo.
 - **CU-12 Hoja de QR**: el admin genera una hoja imprimible con el QR de cada punto (+ código corto al pie) para pegar en los sectores.
 - **CU-13 Entrada manual de respaldo**: si la cámara falla o el QR está dañado, el guardia tipea el código corto de 6 caracteres impreso bajo el QR — misma validación que el escaneo.
-- **CU-14 Aislamiento multi-condominio**: usuarios, puntos, rondas e informes de un condominio jamás se ven ni se validan desde otro.
+- **CU-14 Aislamiento del guardia** *(hasta v1.11 era aislamiento total; ver CU-22)*: un guardia jamás ve ni valida nada de otro condominio — ni rondas, ni puntos, ni los payloads de los QR, aunque su app pida otro. Ese encierro es el que sostiene el antifraude y no se negocia. **Entre administradores el aislamiento se levantó en la v1.12**: cualquier cuenta `admin` trabaja sobre cualquier condominio.
 - **CU-15 GPS en cada marca** *(v1.1)*: al marcar un punto, la app adjunta la ubicación GPS del teléfono (lat/lon/precisión) si está disponible. El fix debe ser reciente (20 s): con un radio de 20 m, una posición vieja ya no describe dónde está el guardia.
 - **CU-16 Verificación de presencia** *(v1.1, endurecida en v1.9)*: el administrador puede fijar la ubicación real de cada punto (desde su teléfono parado en el lugar, o quitarla). Si un punto tiene ubicación, el servidor calcula la distancia de cada marca: a más de **20 m** queda **"lejos del punto"** — observación destacada en el informe y en el aviso al administrador. Marcas sin GPS sobre puntos georreferenciados también quedan observadas. El radio es estricto: por defecto no se perdona la imprecisión declarada por el teléfono.
 - **CU-18 El GPS bloquea la marca** *(v1.9)*: sobre un punto **con ubicación fijada**, la app **no deja marcar** —ni por QR ni por código a mano— si el teléfono está a más de 20 m del punto o si no hay un fix GPS reciente. El guardia ve la distancia exacta que le falta acercarse. El bloqueo se aplica en la app (antes de encolar, funciona sin señal) y se revalida en el servidor con los mismos umbrales, que viajan en el paquete de rondas. Ajustable por entorno (`GPS_RADIO_M`, `GPS_MARGEN_MAX_M`, `GPS_FRESCO_MS`, `GPS_BLOQUEA`) sin tocar código.
@@ -41,6 +42,16 @@ Tres piezas, una sola app Node:
   - Un punto anclado **exige** que la app informe la antigüedad del fix (`edadMs`, como duración para que el reloj del teléfono no la falsee). Sin ese dato la marca se rechaza: la edad es el control.
   - El informe lo dice explícito (`anclado: true`, "📍 por entrada"): el administrador tiene que saber que ahí la verificación es más laxa.
   - Queda un hueco conocido: el guardia puede quedarse en la entrada y escanear ahí la foto del QR de adentro. Se aprieta bajando la ventana; eliminarlo requiere NFC (v2).
+- **CU-20 Destinatarios del informe semanal** *(v1.8, por destinatario en v1.11)*: cada condominio guarda a quién le llega su informe semanal (`correosInforme`, uno o varios). Lo edita el administrador desde el panel, o la operación desde la fábrica. El envío del lunes se agrupa **por destinatario**: quien administra varios condominios recibe **un solo correo** con un `.docx` por condominio, y nunca los de otro administrador. Un condominio sin correo no se envía (salvo el respaldo `INFORME_TO`), y la semana enviada queda registrada por destinatario para no repetir tras un reinicio.
+- **CU-21 Alta de condominios (fábrica)** *(v1.11)*: la operación crea desde `/fabrica` un condominio nuevo con su código de registro y sus correos de informe, sin scripts ni despliegues. El id sale del nombre (sin tildes ni eñes, único) y el código de registro de los guardias se genera solo. El condominio queda operable de inmediato desde el selector del panel (CU-22).
+  - **No se crea cuenta de panel** *(v1.12)*: como cualquier cuenta `admin` abre todos los condominios, una por condominio no aporta nada y multiplica las llaves. Se crea solo si se piden explícitamente usuario y PIN, para el caso de un cliente que vaya a operar su propio panel.
+  - La fábrica también carga los correos del informe de cualquier condominio, cambia el PIN de una cuenta de panel (cerrando sus sesiones abiertas), **quita** cuentas de panel —nunca la última, o nadie podría entrar— y manda un informe de prueba.
+  - El rol `fabrica` **no pertenece a ningún condominio**: no puede ver informes, puntos, rondas ni guardias de nadie, y ningún administrador puede crear condominios ni cuentas.
+  - El login admite 10 intentos fallidos por usuario e IP y luego bloquea 15 minutos: el PIN es de 4 a 8 dígitos y la app está expuesta en internet.
+- **CU-22 Un panel para todos los condominios** *(v1.12)*: el panel trae un selector de condominio y todo lo que muestra y edita es del que esté elegido (el elegido viaja en la cabecera `x-condominio`); pedir uno que no existe cae en el propio del usuario. Permite recorrer condominio por condominio fijando las ubicaciones de los puntos con una sola cuenta, sin cerrar sesión. **Costo explícito**: entre administradores ya no hay aislamiento (ver CU-14). El guardia no participa de esto: su condominio se ignora de la cabecera y queda amarrado al suyo.
+- **CU-22 El panel trabaja sobre cualquier condominio** *(v1.12)*: el panel tiene un **selector de condominio** en la barra, y todo lo que muestra —informes, puntos, guardias, rondas, avisos, hoja de QR— es del que esté elegido. Lo pide en la cabecera `x-condominio`; el servidor la acepta solo si el rol es `admin` y el condominio existe (si no, se cae al condominio de la cuenta). Nació de una necesidad de terreno: fijar las ubicaciones GPS de los puntos condominio por condominio, caminando cada uno, sin andar cambiando de cuenta.
+  - **Decisión explícita**: con esto **desaparece el aislamiento entre administradores** — cualquier cuenta `admin` ve los informes, guardias y códigos de registro de todos los condominios. Vale mientras los condominios sean de la operación; el día que un cliente tenga panel propio, esta capacidad se restringe a un rol de operación.
+  - Lo que **no** cambia: el **guardia** sigue encerrado en su condominio. La cabecera no le sirve — si le sirviera, se bajaría los payloads de los QR del condominio vecino y se caería el antifraude entero.
 
 ## Reglas de negocio
 

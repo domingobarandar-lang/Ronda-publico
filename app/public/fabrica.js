@@ -1,0 +1,283 @@
+// Fábrica: alta de condominios y de sus cuentas de administrador.
+// Pantalla de la operación, aparte del panel del administrador: acá se crean los
+// condominios (lo único que no se puede hacer desde el panel) y se cargan los
+// correos del informe semanal de cada uno.
+'use strict';
+
+const $ = id => document.getElementById(id);
+const CLAVE_SESION = 'rondas-qr-fabrica';
+
+let sesion = null;
+let avisoTimer;
+
+try { sesion = JSON.parse(localStorage.getItem(CLAVE_SESION) || 'null'); } catch { sesion = null; }
+
+function guardarSesion() {
+  if (sesion) localStorage.setItem(CLAVE_SESION, JSON.stringify(sesion));
+  else localStorage.removeItem(CLAVE_SESION);
+}
+
+function aviso(texto, tipo = 'ok') {
+  const el = $('aviso');
+  el.textContent = texto;
+  el.className = `aviso aviso-${tipo}`;
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => el.classList.add('oculta'), 4000);
+}
+
+function esc(texto) {
+  const div = document.createElement('div');
+  div.textContent = String(texto == null ? '' : texto);
+  return div.innerHTML;
+}
+
+function fecha(ts) {
+  return ts ? new Date(ts).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+}
+
+async function api(ruta, opciones = {}) {
+  const cabeceras = { 'content-type': 'application/json' };
+  if (sesion) cabeceras.authorization = `Bearer ${sesion.token}`;
+  const resp = await fetch(ruta, {
+    method: opciones.metodo || 'GET',
+    headers: cabeceras,
+    body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : undefined
+  });
+  const datos = await resp.json().catch(() => ({}));
+  if (resp.status === 401) {
+    sesion = null;
+    guardarSesion();
+    render();
+    throw new Error(datos.error || 'Sesión caducada.');
+  }
+  if (!resp.ok) throw new Error(datos.error || `Error HTTP ${resp.status}`);
+  return datos;
+}
+
+// ---------- Login ----------
+
+async function entrar() {
+  $('error-login').classList.add('oculta');
+  try {
+    const r = await api('/api/login', {
+      metodo: 'POST',
+      cuerpo: { usuario: $('campo-usuario').value, pin: $('campo-pin').value }
+    });
+    if (r.rol !== 'fabrica') {
+      $('error-login').innerHTML = 'Esta cuenta no es de la fábrica. Los administradores entran por <a href="/panel">el panel</a>.';
+      $('error-login').classList.remove('oculta');
+      return;
+    }
+    sesion = r;
+    guardarSesion();
+    $('campo-pin').value = '';
+    render();
+  } catch (err) {
+    $('error-login').textContent = err.message || 'No se pudo conectar.';
+    $('error-login').classList.remove('oculta');
+  }
+}
+
+function salir() {
+  api('/api/logout', { metodo: 'POST' }).catch(() => {});
+  sesion = null;
+  guardarSesion();
+  render();
+}
+
+// ---------- Alta ----------
+
+function pinAlAzar() {
+  const d = new Uint8Array(8);
+  crypto.getRandomValues(d);
+  return [...d].map(n => n % 10).join('');
+}
+
+async function darDeAlta() {
+  const btn = $('btn-alta');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/fabrica/condominios', {
+      metodo: 'POST',
+      cuerpo: {
+        nombre: $('alta-nombre').value,
+        // Van solo si se abrió el bloque opcional: vacíos = sin cuenta de panel.
+        adminUsuario: $('alta-usuario').value,
+        adminPin: $('alta-pin').value,
+        correos: $('alta-correos').value
+      }
+    });
+    // Si se creó cuenta, el PIN se muestra UNA vez: no se puede volver a leer
+    // (queda hasheado). Si se pierde, se cambia desde la ficha del condominio.
+    const credenciales = r.admin
+      ? `Panel: ${location.origin}/panel
+Usuario: ${esc(r.admin.usuario)}
+PIN: ${esc(r.pin)}
+`
+      : '';
+    $('alta-resultado').className = 'caja-config';
+    $('alta-resultado').innerHTML = `
+      <h3>✅ ${esc(r.condominio.nombre)} creado</h3>
+      <p class="nota">${r.admin
+        ? 'Anota esto ahora: el PIN no se puede volver a ver.'
+        : 'Ya aparece en el selector de tu panel para armarle los puntos y la ronda.'}</p>
+      <pre id="alta-credenciales">${credenciales}Código de registro para los guardias: ${esc(r.condominio.codigoRegistro)}
+Informe semanal a: ${r.condominio.correosInforme.join(', ') || '(sin correo todavía)'}</pre>
+      <button id="btn-copiar" class="btn btn-borde btn-chico" type="button">📋 Copiar</button>`;
+    $('btn-copiar').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('alta-credenciales').textContent);
+        aviso('Credenciales copiadas.');
+      } catch { aviso('Cópialas a mano: el navegador no dio permiso.', 'error'); }
+    });
+    $('alta-nombre').value = $('alta-usuario').value = $('alta-pin').value = $('alta-correos').value = '';
+    aviso(`${r.condominio.nombre} creado.`);
+    cargar();
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Lista de condominios ----------
+
+function ficha(c) {
+  // Cada cuenta de panel abre TODOS los condominios (v1.12), así que la que
+  // sobra se quita: la lista es también un inventario de llaves.
+  const admins = c.administradores.length
+    ? c.administradores.map(a => `
+        <div class="fila-form">
+          <span class="nota"><strong>${esc(a.usuario)}</strong> · ${esc(a.nombre)}</span>
+          <input class="pin-nuevo" data-admin="${esc(a.id)}" inputmode="numeric" placeholder="PIN nuevo (4-8 dígitos)">
+          <button class="btn btn-borde btn-chico" data-accion="pin" data-admin="${esc(a.id)}">Cambiar PIN</button>
+          <button class="btn btn-peligro btn-chico" data-accion="quitar-admin" data-admin="${esc(a.id)}" data-usuario="${esc(a.usuario)}">Quitar</button>
+        </div>`).join('')
+    : '<p class="nota">Sin cuenta de panel propia — se administra desde tu cuenta con el selector. Así conviene.</p>';
+
+  return `
+    <div class="aviso-tarjeta" data-condominio="${esc(c.id)}">
+      <h3>${esc(c.nombre)}</h3>
+      <p class="nota">
+        id <code>${esc(c.id)}</code> · código de registro <strong>${esc(c.codigoRegistro || '—')}</strong> ·
+        ${c.puntos} punto(s) · ${c.rondas} ronda(s) · ${c.guardias} guardia(s) ·
+        última ronda: ${esc(fecha(c.ultimaRonda))}
+      </p>
+
+      <div class="fila-form">
+        <input class="correos" value="${esc(c.correosInforme.join(', '))}" placeholder="Correo(s) del informe, separados por comas">
+        <button class="btn btn-principal btn-chico" data-accion="correos">Guardar correos</button>
+        <button class="btn btn-borde btn-chico" data-accion="prueba">Enviar informe de prueba</button>
+      </div>
+      ${c.correosInforme.length ? '' : '<p class="nota rojo">Sin correo cargado no se manda el informe del lunes.</p>'}
+
+      <p class="nota" style="margin-top:14px"><strong>Cuentas de panel</strong></p>
+      ${admins}
+
+      <details>
+        <summary class="nota">Agregar una cuenta de panel</summary>
+        <div class="fila-form">
+          <input class="admin-usuario" autocapitalize="none" placeholder="Usuario">
+          <input class="admin-pin" inputmode="numeric" placeholder="PIN inicial">
+          <button class="btn btn-borde btn-chico" data-accion="nuevo-admin">Agregar</button>
+        </div>
+      </details>
+    </div>`;
+}
+
+async function cargar() {
+  try {
+    const { condominios, envioActivo, respaldo } = await api('/api/fabrica/condominios');
+    $('estado-correo').textContent = envioActivo
+      ? `Envío por correo activo. Sale cada lunes a las 8 (hora de Chile).${respaldo ? ` Respaldo del servidor: ${respaldo}.` : ''}`
+      : 'Ojo: el envío por correo está en pausa (falta RESEND_API_KEY en el servidor).';
+    $('estado-correo').className = envioActivo ? 'nota' : 'nota rojo';
+    if (!condominios.length) {
+      $('lista-condominios').innerHTML = '<p class="nota">Todavía no hay condominios. Crea el primero arriba.</p>';
+      return;
+    }
+    // Inventario de llaves: cada cuenta de panel abre todos los condominios, así
+    // que conviene tener a la vista cuántas hay dando vueltas.
+    const cuentas = condominios.flatMap(c => c.administradores.map(a => a.usuario));
+    const alerta = cuentas.length > 1
+      ? `<p class="nota rojo">⚠️ Hay ${cuentas.length} cuentas de panel (${cuentas.join(', ')}) y
+         <strong>cada una ve todos los condominios</strong>. Si solo operas tú, deja únicamente la tuya
+         y quita el resto con "Quitar".</p>`
+      : '';
+    $('lista-condominios').innerHTML = alerta + condominios.map(ficha).join('');
+  } catch (err) {
+    if (sesion) aviso(err.message, 'error');
+  }
+}
+
+// Un solo listener para toda la lista: las fichas se vuelven a pintar seguido.
+async function accionEnLista(e) {
+  const btn = e.target.closest('button[data-accion]');
+  if (!btn) return;
+  const tarjeta = btn.closest('[data-condominio]');
+  const id = tarjeta.dataset.condominio;
+  btn.disabled = true;
+  try {
+    if (btn.dataset.accion === 'correos') {
+      const { correos } = await api(`/api/fabrica/condominios/${id}/correos`, {
+        metodo: 'PUT', cuerpo: { correos: tarjeta.querySelector('.correos').value }
+      });
+      aviso(correos.length ? `Informe semanal a ${correos.join(' y ')}.` : 'Sin correos: ese condominio no se enviará.');
+      cargar();
+    } else if (btn.dataset.accion === 'prueba') {
+      const r = await api(`/api/fabrica/condominios/${id}/informe-prueba`, { metodo: 'POST', cuerpo: {} });
+      aviso(`Enviado a ${r.to} (${r.rango}).`);
+    } else if (btn.dataset.accion === 'nuevo-admin') {
+      const r = await api(`/api/fabrica/condominios/${id}/administradores`, {
+        metodo: 'POST',
+        cuerpo: {
+          usuario: tarjeta.querySelector('.admin-usuario').value,
+          pin: tarjeta.querySelector('.admin-pin').value
+        }
+      });
+      aviso(`Admin ${r.admin.usuario} creado con PIN ${r.pin}. Anótalo.`);
+      cargar();
+    } else if (btn.dataset.accion === 'quitar-admin') {
+      const quien = btn.dataset.usuario;
+      if (!confirm(`¿Quitar la cuenta de panel "${quien}"?\n\nPierde el acceso de inmediato. Los datos del condominio (puntos, rondas, informes, guardias) no se tocan.`)) return;
+      const r = await api(`/api/fabrica/administradores/${btn.dataset.admin}`, { metodo: 'DELETE' });
+      aviso(`Cuenta ${r.usuario} eliminada.`);
+      cargar();
+    } else if (btn.dataset.accion === 'pin') {
+      const campo = tarjeta.querySelector(`.pin-nuevo[data-admin="${btn.dataset.admin}"]`);
+      const r = await api(`/api/fabrica/administradores/${btn.dataset.admin}/pin`, {
+        metodo: 'PUT', cuerpo: { pin: campo.value }
+      });
+      campo.value = '';
+      aviso(`PIN de ${r.usuario} cambiado a ${r.pin}. Sus sesiones abiertas se cerraron.`);
+    }
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Render y arranque ----------
+
+function render() {
+  if (!sesion) {
+    $('vista-login').classList.remove('oculta');
+    $('vista-fabrica').classList.add('oculta');
+    return;
+  }
+  $('vista-login').classList.add('oculta');
+  $('vista-fabrica').classList.remove('oculta');
+  $('texto-sesion').textContent = `· ${sesion.usuario}`;
+  cargar();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('btn-login').addEventListener('click', entrar);
+  $('campo-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+  $('btn-salir').addEventListener('click', salir);
+  $('btn-alta').addEventListener('click', darDeAlta);
+  $('btn-pin-azar').addEventListener('click', () => { $('alta-pin').value = pinAlAzar(); });
+  $('lista-condominios').addEventListener('click', accionEnLista);
+  render();
+});

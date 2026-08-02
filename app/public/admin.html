@@ -32,9 +32,14 @@
   <!-- Panel -->
   <section id="vista-panel" class="oculta">
     <header class="barra">
-      <div>
+      <div class="barra-titulo">
         <strong>🛡️ Rondas QR</strong>
-        <span id="texto-condominio" class="nota"></span>
+        <!-- Todo lo que se ve en el panel (puntos, rondas, guardias, informes)
+             es del condominio elegido acá. -->
+        <label class="selector-condominio">
+          <span class="nota">Condominio</span>
+          <select id="selector-condominio"></select>
+        </label>
       </div>
       <button id="btn-salir" class="btn btn-borde btn-chico">Salir</button>
     </header>
