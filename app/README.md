@@ -93,5 +93,7 @@ test/            suite node --test (mock, $0)
 ## Producción (resumen — detalle en ../entrega/OPERACION.md)
 
 - Deploy: Railway/VPS con `npm start` (requiere HTTPS para que la cámara funcione fuera de localhost).
+- **El servicio de Railway tiene que apuntar su Root Directory a `app`**, no a `/`: la app vive en una subcarpeta del repo. Con el root en `/`, Railpack analiza la raíz, no encuentra `package.json` y el build muere con *"could not determine how to build the app"* — sin tocar nada del código. Ya pasó en v1.10 y en v1.11.
+- Ojo con "Redeploy": vuelve a desplegar el **mismo** commit que estaba arriba, no el último de `main`. Para subir lo nuevo va "Deploy latest commit" o un push.
 - La persistencia JSON es para pilotos; con más de ~3 condominios activos o meses de historial, migrar `lib/store.js` a SQLite/Postgres.
 - Limitación conocida v1 (documentada): un QR fotografiado se puede escanear a distancia — la v2 contempla verificación de presencia (GPS/NFC).
