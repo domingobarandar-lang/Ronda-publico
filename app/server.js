@@ -74,6 +74,14 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // FABRICA_USUARIO + FABRICA_PIN. Sin script de alta y sin PIN escrito en git.
   const estadoFabrica = fabrica.asegurarFabrica(db, process.env, ayudantes);
   if (estadoFabrica.creada || estadoFabrica.actualizada) store.guardar();
+  // Se dice en voz alta: si el PIN no cumple (8 dígitos) o el usuario es
+  // inválido, la cuenta no se crea, y sin este aviso el síntoma sería un login
+  // que rechaza credenciales "correctas" sin explicar nada.
+  if (estadoFabrica.creada) console.log(`[fabrica] cuenta "${estadoFabrica.usuario}" creada desde el entorno.`);
+  else if (estadoFabrica.actualizada) console.log(`[fabrica] PIN de "${estadoFabrica.usuario}" actualizado desde el entorno.`);
+  else if (estadoFabrica.motivo && estadoFabrica.motivo !== 'sin configurar') {
+    console.warn(`[fabrica] la cuenta de fábrica NO quedó disponible — ${estadoFabrica.motivo}`);
+  }
 
   // Alta de un guardia con validación de usuario/PIN. Compartido por el panel
   // del administrador y el registro público (autoservicio del guardia).
