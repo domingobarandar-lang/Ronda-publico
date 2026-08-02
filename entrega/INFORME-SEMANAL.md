@@ -77,3 +77,22 @@ Cuando el formato esté validado y la app estable en Railway:
 2. Elegir servicio de correo transaccional (remitente verificado).
 3. Trabajo semanal (cron Railway) que arma cada PDF y lo envía solo.
 4. Registro de envíos (igual que `db.notificaciones`) para saber qué se mandó y si llegó.
+
+## Estado al 2026-08-01 — la opción B ya está construida
+
+El informe se entrega en **Word (.docx)** en vez de PDF (se edita si el administrador quiere agregar una nota, y Word abre en cualquier parte). Lo demás del roadmap está hecho, con una diferencia de diseño en el punto 1:
+
+| Roadmap | Cómo quedó |
+|---|---|
+| 1. Correo del administrador por condominio | `condominio.correosInforme[]` — una **lista** (el administrador y, si quiere, el comité), que **el propio administrador edita** desde el panel (pestaña Avisos). `INFORME_TO` quedó como respaldo global. |
+| 2. Servicio de correo | **Resend**, por API HTTP y no SMTP: Railway bloquea los puertos 465/587. Ver `app/lib/correo.js`. |
+| 3. Trabajo semanal | `app/lib/programador.js`, **dentro del server** (no hay cron externo: el servicio de Railway está siempre encendido). Revisa cada hora y manda el lunes a las 8 de Chile, con la semana ya enviada guardada en la base para no repetir tras un reinicio. |
+| 4. Registro de envíos | **Pendiente.** Hoy queda en el log del server y en `db.informeEmailEstado` (qué semana se mandó a cada destinatario), pero no hay una pestaña de envíos en el panel ni registro de errores por destinatario. |
+
+### Un administrador, varios condominios
+
+Es el caso real de una corredora: 4 administradores con 2 condominios cada uno. El envío se agrupa **por destinatario**, no por condominio: cada administrador recibe **un solo correo** el lunes con el `.docx` de cada uno de sus condominios adjunto, no un correo por condominio. Un administrador con 10 condominios recibe un correo con 10 adjuntos (~13 KB cada uno).
+
+La lógica vive en `app/lib/destinatarios.js` y está cubierta en `app/test/destinatarios.test.js`, incluido el caso 4×2. El correo cargado es el interruptor: **un condominio sin correo no se manda a nadie** (salvo que exista `INFORME_TO` de respaldo).
+
+> **Ojo con el remitente**: con el dominio de prueba de Resend (`onboarding@resend.dev`) el correo **solo se entrega a la cuenta dueña de la API key**. Para escribirle a administradores externos hay que verificar un dominio propio en Resend. Sin eso, el log dice "enviado" y el administrador no recibe nada.

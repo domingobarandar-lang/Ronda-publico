@@ -17,35 +17,29 @@
   </header>
 
   <main>
-    <!-- Selector de rol: primera pantalla al entrar -->
-    <section id="vista-rol" class="vista oculta">
+    <!-- Login del guardia: primera pantalla al entrar (la app es solo del guardia;
+         el administrador tiene su propia app en /panel) -->
+    <section id="vista-login" class="vista oculta">
       <div class="logo-badge">🛡️</div>
       <h1>Rondas QR</h1>
-      <p class="nota centrado">¿Cómo vas a entrar?</p>
-      <button id="btn-rol-guardia" class="btn btn-principal btn-gigante">👷 Soy guardia</button>
-      <button id="btn-rol-admin" class="btn btn-borde btn-gigante">🗂️ Soy administrador</button>
-      <button id="btn-rol-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
-      <p class="nota centrado">¿Guardia nuevo? Crea tu usuario para empezar.</p>
-      <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>
-      <p id="nota-instalar-ios" class="nota centrado oculta">
-        Para instalarla en iPhone: botón <strong>Compartir</strong> → <strong>Añadir a pantalla de inicio</strong>.
-      </p>
-    </section>
-
-    <!-- Login del guardia -->
-    <section id="vista-login" class="vista oculta">
-      <div class="logo-badge">👷</div>
-      <h1>Soy guardia</h1>
-      <p class="nota">Necesitas conexión solo para entrar. La ronda funciona sin señal.</p>
+      <p class="nota centrado">La app del guardia. Necesitas conexión solo para entrar: la ronda funciona sin señal.</p>
       <label>Usuario
         <input id="campo-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: guardia">
       </label>
       <label>PIN
         <input id="campo-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
       </label>
-      <button id="btn-login" class="btn btn-principal">Entrar</button>
+      <button id="btn-login" class="btn btn-principal btn-gigante">Entrar</button>
       <p id="error-login" class="error oculta"></p>
-      <button id="btn-volver-rol" class="btn btn-borde btn-chico btn-centrado">← Cambiar de perfil</button>
+      <!-- target=_blank: si la app del guardia está instalada, el panel abre en su
+           propia ventana en vez de quedar dentro de esta. -->
+      <a id="enlace-panel" class="btn btn-borde oculta" href="/panel" target="_blank" rel="noopener">🗂️ Abrir el panel del administrador</a>
+      <button id="btn-ir-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
+      <p class="nota centrado">¿Guardia nuevo? Crea tu usuario para empezar.</p>
+      <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>
+      <p id="nota-instalar-ios" class="nota centrado oculta">
+        Para instalarla en iPhone: botón <strong>Compartir</strong> → <strong>Añadir a pantalla de inicio</strong>.
+      </p>
     </section>
 
     <!-- Registro del guardia (autoservicio) -->

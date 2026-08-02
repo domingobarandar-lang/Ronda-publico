@@ -82,6 +82,8 @@ a { color: var(--marca-texto); }
 }
 .login-caja h1 { margin-bottom: var(--esp-1); letter-spacing: -0.2px; }
 .login-caja label { text-align: left; }
+/* En el login los botones van uno bajo otro (entrar, instalar el panel). */
+.login-caja .btn { display: block; width: 100%; margin-top: var(--esp-3); }
 label { display: block; margin: var(--esp-3) 0; font-size: var(--texto-m); color: var(--texto-suave); }
 input, select {
   width: 100%;

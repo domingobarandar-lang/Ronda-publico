@@ -2,13 +2,16 @@
 //
 // Corre dentro del server web (el servicio de Railway está siempre encendido).
 // Revisa cada hora: si es el día/hora configurados (hora de Chile) y no se
-// envió esta semana, genera y manda el informe de la SEMANA ANTERIOR a cada
-// condominio configurado. Guarda en la base la semana ya enviada para no
-// repetir aunque el servidor se reinicie.
+// envió esta semana, manda el informe de la SEMANA ANTERIOR a cada
+// DESTINATARIO — un correo por administrador, con el .docx de cada uno de sus
+// condominios adjunto. Guarda en la base la semana ya enviada para no repetir
+// aunque el servidor se reinicie.
 //   INFORME_DIA         (0=dom .. 6=sáb; por defecto 1 = lunes)
 //   INFORME_HORA        (0-23, hora de Chile; por defecto 8)
-//   INFORME_CONDOMINIOS (ids separados por coma; por defecto, todos)
+//   INFORME_CONDOMINIOS (ids separados por coma; vacío = todos los que tengan
+//                        correo cargado. Es una lista blanca opcional.)
 const correo = require('./correo');
+const { agruparPorDestinatario } = require('./destinatarios');
 
 // Fecha/hora actual en Chile (maneja el cambio de horario solo).
 function ahoraChile() {
@@ -33,10 +36,12 @@ function lunesDeLaSemana(fechaISO) {
   return new Date(t - desdeLunes * 86400000).toISOString().slice(0, 10);
 }
 
+// Lista blanca opcional. Vacía = todos los condominios (el filtro real lo hace
+// el destinatario: sin correo cargado no se manda nada).
 function condominiosObjetivo(db) {
   const ids = String(process.env.INFORME_CONDOMINIOS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
-  return ids.length ? ids : db.condominios.map(c => c.id);
+  return ids.length ? db.condominios.filter(c => ids.includes(c.id)) : db.condominios;
 }
 
 async function revisar(store) {
@@ -47,25 +52,29 @@ async function revisar(store) {
   if (ahora.dia !== dia || ahora.hora < hora) return;
 
   const db = store.db;
+  // Se lleva por DESTINATARIO, no por condominio: un administrador con dos
+  // condominios recibe un correo, no dos. (Las claves viejas de esta tabla eran
+  // ids de condominio; quedan ahí sin molestar y nadie las vuelve a leer.)
   db.informeEmailEstado = db.informeEmailEstado || {};
   const semana = lunesDeLaSemana(ahora.fecha);
-  for (const condominioId of condominiosObjetivo(db)) {
-    if (!db.condominios.some(c => c.id === condominioId)) continue;
-    if (db.informeEmailEstado[condominioId] === semana) continue; // ya enviado esta semana
-    const r = await correo.enviarInformeSemanal(db, { condominioId });
+  const grupos = agruparPorDestinatario(condominiosObjetivo(db), { respaldo: process.env.INFORME_TO });
+  for (const { correo: destino, condominioIds } of grupos) {
+    if (db.informeEmailEstado[destino] === semana) continue; // ya enviado esta semana
+    const r = await correo.enviarInforme(db, { condominioIds, to: [destino] });
     if (r.enviada) {
-      db.informeEmailEstado[condominioId] = semana;
+      db.informeEmailEstado[destino] = semana;
       store.guardar();
-      console.log(`[informe-email] enviado ${condominioId} -> ${r.to} (${r.datos.rango})`);
+      console.log(`[informe-email] enviado a ${destino}: ${r.condominios.join(', ')} (${r.datos.rango})`);
+      if (r.fallidos.length) console.warn(`[informe-email] sin adjuntar para ${destino}: ${r.fallidos.join(', ')}`);
     } else {
-      console.warn(`[informe-email] FALLÓ ${condominioId}: ${r.error}`);
+      console.warn(`[informe-email] FALLÓ ${destino} (${condominioIds.join(', ')}): ${r.error}`);
     }
   }
 }
 
 function iniciar(store) {
   if (!correo.configurado()) {
-    console.log('[informe-email] SMTP no configurado — envío semanal en pausa.');
+    console.log('[informe-email] falta RESEND_API_KEY — envío semanal en pausa.');
     return null;
   }
   console.log(`[informe-email] programador activo (día ${process.env.INFORME_DIA ?? 1}, `

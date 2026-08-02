@@ -36,7 +36,7 @@
 
 ## No probado en esta pasada (requiere hardware real)
 
-- Cámara física del teléfono (getUserMedia) — el pipeline de decodificación quedó verificado con el round-trip anterior; la captura de cámara se prueba en el teléfono de José en la revisión (DEMO.md, paso 3).
+- Cámara física del teléfono (getUserMedia) — el pipeline de decodificación quedó verificado con el round-trip anterior; la captura de cámara se prueba en el teléfono de José en la revisión.
 - Notificación Telegram real — queda en MOCK hasta que José apruebe activarla (token 2 del pool ya está en el `.env`, falta solo `MOCK=false` + chat_id del admin).
 
 ## Actualización v1.9 — GPS bloqueante (2026-07-29)

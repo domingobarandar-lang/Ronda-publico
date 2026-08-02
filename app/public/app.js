@@ -8,7 +8,6 @@
 const CLAVE = 'rondasqr';
 
 let estado = cargarEstado();
-let rolElegido = null;        // 'guardia' cuando ya eligió perfil en esta visita
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 let sincronizando = false;
 let stream = null;
@@ -253,9 +252,13 @@ function pintarConexion() {
 // registro (que entra solo después de crear la cuenta). Lanza si algo falla.
 async function iniciarSesionGuardia(usuario, pin) {
   const r = await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } });
-  if (r.rol === 'admin') {
-    location.href = '/admin.html';
-    return;
+  // Esta app es solo del guardia. El administrador tiene la suya (/panel): acá
+  // no se le redirige solo, se le dice dónde entrar para que guarde ESE acceso.
+  if (r.rol !== 'guardia') {
+    const err = new Error('Ese usuario es de administrador: el panel se abre aparte.');
+    err.status = 403;
+    err.esAdmin = true;
+    throw err;
   }
   estado.sesion = r;
   guardarEstado();
@@ -267,6 +270,7 @@ async function entrar() {
   const usuario = $('campo-usuario').value.trim();
   const pin = $('campo-pin').value.trim();
   $('error-login').classList.add('oculta');
+  $('enlace-panel').classList.add('oculta');
   if (!usuario || !pin) return;
   try {
     await iniciarSesionGuardia(usuario, pin);
@@ -274,6 +278,7 @@ async function entrar() {
     const el = $('error-login');
     el.textContent = err.status ? err.message : 'No se pudo conectar al servidor.';
     el.classList.remove('oculta');
+    if (err.esAdmin) $('enlace-panel').classList.remove('oculta');
   }
 }
 
@@ -589,16 +594,10 @@ function cicloJsqr() {
 
 function render() {
   pintarConexion();
-  if (!estado.sesion && !estado.paquete) {
-    // Sin sesión: primero el selector de rol; el login del guardia después.
-    return mostrarVista(rolElegido === 'guardia' ? 'vista-login' : 'vista-rol');
-  }
-  if (!estado.sesion && estado.cola.length) {
-    // Sesión caducada con cola pendiente: pedir login sin perder nada.
-    rolElegido = 'guardia';
-    mostrarVista('vista-login');
-    return;
-  }
+  // Sin sesión se entra por el login (la app es solo del guardia, ya no hay
+  // selector de perfil). Con la sesión caducada y cola pendiente también: la
+  // cola se conserva y se envía apenas vuelve a entrar.
+  if (!estado.sesion && (!estado.paquete || estado.cola.length)) return mostrarVista('vista-login');
   if (estado.ejecucion && !estado.ejecucion.cerrada) return renderRonda();
   if (estado.ejecucion && estado.ejecucion.cerrada) return renderFinal();
   if (estado.ultimoInforme) return renderFinal();
@@ -770,21 +769,10 @@ function volverAlInicio() {
 // ---------- Arranque ----------
 
 document.addEventListener('DOMContentLoaded', () => {
-  $('btn-rol-guardia').addEventListener('click', () => {
-    rolElegido = 'guardia';
-    render();
-    $('campo-usuario').focus();
-  });
-  $('btn-rol-admin').addEventListener('click', () => { location.href = 'admin.html'; });
-  $('btn-volver-rol').addEventListener('click', () => {
-    rolElegido = null;
-    render();
-  });
-
-  // Registro (autoservicio del guardia) — accesible desde la pantalla principal
-  $('btn-rol-registro').addEventListener('click', irARegistro);
+  // Registro (autoservicio del guardia) — accesible desde la pantalla de entrada
+  $('btn-ir-registro').addEventListener('click', irARegistro);
   $('btn-registrar').addEventListener('click', registrar);
-  $('btn-volver-login').addEventListener('click', () => { rolElegido = 'guardia'; render(); });
+  $('btn-volver-login').addEventListener('click', render);
   $('registro-pin2').addEventListener('keydown', e => { if (e.key === 'Enter') registrar(); });
 
   // Instalación como app (Chrome/Edge disparan beforeinstallprompt; iOS va a mano).

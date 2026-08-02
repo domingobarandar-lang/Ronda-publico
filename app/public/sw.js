@@ -1,4 +1,9 @@
-// Service worker: deja la app (guardia + panel admin) disponible sin conexión.
+// Service worker: deja la app disponible sin conexión y recibe los push.
+//
+// Es UNO SOLO para las dos apps (guardia en / y panel en /admin.html): las dos
+// se sirven del mismo origen y raíz, y dos registros en el mismo scope se
+// pisarían entre sí. Lo que cambia es qué precachea: la ronda tiene que andar
+// sin señal, el panel no (todo lo suyo sale del API).
 //
 // Estrategia: network-first con respaldo en caché. Con conexión, siempre se
 // sirve la versión fresca del servidor (los deploys llegan solos a los
@@ -7,21 +12,24 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.10.0';
+const VERSION = 'v1.11.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
+  // App del guardia: sin esto no hay ronda sin señal.
   './',
   'index.html',
   'app.js',
   'estilos.css',
-  'admin.html',
-  'admin.js',
-  'admin.css',
   'manifest.webmanifest',
   'icono.svg',
   'icono-192.png',
   'icono-512.png',
-  'vendor/jsqr.js'
+  'vendor/jsqr.js',
+  // Panel del administrador: su código se cachea solo al visitarlo. Acá va lo
+  // que el navegador pide al instalarlo como app aparte.
+  'panel.webmanifest',
+  'icono-panel.svg',
+  'icono-panel-192.png'
 ];
 
 self.addEventListener('install', e => {

@@ -1,0 +1,17 @@
+{
+  "name": "Rondas QR — Panel del administrador",
+  "short_name": "Rondas Panel",
+  "description": "Panel del administrador: informes de rondas, puntos, guardias y avisos",
+  "lang": "es",
+  "id": "/admin.html",
+  "scope": "./",
+  "start_url": "/admin.html",
+  "display": "standalone",
+  "background_color": "#f8f8fb",
+  "theme_color": "#f8f8fb",
+  "icons": [
+    { "src": "icono-panel.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icono-panel-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icono-panel-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

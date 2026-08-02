@@ -393,6 +393,46 @@ test('CU-14: aislamiento total entre condominios', async () => {
   assert.ok(puntos.datos.every(p => p.condominioId === 'mirador'));
 });
 
+test('CU-20: cada admin guarda los correos del informe de SU condominio', async () => {
+  const marta = await login('marta', '1111');   // Los Aromos
+  const carmen = await login('carmen', '4444'); // Mirador del Valle
+
+  const vacio = await api('/api/admin/correos-informe', { token: marta.token });
+  assert.deepEqual(vacio.datos.correos, [], 'de fábrica no hay correos: no se manda nada');
+
+  // Se aceptan varios separados por comas y se normalizan.
+  const guardado = await api('/api/admin/correos-informe', {
+    metodo: 'PUT', token: marta.token, cuerpo: { correos: 'Ana@Corredora.cl, comite@correo.cl' }
+  });
+  assert.equal(guardado.status, 200);
+  assert.deepEqual(guardado.datos.correos, ['ana@corredora.cl', 'comite@correo.cl']);
+
+  // Lo que no es correo se rechaza sin pisar lo que ya estaba guardado.
+  const malo = await api('/api/admin/correos-informe', {
+    metodo: 'PUT', token: marta.token, cuerpo: { correos: 'ana@corredora.cl, pegue-aqui-su-correo' }
+  });
+  assert.equal(malo.status, 422);
+  assert.equal(store.db.condominios.find(c => c.id === 'aromos').correosInforme.length, 2);
+
+  // Carmen no ve ni toca los de Los Aromos.
+  const suyo = await api('/api/admin/correos-informe', { token: carmen.token });
+  assert.deepEqual(suyo.datos.correos, []);
+  await api('/api/admin/correos-informe', {
+    metodo: 'PUT', token: carmen.token, cuerpo: { correos: 'carmen@corredora.cl' }
+  });
+  assert.deepEqual(store.db.condominios.find(c => c.id === 'aromos').correosInforme, ['ana@corredora.cl', 'comite@correo.cl']);
+  assert.deepEqual(store.db.condominios.find(c => c.id === 'mirador').correosInforme, ['carmen@corredora.cl']);
+
+  // Vaciar el campo apaga el envío de ese condominio.
+  const apagado = await api('/api/admin/correos-informe', { metodo: 'PUT', token: carmen.token, cuerpo: { correos: '' } });
+  assert.deepEqual(apagado.datos.correos, []);
+
+  // Sin RESEND_API_KEY el envío a demanda avisa en vez de fallar en silencio.
+  const sinClave = await api('/api/admin/informe-semanal/enviar', { metodo: 'POST', token: marta.token, cuerpo: {} });
+  assert.equal(sinClave.status, 422);
+  assert.match(sinClave.datos.error, /RESEND_API_KEY/);
+});
+
 test('permisos: la ejecución de un guardia no la toca otro; guardias no entran al panel', async () => {
   const pedro = await login('pedro', '2222');
   const luis = await login('luis', '3333');

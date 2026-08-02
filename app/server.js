@@ -1,4 +1,4 @@
-// Rondas QR — servidor: API + PWA del guardia + panel del administrador.
+// Rondas QR — servidor: API + las dos apps (guardia en / y panel en /panel).
 // Arranque: `npm run demo` (siembra datos de prueba si no hay) o `npm start`.
 const path = require('path');
 const express = require('express');
@@ -11,6 +11,7 @@ const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
 const correo = require('./lib/correo');
+const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
 const programador = require('./lib/programador');
 const { notificarAdmin } = require('./lib/notificar');
 const { crearPush } = require('./lib/push');
@@ -26,6 +27,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
   app.get('/vendor/jsqr.js', (req, res) => res.sendFile(require.resolve('jsqr/dist/jsQR.js')));
+  // Dirección corta para el acceso del administrador: es la que se dicta por
+  // teléfono y la que el administrador guarda. La app instalada arranca en
+  // /admin.html (start_url del panel.webmanifest), así que acá solo se redirige.
+  app.get('/panel', (req, res) => res.redirect(302, '/admin.html'));
 
   const auth = autenticar(store);
   const admin = [auth, soloAdmin];
@@ -494,16 +499,50 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
   });
 
+  // Correos a los que se manda el informe semanal de ESTE condominio (el
+  // administrador y, si corresponde, el comité). Un administrador con varios
+  // condominios pone el mismo correo en cada uno: el lunes recibe un solo
+  // mensaje con todos los informes adjuntos (ver lib/destinatarios.js).
+  app.get('/api/admin/correos-informe', ...admin, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req)) || {};
+    res.json({
+      correos: normalizarCorreos(condominio.correosInforme),
+      // Sin correos propios el informe igual sale, pero al respaldo del servidor.
+      respaldo: normalizarCorreos(process.env.INFORME_TO)[0] || null,
+      envioActivo: correo.configurado()
+    });
+  });
+
+  app.put('/api/admin/correos-informe', ...admin, (req, res) => {
+    const cuerpo = req.body || {};
+    const crudos = (Array.isArray(cuerpo.correos) ? cuerpo.correos : String(cuerpo.correos || '').split(/[,;\s]+/))
+      .map(t => String(t || '').trim()).filter(Boolean);
+    const malos = crudos.filter(t => !esCorreo(t));
+    if (malos.length) {
+      return res.status(422).json({ error: `Esto no parece un correo: ${malos.join(', ')}` });
+    }
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    condominio.correosInforme = normalizarCorreos(crudos);
+    store.guardar();
+    res.json({ correos: condominio.correosInforme });
+  });
+
   // Enviar el informe semanal por correo ahora mismo (para probar el envío o
-  // mandarlo a demanda). Usa INFORME_TO salvo que se pase otro destino.
+  // mandarlo a demanda). Va a los correos del condominio salvo que se pase otro
+  // destino; si el condominio no tiene ninguno, cae al respaldo INFORME_TO.
   app.post('/api/admin/informe-semanal/enviar', ...admin, async (req, res) => {
     if (!correo.configurado()) {
-      return res.status(422).json({ error: 'El correo no está configurado todavía (faltan credenciales SMTP).' });
+      return res.status(422).json({ error: 'El envío por correo no está configurado en el servidor (falta RESEND_API_KEY).' });
     }
     const { desde, hasta, to } = req.body || {};
-    const r = await correo.enviarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta, to });
+    const condominio = db.condominios.find(c => c.id === miCondominio(req)) || {};
+    const destinos = to ? normalizarCorreos(to) : correosDelCondominio(condominio, process.env.INFORME_TO);
+    if (!destinos.length) {
+      return res.status(422).json({ error: 'Todavía no hay correo del administrador: guárdalo acá arriba y vuelve a intentar.' });
+    }
+    const r = await correo.enviarInforme(db, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
-    res.json({ ok: true, to: r.to, rango: r.datos.rango });
+    res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   });
 
   // Cierre administrativo de una ronda que quedó abierta.
@@ -576,7 +615,7 @@ if (require.main === module) {
     const modo = (process.env.MOCK || 'true') !== 'false' ? 'MOCK (quedan en consola y registro)' : 'REALES (Telegram)';
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
-    console.log(`  Panel administrador: http://localhost:${puerto}/admin.html`);
+    console.log(`  Panel administrador: http://localhost:${puerto}/panel`);
     console.log(`  Notificaciones: ${modo}`);
     console.log(`  Base de datos: ${store.ruta}`);
   });

@@ -1,4 +1,5 @@
-// Panel del administrador — sesión separada de la app del guardia.
+// Panel del administrador — app aparte de la del guardia: manifiesto, ícono y
+// sesión propios. Se instala/marca en el equipo del administrador (/panel).
 'use strict';
 
 const CLAVE_ADMIN = 'rondasqr-admin';
@@ -6,6 +7,7 @@ let sesion = cargarSesion();
 let secuencia = [];        // puntoIds elegidos para la ronda en edición
 let puntosCache = [];
 let rondaEnEdicion = null; // id de la ronda que se está editando
+let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 
 const $ = id => document.getElementById(id);
 
@@ -66,7 +68,9 @@ async function entrar() {
       cuerpo: { usuario: $('campo-usuario').value, pin: $('campo-pin').value }
     });
     if (r.rol !== 'admin') {
-      $('error-login').textContent = 'Esta pantalla es solo para administradores. Los guardias usan la app principal.';
+      $('error-login').innerHTML =
+        'Este panel es solo para administradores. Los guardias entran por ' +
+        '<a href="/" target="_blank" rel="noopener">la app del guardia</a>.';
       $('error-login').classList.remove('oculta');
       return;
     }
@@ -585,8 +589,47 @@ async function alternarPush() {
 
 // ---------- Avisos ----------
 
+// Correos del informe semanal de este condominio.
+async function cargarCorreosInforme() {
+  try {
+    const { correos, respaldo, envioActivo } = await api('/api/admin/correos-informe');
+    $('campo-correos-informe').value = (correos || []).join(', ');
+    let estado;
+    if (!envioActivo) estado = 'El envío por correo todavía no está activo en el servidor: avísale a la fábrica.';
+    else if (correos && correos.length) estado = `Listo: el informe sale cada lunes a ${correos.join(' y ')}.`;
+    else if (respaldo) estado = `Sin correo propio, el informe va al respaldo del servidor (${respaldo}). Escribe el tuyo acá.`;
+    else estado = 'Sin correo cargado no se manda nada. Escribe el tuyo y guárdalo.';
+    $('estado-correos').textContent = estado;
+  } catch { /* sesión caduca: render() ya redirige al login */ }
+}
+
+async function guardarCorreosInforme() {
+  try {
+    const { correos } = await api('/api/admin/correos-informe', {
+      metodo: 'PUT', cuerpo: { correos: $('campo-correos-informe').value }
+    });
+    aviso(correos.length ? 'Correos guardados. El próximo lunes sale el informe.' : 'Correos borrados: no se enviará el informe semanal.');
+    cargarCorreosInforme();
+  } catch (err) { aviso(err.message, 'error'); }
+}
+
+async function enviarInformeAhora() {
+  const btn = $('btn-enviar-informe');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const { to, rango } = await api('/api/admin/informe-semanal/enviar', { metodo: 'POST', cuerpo: {} });
+    aviso(`Enviado a ${to} (${rango}). Revisa la bandeja, y también el correo no deseado.`);
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = textoOriginal;
+  }
+}
+
 async function cargarAvisos() {
   pintarEstadoPush();
+  await cargarCorreosInforme();
   const avisos = await api('/api/admin/notificaciones');
   if (!avisos.length) {
     $('lista-avisos').innerHTML = '<p class="nota">Todavía no hay avisos. Se generan al cerrar cada ronda.</p>';
@@ -646,11 +689,37 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-generar-codigo').addEventListener('click', () =>
     guardarCodigoRegistro({ generar: true }, 'Código nuevo generado. El anterior ya no sirve.'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  // Instalación del panel como app propia (Chrome/Edge disparan
+  // beforeinstallprompt; en iPhone/iPad se agrega a mano desde Compartir).
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    promptInstalacion = e;
+    $('btn-instalar').classList.remove('oculta');
+  });
+  window.addEventListener('appinstalled', () => {
+    promptInstalacion = null;
+    $('btn-instalar').classList.add('oculta');
+    aviso('Panel instalado: ya lo tienes como aplicación propia.');
+  });
+  $('btn-instalar').addEventListener('click', async () => {
+    if (!promptInstalacion) return;
+    promptInstalacion.prompt();
+    await promptInstalacion.userChoice.catch(() => {});
+    promptInstalacion = null;
+    $('btn-instalar').classList.add('oculta');
+  });
+  const esIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const yaInstalado = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (esIos && !yaInstalado) $('nota-instalar-ios').classList.remove('oculta');
+
   $('btn-push').addEventListener('click', alternarPush);
   $('btn-informe-semanal').addEventListener('click', descargarInformeSemanal);
   $('form-punto-ronda').addEventListener('submit', e => { e.preventDefault(); agregarPuntoAMano(); });
   $('btn-guardar-ronda').addEventListener('click', guardarRonda);
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
+  $('btn-guardar-correos').addEventListener('click', guardarCorreosInforme);
+  $('btn-enviar-informe').addEventListener('click', enviarInformeAhora);
   $('btn-guardar-chatid').addEventListener('click', async () => {
     try {
       await api('/api/admin/telegram', { metodo: 'PUT', cuerpo: { chatId: $('campo-chatid').value } });

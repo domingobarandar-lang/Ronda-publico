@@ -9,16 +9,18 @@ npm install
 npm run demo
 ```
 
-Luego abrir http://localhost:3737 — la primera pantalla pregunta **¿Cómo vas a entrar?**:
+Son dos direcciones, una por perfil — cada una es una app aparte:
 
-- **👷 Soy guardia** → entrar con `guardia` / `5678` (la app del guardia). Un guardia nuevo también puede **crear su propio usuario** desde ahí ("🆕 Crear mi usuario"): elige su condominio, escribe el **código del condominio** (el administrador se lo entrega — en la demo, `AROMOS` para Los Aromos y `MIRADOR` para Mirador del Valle), define usuario y PIN, y queda guardado.
-- **🗂️ Soy administrador** → entrar con `admin` / `1234` (el panel; ve las rondas de ese mismo guardia). En la pestaña **Guardias** ve y cambia el código de registro que entrega a sus guardias.
+- **👷 App del guardia** → http://localhost:3737 con `guardia` / `5678`. Un guardia nuevo también puede **crear su propio usuario** desde ahí ("🆕 Crear mi usuario"): elige su condominio, escribe el **código del condominio** (el administrador se lo entrega — en la demo, `AROMOS` para Los Aromos y `MIRADOR` para Mirador del Valle), define usuario y PIN, y queda guardado.
+- **🗂️ Panel del administrador** → http://localhost:3737/panel con `admin` / `1234` (ve las rondas de ese mismo guardia). En la pestaña **Guardias** ve y cambia el código de registro que entrega a sus guardias.
+
+Cada app solo deja entrar a su perfil: si el administrador escribe su usuario en la app del guardia, esta le muestra el atajo al panel en vez de entrar.
 
 Ambos usuarios son del mismo condominio (Los Aromos), así que lo que marca el guardia aparece de inmediato en los informes del administrador. La demo también trae los usuarios anteriores: Los Aromos (admin `marta`/1111, guardias `pedro`/2222 y `luis`/3333) y Mirador del Valle (admin `carmen`/4444, guardia `jorge`/5555).
 
 ### Instalarla como app
 
-Es una PWA: en la primera pantalla aparece el botón **📲 Instalar la app** (Chrome/Edge, en el PC o Android) — también sirve el ícono de instalar en la barra de direcciones. En iPhone: **Compartir → Añadir a pantalla de inicio**. Queda con su propio ícono y abre en pantalla completa, partiendo por el selector de perfil.
+Las dos son PWA y se instalan por separado, cada una desde su dirección: en la pantalla de entrada aparece el botón **📲 Instalar** (Chrome/Edge, en el PC o Android) — también sirve el ícono de instalar en la barra de direcciones. En iPhone: **Compartir → Añadir a pantalla de inicio**. Quedan como dos apps distintas, con ícono propio (escudo oscuro el guardia, tarjeta clara el panel) y abren en pantalla completa: el guardia en su login, el administrador en el panel.
 
 > Ojo: fuera de `localhost` la instalación y la cámara exigen **HTTPS**. Para probar en un teléfono real hay que desplegarla (Railway/VPS con HTTPS) — en el PC se instala directo desde localhost.
 
@@ -32,6 +34,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
+- **Informe semanal por correo** *(v1.8, por destinatario desde v1.11)*: cada lunes a las 8 de la mañana (hora de Chile) sale por correo el informe de la semana anterior en Word, con estadísticas, ranking de guardias e incidencias. El administrador guarda su correo en el panel (pestaña **Avisos**); el que administra **varios condominios pone el mismo correo en cada uno y recibe un solo mensaje con un .docx por condominio adjunto**. Se puede poner más de un correo por condominio (el administrador y el comité, por ejemplo). El botón "Enviar uno de prueba ahora" manda el de esa semana sin esperar al lunes.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos. Multi-condominio con aislamiento total.
 
 ## Tests
@@ -40,7 +43,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 npm test
 ```
 
-Cubre los 14 casos de uso del SPEC y los adversariales (permisos cruzados entre condominios y guardias, reenvío offline idempotente, cierres repetidos). Todo corre en MOCK: no llama a ningún servicio externo.
+Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre condominios y guardias, reenvío offline idempotente, cierres repetidos). Todo corre en MOCK: no llama a ningún servicio externo.
 
 ## Configuración (.env)
 
@@ -56,6 +59,13 @@ Cubre los 14 casos de uso del SPEC y los adversariales (permisos cruzados entre 
 | `GPS_BLOQUEA` | `1` | `1` = rechaza la marca lejos/sin GPS. `0` = la acepta y solo la deja observada en el informe (comportamiento v1.8) |
 | `GPS_ANCLA_RADIO_M` | `40` | Radio alrededor del ancla en los puntos con verificación por entrada |
 | `GPS_ANCLA_VENTANA_MIN` | `15` | Minutos que vale la señal tomada en la entrada |
+| `RESEND_API_KEY` | — | Clave de Resend. Sin ella el informe semanal por correo queda en pausa (no rompe nada) |
+| `INFORME_FROM` | `Rondas QR <onboarding@resend.dev>` | Remitente. El dominio de prueba de Resend **solo entrega al dueño de la cuenta**: para escribirle a administradores externos hay que verificar un dominio propio |
+| `INFORME_TO` | — | Respaldo: a dónde va el informe de los condominios que aún no cargaron su correo en el panel. Vacío = esos no se envían |
+| `INFORME_DIA` / `INFORME_HORA` | `1` / `8` | Cuándo sale (1 = lunes, hora de Chile) |
+| `INFORME_CONDOMINIOS` | — | Lista blanca opcional de ids. Vacío = todos los que tengan correo cargado |
+
+> **A quién le llega el informe no se configura por `.env`**: vive en cada condominio (`correosInforme`) y lo edita el propio administrador desde el panel. El envío se agrupa por destinatario, así que un administrador con dos condominios recibe un correo, no dos. Se manda por la API HTTP de Resend y no por SMTP porque **Railway bloquea los puertos SMTP** (465/587 dan timeout).
 
 > Los umbrales de GPS viajan al teléfono en el paquete de rondas, así que basta cambiarlos en el servidor: la app se alinea al actualizar rondas, sin volver a desplegar nada. Si en terreno el bloqueo resulta demasiado duro (GPS con ±30-40 m de precisión junto a muros o torres), subir `GPS_RADIO_M` o dar aire con `GPS_MARGEN_MAX_M` antes de apagar `GPS_BLOQUEA`.
 
@@ -69,10 +79,14 @@ seed.js          datos de demo
 lib/store.js     persistencia JSON atómica (migrable a SQLite/Postgres)
 lib/rondas.js    motor: iniciar / escanear / cerrar / evaluar
 lib/informes.js  informe en datos y en texto
+lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
+lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
+lib/correo.js           envío por Resend, con un .docx por condominio adjunto
+lib/programador.js      reloj semanal: cada lunes revisa y manda lo que falte
 lib/notificar.js aviso al admin (mock | Telegram)
 lib/push.js      push al teléfono del admin cuando una ronda queda incompleta
 lib/auth.js      PIN scrypt + sesiones Bearer
-public/          PWA guardia (index) + panel admin (admin.html) + hoja QR + informe
+public/          app guardia (index + manifest) + app panel (admin.html + panel.webmanifest) + hoja QR + informe
 test/            suite node --test (mock, $0)
 ```
 

@@ -4,7 +4,7 @@ Guía de administración y operación. Público: José (soporte) y el administra
 
 ## Uso diario del administrador (panel web)
 
-Todo se hace en `https://<servidor>/admin.html` con su usuario y PIN:
+Todo se hace en `https://<servidor>/panel` con su usuario y PIN. Es una app aparte de la del guardia: conviene **instalarla** (botón "📲 Instalar el panel" en la pantalla de entrada, o Compartir → Añadir a pantalla de inicio en iPhone/iPad) o guardar esa dirección en favoritos. La app del guardia (`https://<servidor>/`) no da acceso al panel.
 
 - **Informes**: cada ronda cerrada aparece al instante con su estado. "Ver informe" abre el detalle imprimible. Si un guardia dejó una ronda abierta (se le olvidó cerrar), el botón **Cerrar** la cierra y evalúa con lo marcado hasta ese momento.
 - **Puntos**: agregar/renombrar/eliminar sectores. Tras cualquier cambio, reimprimir la **hoja de QR** y pegar la lámina nueva. El código de 6 letras bajo cada QR es el respaldo para entrada manual.

@@ -110,9 +110,10 @@ main { padding: var(--esp-4); max-width: 520px; margin: 0 auto; }
 #vista-login h1 { text-align: center; }
 #vista-login > .nota { text-align: center; display: block; }
 
-/* Selector de rol (primera pantalla) */
-#vista-rol h1 { text-align: center; }
-#vista-rol .btn-gigante { margin-top: var(--esp-4); }
+/* Entrada del guardia (primera pantalla): el botón grande manda, lo demás
+   —crear usuario, instalar— queda separado abajo. */
+#vista-login .btn-gigante { margin-top: var(--esp-4); }
+#btn-ir-registro, #enlace-panel { margin-top: var(--esp-5); }
 #nota-instalar-ios { margin-top: var(--esp-4); }
 .btn-centrado { display: block; width: auto; margin: var(--esp-5) auto 0; }
 
@@ -177,6 +178,8 @@ select:focus {
 }
 .btn:active { transform: scale(0.97); }
 .btn:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+/* Enlace con forma de botón (el atajo al panel, que sale de esta app). */
+a.btn { display: block; text-align: center; text-decoration: none; }
 .btn-principal {
   background: linear-gradient(160deg, #9333ea, var(--marca-fuerte));
   box-shadow: var(--brillo-marca);
