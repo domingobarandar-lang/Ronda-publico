@@ -515,28 +515,35 @@ test('cierre administrativo de una ronda olvidada + cierre repetido inocuo', asy
   assert.equal(tarde.status, 409);
 });
 
-test('CU-15/16/18: el GPS BLOQUEA la marca fuera del radio de 20 m', async () => {
+test('CU-15/16/18: el GPS BLOQUEA la marca fuera del radio + presupuesto de error', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
 
-  // La administradora fija la ubicación real de Portería.
+  // La administradora fija la ubicación real de Portería, midiendo con ±5 m.
   const fijar = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
   });
   assert.equal(fijar.status, 200);
+  assert.equal(fijar.datos.precisionM, 5, 'queda registrado con qué precisión se midió');
   const invalida = await api('/api/admin/puntos/p-porteria', {
     metodo: 'PUT', token: marta.token, cuerpo: { lat: 999, lon: 0 }
   });
   assert.equal(invalida.status, 422);
+  const precisionMala = await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 900 }
+  });
+  assert.equal(precisionMala.status, 422);
 
-  // El paquete que baja el teléfono trae ubicación y umbrales: la app aplica el
-  // mismo criterio que el servidor, y lo aplica también sin señal.
+  // El paquete que baja el teléfono trae ubicación, calidad de la medición y
+  // umbrales: la app aplica el mismo criterio que el servidor, también sin señal.
   const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
   assert.equal(paquete.gps.radioOkM, 20);
-  assert.equal(paquete.gps.margenMaxM, 0, 'radio estricto: no se perdona imprecisión');
+  assert.equal(paquete.gps.margenMaxM, 40, 'techo de imprecisión perdonada');
+  assert.equal(paquete.gps.precisionMaxM, 100);
   assert.equal(paquete.gps.bloquea, true);
   const puntosExpress = paquete.rondas.find(r => r.id === 'ronda-express').puntos;
   assert.equal(puntosExpress.find(p => p.codigoCorto === 'PRT234').lat, -33.45);
+  assert.equal(puntosExpress.find(p => p.codigoCorto === 'PRT234').precisionM, 5);
   assert.equal(puntosExpress.find(p => p.codigoCorto === 'QCH789').lat, null, 'punto sin fijar viaja en null');
 
   async function marcar(gps) {
@@ -548,16 +555,34 @@ test('CU-15/16/18: el GPS BLOQUEA la marca fuera del radio de 20 m', async () =>
   }
 
   // A ~1,1 km (el QR fotografiado, escaneado desde la caseta): RECHAZADA.
+  // Tope = radio 20 + (±5 del punto + ±10 del fix) = 35 m.
   const lejos = await marcar({ lat: -33.46, lon: -70.66, acc: 10 });
   assert.equal(lejos.esc.status, 422);
   assert.match(lejos.esc.datos.error, /Estás a 11\d\d m de "Portería"/);
   assert.equal(lejos.esc.datos.presencia.ok, false);
-  assert.equal(lejos.esc.datos.presencia.topeM, 20);
+  assert.equal(lejos.esc.datos.presencia.topeM, 35);
 
-  // A ~30 m también se rechaza: el radio es estricto, no hay zona gris.
-  const justoAfuera = await marcar({ lat: -33.45027, lon: -70.66, acc: 5 });
-  assert.equal(justoAfuera.esc.status, 422);
-  assert.equal(justoAfuera.esc.datos.presencia.distanciaM, 30);
+  // EL BUG DE v1.12: parado sobre el punto, pero con señal mediocre (±25 m), la
+  // distancia medida da 30 m. Antes se rechazaba con un tope de 20 m clavado —
+  // matemáticamente imposible de cumplir con dos medidas de esa calidad. Ahora
+  // el tope acompaña a la señal: 20 + (5 + 25) = 50 m. ACEPTADA.
+  const senalMediocre = await marcar({ lat: -33.45027, lon: -70.66, acc: 25 });
+  assert.equal(senalMediocre.esc.status, 200, 'la imprecisión declarada se perdona');
+
+  // Pero el margen no es un cheque en blanco: a ~56 m con la MISMA señal
+  // mediocre (tope 50) sigue rechazada.
+  const masLejos = await marcar({ lat: -33.4505, lon: -70.66, acc: 25 });
+  assert.equal(masLejos.esc.status, 422);
+  assert.equal(masLejos.esc.datos.presencia.distanciaM, 56);
+  assert.equal(masLejos.esc.datos.presencia.topeM, 50);
+
+  // Un fix de WiFi/antena (±300 m) no sirve para decidir NADA: con esa medida la
+  // distancia es ruido. Se rechaza aunque las coordenadas caigan sobre el punto,
+  // porque también dejaría pasar una marca hecha a dos cuadras.
+  const impreciso = await marcar({ lat: -33.45, lon: -70.66, acc: 300 });
+  assert.equal(impreciso.esc.status, 422);
+  assert.match(impreciso.esc.datos.error, /demasiado imprecisa \(±300 m\)/);
+  assert.equal(impreciso.esc.datos.presencia.impreciso, true);
 
   // Apagar la ubicación era el atajo obvio para saltarse el control: también se
   // rechaza, igual que un GPS inventado.
@@ -774,8 +799,9 @@ test('CU-19: radio y ventana propios del punto mandan sobre los defaults', async
     });
   }
 
-  // A 35 m: pasaba con el radio por defecto (40), no con 25.
-  assert.equal((await marcar({ lat: -33.450315, lon: -70.66, acc: 15, edadMs: 60000 })).status, 422);
+  // A 62 m: pasaba con el radio por defecto (40 + 30 de margen = 70), no con 25
+  // (25 + 30 = 55). El radio propio del punto es el que manda.
+  assert.equal((await marcar({ lat: -33.45056, lon: -70.66, acc: 15, edadMs: 60000 })).status, 422);
   // A 11 m y 4 min: pasaba con la ventana por defecto (15 min), no con 3.
   assert.equal((await marcar({ lat: -33.4501, lon: -70.66, acc: 12, edadMs: 4 * 60000 })).status, 422);
   // A 11 m y 2 min: dentro de los dos umbrales apretados.
@@ -797,7 +823,7 @@ test('CU-19: radio y ventana propios del punto mandan sobre los defaults', async
   });
   assert.equal(reset.status, 200);
   assert.equal(reset.datos.radioM, undefined);
-  assert.equal((await marcar({ lat: -33.450315, lon: -70.66, acc: 15, edadMs: 60000 })).status, 200);
+  assert.equal((await marcar({ lat: -33.45056, lon: -70.66, acc: 15, edadMs: 60000 })).status, 200);
 
   await api('/api/admin/puntos/p-bombas', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
 });
@@ -903,7 +929,9 @@ test('CU-18: los umbrales de GPS se ajustan por entorno sin tocar código', asyn
     metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
   });
 
-  // Marca a ~30 m con un GPS que declara ±40 m de precisión.
+  // Marca a ~30 m con un GPS que declara ±40 m de precisión. El punto se fijó
+  // sin registrar la calidad de la medición (como todos los anteriores a v1.13),
+  // así que se le asume GPS_PRECISION_SUPUESTA_M = 15.
   async function marcarA30m() {
     const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
     const esc = await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
@@ -913,25 +941,39 @@ test('CU-18: los umbrales de GPS se ajustan por entorno sin tocar código', asyn
     return { ejecucionId: ini.datos.id, esc };
   }
 
-  // Por defecto (radio 20, margen 0): rechazada.
-  assert.equal((await marcarA30m()).esc.status, 422);
+  // Por defecto: 15 + 40 = 55, topado en 40 → tope 60 m. La marca entra, que es
+  // exactamente lo que el hardware permite prometer con esa señal.
+  assert.equal((await marcarA30m()).esc.status, 200);
 
-  // GPS_MARGEN_MAX_M perdona la imprecisión declarada → tope 20 + 40 = 60 m.
-  process.env.GPS_MARGEN_MAX_M = '50';
+  // GPS_MARGEN_MAX_M=0 restaura el radio estricto de v1.9-v1.12 para quien lo
+  // quiera: sin perdón de imprecisión, la misma marca se rechaza.
+  process.env.GPS_MARGEN_MAX_M = '0';
   try {
-    const conMargen = await marcarA30m();
-    assert.equal(conMargen.esc.status, 200, 'con margen de precisión la marca entra');
+    const estricto = await marcarA30m();
+    assert.equal(estricto.esc.status, 422, 'sin margen vuelve el radio duro');
+    assert.equal(estricto.esc.datos.presencia.topeM, 20);
     const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
-    assert.equal(paquete.gps.margenMaxM, 50, 'el teléfono recibe el mismo umbral');
+    assert.equal(paquete.gps.margenMaxM, 0, 'el teléfono recibe el mismo umbral');
   } finally {
     delete process.env.GPS_MARGEN_MAX_M;
   }
 
   // GPS_BLOQUEA=0 es la marcha atrás: vuelve a observar en vez de rechazar.
+  // Se usa una marca a ~1,1 km, lejos de cualquier margen razonable.
+  async function marcarLejos() {
+    const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+    const esc = await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token,
+      cuerpo: { codigo: 'PRT234', gps: { lat: -33.46, lon: -70.66, acc: 40 } }
+    });
+    return { ejecucionId: ini.datos.id, esc };
+  }
+  assert.equal((await marcarLejos()).esc.status, 422, 'con el bloqueo puesto, no entra');
+
   process.env.GPS_BLOQUEA = '0';
   let ejecucionId;
   try {
-    const permisivo = await marcarA30m();
+    const permisivo = await marcarLejos();
     ejecucionId = permisivo.ejecucionId;
     assert.equal(permisivo.esc.status, 200, 'con GPS_BLOQUEA=0 la marca no se rechaza');
   } finally {
@@ -940,11 +982,115 @@ test('CU-18: los umbrales de GPS se ajustan por entorno sin tocar código', asyn
   // El informe se evalúa con el bloqueo ya restaurado: la marca queda acusada.
   const cierre = await api(`/api/ejecuciones/${ejecucionId}/cerrar`, { metodo: 'POST', token: pedro.token });
   assert.equal(cierre.datos.evaluacion.gpsLejos.length, 1);
-  assert.equal(cierre.datos.evaluacion.gpsLejos[0].distanciaM, 30);
+  assert.ok(cierre.datos.evaluacion.gpsLejos[0].distanciaM > 1000);
   assert.ok(cierre.datos.evaluacion.observaciones.some(o => /LEJOS del punto/.test(o)));
 
   // Y el bloqueo volvió solo.
-  assert.equal((await marcarA30m()).esc.status, 422);
+  assert.equal((await marcarLejos()).esc.status, 422);
+
+  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+});
+
+// ---------- CU-23: calidad de la medición del punto (v1.13) ----------
+// El origen del "acércate al punto" estando encima del punto: el panel fijaba la
+// ubicación con UNA lectura de GPS, que en frío viene de WiFi o antena con
+// decenas de metros de error, y esa coordenada quedaba como la verdad del punto.
+// Ahora el panel mide varios segundos y guarda con qué precisión lo logró.
+
+test('CU-23: la precisión con que se midió el punto entra en el presupuesto', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+
+  async function marcarA30m() {
+    const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+    return api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token,
+      cuerpo: { codigo: 'PRT234', gps: { lat: -33.45027, lon: -70.66, acc: 5 } }
+    });
+  }
+
+  // Punto medido BIEN (±3 m) + teléfono con buena señal (±5 m): tope 28 m. Una
+  // marca a 30 m no tiene excusa y se rechaza. La exigencia sigue existiendo.
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 3 }
+  });
+  const conBuenPunto = await marcarA30m();
+  assert.equal(conBuenPunto.status, 422);
+  assert.equal(conBuenPunto.datos.presencia.topeM, 28);
+
+  // El MISMO punto medido mal (±40 m): el sistema sabe que su coordenada es
+  // dudosa y afloja el tope a 20 + 40 = 60 m. La misma marca ahora entra: el
+  // guardia no puede pagar el error de medición del administrador.
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 40 }
+  });
+  assert.equal((await marcarA30m()).status, 200);
+
+  // Volver a fijar sin informar precisión NO hereda la anterior: la calidad de
+  // la medición vieja no dice nada de la coordenada nueva.
+  const reFijado = await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
+  });
+  assert.equal(reFijado.datos.precisionM, undefined);
+  // Sin dato se asume ±15 m → tope 20 + 15 + 5 = 40 m: la marca a 30 m entra.
+  assert.equal((await marcarA30m()).status, 200);
+
+  // Un 422 de validación no puede dejar el punto a medio escribir.
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 8 }
+  });
+  const rechazado = await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.44, lon: -70.65, precisionM: -3 }
+  });
+  assert.equal(rechazado.status, 422);
+  const puntos = await api('/api/admin/puntos', { token: marta.token });
+  const porteria = puntos.datos.find(p => p.id === 'p-porteria');
+  assert.equal(porteria.lat, -33.45, 'la ubicación anterior sigue intacta');
+  assert.equal(porteria.precisionM, 8);
+
+  // Quitar la ubicación limpia también la precisión.
+  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  const limpio = await api('/api/admin/puntos', { token: marta.token });
+  assert.equal(limpio.datos.find(p => p.id === 'p-porteria').precisionM, undefined);
+});
+
+test('CU-23: señal imprecisa se informa, pero no acusa al guardia', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
+  });
+
+  // Con el bloqueo puesto la marca imprecisa ni entra. Llega a la base por el
+  // mismo camino que las demás no verificadas: ubicación fijada DESPUÉS de la
+  // ronda. Ahí el informe tiene que distinguir "no había señal buena" de "apagó
+  // el GPS": lo primero es del edificio, lo segundo huele a fraude.
+  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
+  const express = paquete.rondas.find(r => r.id === 'ronda-express');
+  const base = Date.now() - 30 * 60000;
+  for (const [i, punto] of express.puntos.entries()) {
+    await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token,
+      cuerpo: {
+        codigo: punto.payload,
+        ts: new Date(base + i * 5 * 60000).toISOString(),
+        gps: punto.nombre === 'Portería' ? { lat: -33.45, lon: -70.66, acc: 450 } : null
+      }
+    });
+  }
+  await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
+  });
+  const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+
+  assert.equal(cierre.datos.evaluacion.gpsImpreciso.length, 1);
+  assert.equal(cierre.datos.evaluacion.gpsImpreciso[0].precisionM, 450);
+  assert.equal(cierre.datos.evaluacion.sinGps.length, 0, 'hubo ubicación: no es lo mismo que apagarla');
+  assert.ok(cierre.datos.evaluacion.observaciones.some(o => /demasiado imprecisa/.test(o)));
+  assert.equal(cierre.datos.evaluacion.sospechas.length, 0, 'la señal mala no es una acusación');
+  assert.equal(cierre.datos.estado, 'completa_obs');
 
   await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
 });

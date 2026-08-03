@@ -74,6 +74,29 @@ La suite quedó en **20/20 en verde**. Cambios de cobertura respecto a la tabla 
 
 **Pendiente de terreno**: dónde queda el ancla de cada punto de Condominio Piloto (se define caminando la ronda con el teléfono) y si 15 min es la ventana correcta para la caldera de la Torre 4.
 
+## Actualización v1.13 — presupuesto de error del GPS (2026-08-02)
+
+**39/39 en verde.** Origen: en la prueba de terreno, escaneando **parado sobre el QR**, la app respondía "acércate al punto". Ver CU-23 en el SPEC para el diagnóstico completo.
+
+| Escenario | Casos del SPEC | Resultado |
+|---|---|---|
+| A 30 m con señal ±25 m sobre punto medido a ±5 m → **aceptada** (tope 50 m): el bug de v1.12 | CU-23 | ✅ |
+| A 56 m con la misma señal → `422`: el margen no es cheque en blanco | CU-23 | ✅ |
+| A 1,1 km con buena señal → `422` con el tope en el mensaje | CU-15, CU-18 | ✅ |
+| Fix de WiFi/antena (±300 m) **sobre** el punto → `422` "demasiado imprecisa" | CU-23 | ✅ |
+| Punto medido a ±3 m + señal ±5 m → tope 28 m: una marca a 30 m se rechaza igual | CU-23 | ✅ |
+| El mismo punto medido a ±40 m → tope 60 m: el guardia no paga el error de medición del admin | CU-23 | ✅ |
+| Volver a fijar sin informar precisión **no** hereda la anterior; sin dato se asume ±15 m | CU-23 | ✅ |
+| `precisionM` inválida → `422` **sin** dejar el punto a medio escribir | CU-11, CU-23 | ✅ |
+| `quitarUbicacion` limpia también la precisión | CU-23 | ✅ |
+| Señal imprecisa en el informe → observación, **no** sospecha (`completa_obs`) | CU-09, CU-23 | ✅ |
+| `GPS_MARGEN_MAX_M=0` restaura el radio estricto de v1.9-v1.12 | CU-18 | ✅ |
+| El paquete del teléfono trae `precisionM` por punto y los umbrales nuevos | CU-02, CU-23 | ✅ |
+
+**Pendiente de terreno**: volver a medir los puntos de Condominio Piloto con la medición de 12 s (los actuales quedaron "fijados sin medir") y confirmar que con puntos bien medidos el tope típico se queda cerca de los 30 m, no del techo de 60.
+
 ## Bugs encontrados y corregidos durante QA
 
 - `npm test` con `node --test test/` no resuelve en Windows → script cambiado a `node --test` (autodescubre `test/`). Sin otros hallazgos: la suite pasó completa a la primera tras ese ajuste.
+- **v1.13**: `PUT /api/admin/puntos/:id` escribía `lat`/`lon` **antes** de validar `precisionM`, así que un `422` dejaba la ubicación cambiada a medias. Se valida todo antes de tocar el punto.
+- **v1.13**: `Number(null) === 0` hacía que un punto **sin medir** se tratara como medido con precisión perfecta (±0 m) — justo el caso que más margen necesita. Se distingue "sin dato" de "cero" en el motor y en la app.

@@ -209,6 +209,133 @@ async function cargarInformes() {
 
 // ---------- Puntos ----------
 
+// Medición de la ubicación de un punto (CU-23). Fijarlo con UNA lectura era el
+// error de fondo: el primer fix de un GPS frío viene de WiFi o de antena con
+// ±30-100 m, y esa coordenada quedaba guardada como la verdad del punto para
+// siempre — después el guardia, parado encima del QR, aparecía "a 60 m" y la
+// marca se rechazaba. Acá se muestrea varios segundos, se conserva la MEJOR
+// lectura y se guarda con qué precisión se logró, para que el motor sepa cuánta
+// incertidumbre arrastra esa coordenada al compararla con la del teléfono.
+const MEDICION = {
+  segundos: 12,   // cuánto se muestrea como máximo
+  objetivoM: 10,  // precisión con la que se corta antes de tiempo: ya está bien
+  avisarM: 25,    // sobre esto se guarda, pero avisando
+  maximaM: 60     // sobre esto no se guarda: la coordenada sería basura
+};
+
+function medirUbicacion(alProgreso) {
+  return new Promise((resolve, reject) => {
+    if (!('geolocation' in navigator)) {
+      reject(new Error('Este navegador no entrega ubicación.'));
+      return;
+    }
+    let mejor = null;
+    let muestras = 0;
+    let fallo = null;
+    let watchId = null;
+    let tick = null;
+    const inicio = Date.now();
+
+    const listo = () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      clearInterval(tick);
+      if (mejor) resolve(Object.assign({ muestras }, mejor));
+      else reject(new Error(fallo || 'No se pudo obtener la ubicación.'));
+    };
+
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        muestras++;
+        const acc = Math.round(pos.coords.accuracy || 999);
+        // Solo se reemplaza si la lectura nueva es MEJOR. El GPS converge de a
+        // poco y la última no es la más precisa: la más precisa lo es.
+        if (!mejor || acc < mejor.precisionM) {
+          mejor = { lat: pos.coords.latitude, lon: pos.coords.longitude, precisionM: acc };
+        }
+        if (mejor.precisionM <= MEDICION.objetivoM) listo();
+      },
+      err => {
+        fallo = err && err.code === 1
+          ? 'Falta el permiso de ubicación en este navegador.'
+          : 'El teléfono no está entregando ubicación (sin señal).';
+        // Sin permiso no va a llegar nada nunca: cortar de inmediato. Con
+        // "sin señal" se sigue esperando, que el fix suele llegar tarde.
+        if (err && err.code === 1) listo();
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: MEDICION.segundos * 1000 }
+    );
+
+    tick = setInterval(() => {
+      const restanteS = MEDICION.segundos - Math.round((Date.now() - inicio) / 1000);
+      if (restanteS <= 0) return listo();
+      if (alProgreso) alProgreso({ precisionM: mejor ? mejor.precisionM : null, muestras, restanteS });
+    }, 1000);
+  });
+}
+
+// Fija (o vuelve a fijar) la ubicación de un punto midiendo de verdad.
+async function fijarUbicacion(punto, anclaje, btn) {
+  const pregunta = anclaje
+    ? `Fijar la ENTRADA de "${punto.nombre}" donde estás parado AHORA.\n\n`
+      + 'Úsalo para puntos bajo techo (subterráneos, salas de calderas, interiores) donde el GPS no llega.\n\n'
+      + 'Párate en el último lugar del recorrido donde el teléfono TODAVÍA tiene señal — la puerta del recinto o la rampa de bajada. '
+      + 'El guardia podrá marcar el punto si pasó por acá en los últimos minutos.\n\n'
+      + `La medición toma hasta ${MEDICION.segundos} segundos: quédate quieto.\n\n¿Continuar?`
+    : `Fijar la ubicación EXACTA de "${punto.nombre}" donde estás parado AHORA.\n\n`
+      + 'Hazlo desde un teléfono, de pie junto al QR y con el celular en la mano (no en el bolsillo).\n\n'
+      + `La medición toma hasta ${MEDICION.segundos} segundos: quédate quieto mientras el GPS afina.\n\n¿Continuar?`;
+  if (!confirm(pregunta)) return;
+
+  btn.disabled = true;
+  try {
+    aviso('Midiendo… buscando señal', 'info');
+    const medida = await medirUbicacion(p => aviso(
+      p.precisionM == null
+        ? `Midiendo… buscando señal (${p.restanteS} s)`
+        : `Midiendo… mejor lectura ±${p.precisionM} m (${p.restanteS} s)`,
+      'info'
+    ));
+
+    // Guardar una coordenada de ±80 m es peor que no tener ninguna: bloquea al
+    // guardia sin dar ninguna garantía a cambio. Se rechaza y se explica.
+    if (medida.precisionM > MEDICION.maximaM) {
+      aviso(
+        `Señal insuficiente: lo mejor que se logró fue ±${medida.precisionM} m. `
+        + 'Sal a cielo abierto, espera unos segundos y reintenta. Si acá nunca hay señal, usa "🏠 Fijar entrada".',
+        'error'
+      );
+      return;
+    }
+    if (medida.precisionM > MEDICION.avisarM) {
+      const seguir = confirm(
+        `La mejor lectura fue ±${medida.precisionM} m — no es buena.\n\n`
+        + 'Se puede guardar igual (el sistema le dará al guardia el margen que corresponde a esta imprecisión), '
+        + 'pero el control queda más flojo en este punto.\n\n'
+        + '¿Guardar así, o cancelar y reintentar con mejor señal?'
+      );
+      if (!seguir) return;
+    }
+
+    await api(`/api/admin/puntos/${punto.id}`, {
+      metodo: 'PUT',
+      cuerpo: {
+        lat: medida.lat,
+        lon: medida.lon,
+        precisionM: medida.precisionM,
+        verificacion: anclaje ? 'anclaje' : 'gps'
+      }
+    });
+    aviso(anclaje
+      ? `Entrada fijada con ±${medida.precisionM} m: este punto se marca habiendo pasado por acá hace poco.`
+      : `Ubicación fijada con ±${medida.precisionM} m (${medida.muestras} lecturas).`);
+    cargarPuntos();
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function cargarPuntos() {
   puntosCache = await api('/api/admin/puntos');
   if (!puntosCache.length) {
@@ -219,12 +346,23 @@ async function cargarPuntos() {
   //   sin ubicación → no se verifica
   //   exacta        → hay que estar sobre el punto (20 m)
   //   por entrada   → punto bajo techo: basta haber pasado por la entrada
+  // La CALIDAD de la medición se muestra siempre: es lo que explica por qué a un
+  // guardia se le rechaza o se le acepta una marca. "sin medir" = punto fijado
+  // antes de v1.13, con una sola lectura y de calidad desconocida; conviene
+  // volver a medirlo.
+  const calidadTexto = p => {
+    if (p.precisionM == null) return '<span class="rojo">⚠ fijado sin medir — conviene volver a medirlo</span>';
+    if (p.precisionM <= 10) return `medido con ±${p.precisionM} m`;
+    if (p.precisionM <= 25) return `medido con ±${p.precisionM} m (aceptable)`;
+    return `<span class="rojo">medido con ±${p.precisionM} m — flojo</span>`;
+  };
   const verificacionTexto = p => {
     if (p.lat == null) return '<span class="nota">sin verificar</span>';
     const mapa = `<a href="https://maps.google.com/?q=${p.lat},${p.lon}" target="_blank">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</a>`;
-    return p.verificacion === 'anclaje'
-      ? `🏠 <strong>Por entrada</strong> · ${p.radioM || 40} m · ${p.ventanaMin || 15} min<br><span class="nota">${mapa}</span>`
-      : `📍 <strong>Exacta</strong> · ${p.radioM || 20} m<br><span class="nota">${mapa}</span>`;
+    const cabecera = p.verificacion === 'anclaje'
+      ? `🏠 <strong>Por entrada</strong> · ${p.radioM || 40} m · ${p.ventanaMin || 15} min`
+      : `📍 <strong>Exacta</strong> · ${p.radioM || 20} m`;
+    return `${cabecera}<br><span class="nota">${mapa} · ${calidadTexto(p)}</span>`;
   };
   const filas = puntosCache.map(p => `
     <tr>
@@ -232,7 +370,7 @@ async function cargarPuntos() {
       <td><code>${esc(p.codigoCorto)}</code></td>
       <td>${verificacionTexto(p)}</td>
       <td>
-        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 Fijar aquí</button>
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 ${p.lat != null && p.verificacion !== 'anclaje' ? 'Volver a medir' : 'Fijar aquí'}</button>
         <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="anclaje">🏠 Fijar entrada</button>
         ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-ajustar="${p.id}">Ajustar</button>` : ''}
         ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : ''}
@@ -248,34 +386,7 @@ async function cargarPuntos() {
   for (const btn of $('tabla-puntos').querySelectorAll('[data-ubicar]')) {
     btn.addEventListener('click', () => {
       const punto = puntosCache.find(p => p.id === btn.dataset.ubicar);
-      const anclaje = btn.dataset.modo === 'anclaje';
-      if (!('geolocation' in navigator)) return aviso('Este navegador no entrega ubicación.', 'error');
-      const pregunta = anclaje
-        ? `Fijar la ENTRADA de "${punto.nombre}" donde estás parado AHORA.\n\n`
-          + 'Úsalo para puntos bajo techo (subterráneos, salas de calderas, interiores) donde el GPS no llega.\n\n'
-          + 'Párate en el último lugar del recorrido donde el teléfono TODAVÍA tiene señal — la puerta del recinto o la rampa de bajada. '
-          + 'El guardia podrá marcar el punto si pasó por acá en los últimos minutos.\n\n¿Continuar?'
-        : `Fijar la ubicación EXACTA de "${punto.nombre}" donde estás parado AHORA.\n\n`
-          + 'Hazlo desde un teléfono, de pie junto al punto. El guardia solo podrá marcar estando encima.\n\n¿Continuar?';
-      if (!confirm(pregunta)) return;
-      aviso('Obteniendo ubicación…');
-      navigator.geolocation.getCurrentPosition(async pos => {
-        try {
-          await api(`/api/admin/puntos/${punto.id}`, {
-            metodo: 'PUT',
-            cuerpo: {
-              lat: pos.coords.latitude,
-              lon: pos.coords.longitude,
-              verificacion: anclaje ? 'anclaje' : 'gps'
-            }
-          });
-          aviso(anclaje
-            ? 'Entrada fijada: este punto se marca habiendo pasado por acá hace poco.'
-            : 'Ubicación fijada: las marcas en este punto ahora se verifican por distancia.');
-          cargarPuntos();
-        } catch (err) { aviso(err.message, 'error'); }
-      }, () => aviso('No se pudo obtener la ubicación (¿permiso denegado?).', 'error'),
-        { enableHighAccuracy: true, timeout: 15000 });
+      fijarUbicacion(punto, btn.dataset.modo === 'anclaje', btn);
     });
   }
   for (const btn of $('tabla-puntos').querySelectorAll('[data-ajustar]')) {

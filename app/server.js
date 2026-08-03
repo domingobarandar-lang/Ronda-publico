@@ -215,7 +215,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         // verifica. verificacion 'anclaje' = la ubicación es la entrada.
         puntos: motor.puntosDeRonda(db, r).map(p => {
           const cfg = motor.configGps();
-          const { anclado, radioM, ventanaMs } = motor.umbralesDe(p, cfg);
+          const { anclado, radioM, ventanaMs, precisionM } = motor.umbralesDe(p, cfg);
           return {
             id: p.id,
             nombre: p.nombre,
@@ -226,6 +226,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
             verificacion: motor.modoVerificacion(p),
             radioM: p.lat != null ? radioM : null,
             ventanaMs: p.lat != null ? ventanaMs : null,
+            // Con qué precisión se fijó la coordenada: entra en el presupuesto
+            // de error que la app calcula sin conexión (CU-23).
+            precisionM: p.lat != null ? precisionM : null,
             anclado
           };
         })
@@ -353,7 +356,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.put('/api/admin/puntos/:id', ...admin, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
-    const { lat, lon, quitarUbicacion, verificacion, radioM, ventanaMin } = req.body || {};
+    const { lat, lon, precisionM, quitarUbicacion, verificacion, radioM, ventanaMin } = req.body || {};
     const nombre = String((req.body || {}).nombre || '').trim();
     if (nombre) punto.nombre = nombre;
     if (quitarUbicacion) {
@@ -363,14 +366,30 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       delete punto.verificacion;
       delete punto.radioM;
       delete punto.ventanaMin;
+      delete punto.precisionM;
     } else if (lat !== undefined || lon !== undefined) {
       const la = Number(lat);
       const lo = Number(lon);
       if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
         return res.status(422).json({ error: 'Ubicación inválida.' });
       }
+      // Con qué precisión se midió esta coordenada (CU-23). Se valida ANTES de
+      // tocar el punto: un 422 no puede dejar la ubicación a medio escribir.
+      let pre = null;
+      if (precisionM !== undefined && precisionM !== null && precisionM !== '') {
+        const n = Number(precisionM);
+        if (!Number.isFinite(n) || n < 0 || n > 500) {
+          return res.status(422).json({ error: 'Precisión inválida (0 a 500 m).' });
+        }
+        pre = Math.round(n);
+      }
       punto.lat = la;
       punto.lon = lo;
+      // La precisión se borra siempre que llega una coordenada nueva: dejar la
+      // calidad de la medición anterior pegada a una ubicación distinta es peor
+      // que no tenerla. Sin este dato el motor asume GPS_PRECISION_SUPUESTA_M.
+      delete punto.precisionM;
+      if (pre != null) punto.precisionM = pre;
     }
 
     // Modo de verificación (CU-19): 'gps' = la ubicación es el punto exacto;

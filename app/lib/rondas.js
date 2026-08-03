@@ -4,16 +4,31 @@
 const { id, interpretarCodigo } = require('./codigos');
 
 // Verificación de presencia (CU-16 / CU-18): una marca sobre un punto con
-// ubicación fijada solo vale si el teléfono está dentro del radio. Desde v1.9 el
-// radio es de 20 m ESTRICTO (sin perdonar imprecisión del GPS) y, además de
+// ubicación fijada solo vale si el teléfono está dentro del radio. Además de
 // quedar observada, la marca fuera de rango se RECHAZA: no se puede escanear el
 // QR desde lejos.
 //
-// Los cuatro valores se leen del entorno para poder ajustarlos en terreno sin
-// tocar código ni volver a desplegar la app del guardia:
+// PRESUPUESTO DE ERROR (v1.13). Acá se comparan DOS medidas de GPS, no una: la
+// que tomó el administrador al fijar el punto y la que toma el guardia al
+// escanear. Cada una trae su propia incertidumbre y los errores se SUMAN. Exigir
+// 20 m clavados entre dos fixes de ±20 m es pedir algo que el hardware no puede
+// cumplir, y era la causa del "acércate al punto" estando encima del punto. Por
+// eso el tope efectivo es el radio MÁS la imprecisión declarada de ambas
+// medidas, con un techo (margenMaxM) para que un GPS que declara ±900 m no
+// compre permiso ilimitado. El control sigue en pie: el margen lo pone el
+// sensor, no el guardia, y escanear la foto del QR desde la caseta —decenas o
+// cientos de metros— sigue rechazado.
+//
+// Los valores se leen del entorno para poder ajustarlos en terreno sin tocar
+// código ni volver a desplegar la app del guardia:
 //   GPS_RADIO_M      (20)     distancia máxima aceptada, en metros
-//   GPS_MARGEN_MAX_M (0)      cuánta imprecisión declarada por el GPS se perdona
-//                             (se SUMA al radio; 0 = radio estricto)
+//   GPS_MARGEN_MAX_M (40)     techo de la imprecisión perdonada (punto + fix),
+//                             en metros; se SUMA al radio. 0 = radio estricto
+//   GPS_PRECISION_MAX_M (100) peor precisión de fix que sirve para decidir. Un
+//                             fix de WiFi/antena declara ±300 m o más: con eso
+//                             la distancia es ruido y no se usa
+//   GPS_PRECISION_SUPUESTA_M (15) precisión que se asume cuando la medida no la
+//                             informó (puntos fijados antes de v1.13)
 //   GPS_FRESCO_MS    (20000)  antigüedad máxima del fix GPS para poder marcar
 //   GPS_BLOQUEA      (1)      1 = rechaza la marca lejos/sin GPS
 //                             0 = la acepta y solo la deja observada (v1.8)
@@ -33,7 +48,9 @@ function configGps() {
   const apagado = ['0', 'false', 'no'].includes(String(process.env.GPS_BLOQUEA || '').toLowerCase());
   return {
     radioOkM: numEnv('GPS_RADIO_M', 20),
-    margenMaxM: numEnv('GPS_MARGEN_MAX_M', 0),
+    margenMaxM: numEnv('GPS_MARGEN_MAX_M', 40),
+    precisionMaxM: numEnv('GPS_PRECISION_MAX_M', 100),
+    precisionSupuestaM: numEnv('GPS_PRECISION_SUPUESTA_M', 15),
     frescoMs: numEnv('GPS_FRESCO_MS', 20000),
     anclaRadioM: numEnv('GPS_ANCLA_RADIO_M', 40),
     anclaVentanaMin: numEnv('GPS_ANCLA_VENTANA_MIN', 15),
@@ -59,6 +76,11 @@ function modoVerificacion(punto) {
 
 // Umbrales efectivos de un punto: lo que definió el administrador para ese punto
 // manda; si no definió nada, el default del entorno.
+//
+// precisionM es la calidad de la medición con la que se fijó el punto: la app
+// del panel muestrea varios segundos y guarda la mejor precisión que alcanzó.
+// null = punto fijado antes de v1.13, con una sola lectura y sin registrar qué
+// tan buena era; se le asume precisionSupuestaM.
 function umbralesDe(punto, cfg) {
   const anclado = modoVerificacion(punto) === 'anclaje';
   const radioBase = anclado ? cfg.anclaRadioM : cfg.radioOkM;
@@ -67,7 +89,25 @@ function umbralesDe(punto, cfg) {
     ? Number(punto.radioM) : radioBase;
   const ventanaMs = Number.isFinite(Number(punto.ventanaMin)) && Number(punto.ventanaMin) > 0
     ? Number(punto.ventanaMin) * 60000 : ventanaBase;
-  return { anclado, radioM, ventanaMs };
+  // Ojo con Number(null) === 0: un punto sin medir tiene precisión DESCONOCIDA,
+  // no precisión perfecta. Confundirlos le quitaba el margen justo a los puntos
+  // que más lo necesitan (los fijados a ciegas antes de v1.13).
+  const pre = Number(punto.precisionM);
+  const medido = punto.precisionM != null && punto.precisionM !== '' && Number.isFinite(pre) && pre >= 0;
+  return { anclado, radioM, ventanaMs, precisionM: medido ? pre : null };
+}
+
+// Cuánta imprecisión se le perdona a esta comparación, en metros: la del punto
+// más la del fix, tope margenMaxM. Cuando la medida no informó su precisión se
+// asume precisionSupuestaM — ni 0 (que sería mentir a favor del rechazo) ni el
+// techo (que sería regalar el control).
+function margenM(precisionPuntoM, accFixM, cfg) {
+  const conocida = v => {
+    if (v == null || v === '') return cfg.precisionSupuestaM;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : cfg.precisionSupuestaM;
+  };
+  return Math.round(Math.min(conocida(precisionPuntoM) + conocida(accFixM), cfg.margenMaxM));
 }
 
 // Control de tiempo antifraude (CU-17): el fraude "sacarle foto a los QR y
@@ -121,12 +161,15 @@ function limpiarGps(gps) {
   const lon = Number(gps.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-  const acc = Number(gps.acc);
-  const edad = Number(gps.edadMs);
+  // Ojo de nuevo con Number(null) === 0: un fix que NO declara precisión tiene
+  // precisión desconocida, no perfecta. Tomarlo como 0 le daba margen cero justo
+  // al dato de peor calidad, y desalineaba al servidor con la app del guardia.
+  const acc = gps.acc == null || gps.acc === '' ? NaN : Number(gps.acc);
+  const edad = gps.edadMs == null || gps.edadMs === '' ? NaN : Number(gps.edadMs);
   return {
     lat,
     lon,
-    acc: Number.isFinite(acc) ? Math.round(acc) : null,
+    acc: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null,
     edadMs: Number.isFinite(edad) && edad >= 0 ? Math.round(edad) : null
   };
 }
@@ -146,7 +189,7 @@ function minutos(ms) {
 function verificarPresencia(punto, gps, cfg = configGps()) {
   const modo = modoVerificacion(punto);
   if (modo === 'ninguna') return null;
-  const { anclado, radioM, ventanaMs } = umbralesDe(punto, cfg);
+  const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto, cfg);
   const limpio = limpiarGps(gps);
 
   if (!limpio) {
@@ -191,18 +234,40 @@ function verificarPresencia(punto, gps, cfg = configGps()) {
     };
   }
 
+  // Un fix de WiFi o de antena celular declara ±300 m o más. Con esa medida la
+  // distancia al punto es ruido: puede rechazar a quien está encima y aceptar a
+  // quien está a dos cuadras. No sirve para decidir en ninguna de las dos
+  // direcciones, así que se descarta en vez de perdonarla con más margen.
+  if (limpio.acc != null && limpio.acc > cfg.precisionMaxM) {
+    return {
+      ok: false,
+      modo,
+      sinGps: true,
+      impreciso: true,
+      distanciaM: null,
+      topeM: radioM,
+      edadMs: limpio.edadMs,
+      precisionM: limpio.acc,
+      motivo: `La señal es demasiado imprecisa (±${limpio.acc} m) para confirmar que estás en "${punto.nombre}". Espera unos segundos a que el GPS afine —mejor a cielo abierto— y vuelve a escanear.`
+    };
+  }
+
   const d = distanciaM(limpio, { lat: punto.lat, lon: punto.lon });
-  const topeM = anclado ? radioM : radioM + Math.min(limpio.acc || 0, cfg.margenMaxM);
+  const margen = margenM(precisionM, limpio.acc, cfg);
+  const topeM = radioM + margen;
+  const senal = limpio.acc != null ? ` (señal ±${limpio.acc} m)` : '';
   return {
     ok: d <= topeM,
     modo,
     sinGps: false,
     distanciaM: d,
     topeM,
+    margenM: margen,
     edadMs: limpio.edadMs,
+    precisionM: limpio.acc,
     motivo: anclado
-      ? `Estás a ${d} m de la entrada de "${punto.nombre}" y el máximo son ${topeM} m. Pasa por la entrada del recinto y vuelve a escanear.`
-      : `Estás a ${d} m de "${punto.nombre}" y el máximo para marcar es ${topeM} m. Acércate al punto y vuelve a escanear.`
+      ? `Estás a ${d} m de la entrada de "${punto.nombre}" y el máximo son ${topeM} m${senal}. Pasa por la entrada del recinto y vuelve a escanear.`
+      : `Estás a ${d} m de "${punto.nombre}" y el máximo para marcar es ${topeM} m${senal}. Acércate al punto y vuelve a escanear.`
   };
 }
 
@@ -328,6 +393,7 @@ function evaluar(db, ejecucion, ronda) {
   // rondas históricas, ubicaciones fijadas DESPUÉS de la ronda, y GPS_BLOQUEA=0.
   const gpsLejos = [];
   const sinGps = [];
+  const gpsImpreciso = [];
   const cfg = configGps();
   for (const esc of ejecucion.escaneos) {
     const punto = db.puntos.find(p => p.id === esc.puntoId);
@@ -337,7 +403,11 @@ function evaluar(db, ejecucion, ronda) {
     // a la ENTRADA del recinto, no al punto, y la marca es una prueba más débil.
     esc.anclado = presencia.modo === 'anclaje';
     if (presencia.sinGps) {
-      sinGps.push(esc.puntoId);
+      // Señal demasiado imprecisa no es lo mismo que ubicación apagada: hubo
+      // ubicación, no alcanzó para verificar. Se informa aparte para no acusar
+      // de fraude a un guardia que estaba en un subterráneo.
+      if (presencia.impreciso) gpsImpreciso.push({ puntoId: esc.puntoId, precisionM: presencia.precisionM });
+      else sinGps.push(esc.puntoId);
       continue;
     }
     esc.distanciaM = presencia.distanciaM;
@@ -382,6 +452,14 @@ function evaluar(db, ejecucion, ronda) {
     observaciones.push(`Marcas sin ubicación GPS en puntos verificables: ${nombres(db, sinGps)}.`);
     sospechas.push(`Sin ubicación GPS donde debía verificarse: ${nombres(db, sinGps)}`);
   }
+  if (gpsImpreciso.length) {
+    // Solo observación, NO sospecha: la señal mala es del edificio, no del
+    // guardia. Si se repite en el mismo punto, ahí hay que anclarlo (CU-19).
+    const detalle = gpsImpreciso
+      .map(i => `${nombres(db, [i.puntoId])} (±${i.precisionM} m)`)
+      .join(', ');
+    observaciones.push(`Marcas con señal GPS demasiado imprecisa para verificar: ${detalle}.`);
+  }
 
   // Ráfaga: varios puntos marcados en segundos (posible escaneo desde fotos).
   const rafaga = saltosEnRafaga(ejecucion.escaneos);
@@ -402,7 +480,7 @@ function evaluar(db, ejecucion, ronda) {
     observaciones.push('Incluye marcas hechas sin conexión (hora tomada del teléfono del guardia).');
   }
 
-  return { faltantes, fueraDeOrden, gpsLejos, sinGps, rafaga, duracionMin, observaciones, sospechas };
+  return { faltantes, fueraDeOrden, gpsLejos, sinGps, gpsImpreciso, rafaga, duracionMin, observaciones, sospechas };
 }
 
 function nombres(db, puntoIds) {
@@ -413,5 +491,5 @@ function nombres(db, puntoIds) {
 
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
-  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe
+  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM
 };

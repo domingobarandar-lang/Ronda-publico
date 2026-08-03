@@ -32,7 +32,8 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 
 - **PWA del guardia**: la ronda queda descargada en el teléfono; funciona sin señal (los escaneos se encolan y se sincronizan solos al volver la conexión). Escáner con la cámara (jsQR + BarcodeDetector) y entrada manual de respaldo con el código impreso bajo cada QR.
 - **Motor de rondas**: valida cada marca (condominio, ronda, duplicados), y al cierre evalúa puntos faltantes, orden (rondas estrictas) y duración máxima.
-- **Verificación de presencia por GPS** *(v1.1, bloqueante desde v1.9)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), **la app no deja marcar ese punto desde más de 20 m** ni sin señal GPS: le muestra al guardia a cuántos metros está y no encola nada. El servidor revalida con el mismo umbral. Umbrales ajustables por `.env`, ver tabla abajo.
+- **Verificación de presencia por GPS** *(v1.1, bloqueante desde v1.9)*: cada marca lleva la ubicación del teléfono. Si el administrador fijó la ubicación real del punto (botón "📍 Fijar aquí" en el panel, parado en el lugar), **la app no deja marcar ese punto desde lejos** ni sin señal GPS: le muestra al guardia a cuántos metros está, cuál es el máximo con la señal del momento, y no encola nada. El servidor revalida con el mismo criterio. Umbrales ajustables por `.env`, ver tabla abajo.
+- **Medición honesta del GPS** *(v1.13)*: el panel ya no fija el punto con **una** lectura —la primera de un GPS frío viene de WiFi o antena, con decenas de metros de error, y esa coordenada quedaba como la verdad del punto para siempre—. Ahora **muestrea hasta 12 s, se queda con la mejor lectura y guarda con qué precisión la logró** (la tabla de puntos la muestra; los fijados antes salen marcados como "⚠ fijado sin medir"). Y el tope deja de ser un número fijo: **se le suma la imprecisión de las dos medidas que se comparan**, la del punto y la del teléfono ahora. Esto arregla el caso en que el guardia estaba parado sobre el QR y la app le decía "acércate al punto": con dos fixes de ±20 m, exigir 20 m clavados era imposible de cumplir. El control no se debilita — el margen lo pone el sensor, no el guardia — y un fix demasiado impreciso (WiFi/antena) se descarta en vez de usarse para decidir.
 - **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
@@ -60,7 +61,9 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 | `FABRICA_USUARIO` | — | Cuenta de la operación para dar de alta condominios en `/fabrica`. Se crea sola al arrancar |
 | `FABRICA_PIN` | — | Su PIN, de **8 dígitos**. Cambiarlo acá y reiniciar recupera el acceso. Vacío = pantalla de fábrica inaccesible |
 | `GPS_RADIO_M` | `20` | Metros máximos entre el teléfono y el punto para poder marcar |
-| `GPS_MARGEN_MAX_M` | `0` | Cuánta imprecisión declarada por el GPS se perdona (se **suma** al radio). `0` = radio estricto |
+| `GPS_MARGEN_MAX_M` | `40` | Techo de la imprecisión perdonada (se **suma** al radio). `0` = radio estricto, como hasta v1.12 |
+| `GPS_PRECISION_MAX_M` | `100` | Peor precisión de fix que sirve para decidir. Peor que esto (WiFi/antena) = la marca no se puede verificar |
+| `GPS_PRECISION_SUPUESTA_M` | `15` | Precisión que se asume en un punto fijado sin medir (los anteriores a v1.13) |
 | `GPS_FRESCO_MS` | `20000` | Antigüedad máxima del fix GPS para poder marcar |
 | `GPS_BLOQUEA` | `1` | `1` = rechaza la marca lejos/sin GPS. `0` = la acepta y solo la deja observada en el informe (comportamiento v1.8) |
 | `GPS_ANCLA_RADIO_M` | `40` | Radio alrededor del ancla en los puntos con verificación por entrada |
@@ -73,7 +76,15 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 
 > **A quién le llega el informe no se configura por `.env`**: vive en cada condominio (`correosInforme`) y lo edita el propio administrador desde el panel. El envío se agrupa por destinatario, así que un administrador con dos condominios recibe un correo, no dos. Se manda por la API HTTP de Resend y no por SMTP porque **Railway bloquea los puertos SMTP** (465/587 dan timeout).
 
-> Los umbrales de GPS viajan al teléfono en el paquete de rondas, así que basta cambiarlos en el servidor: la app se alinea al actualizar rondas, sin volver a desplegar nada. Si en terreno el bloqueo resulta demasiado duro (GPS con ±30-40 m de precisión junto a muros o torres), subir `GPS_RADIO_M` o dar aire con `GPS_MARGEN_MAX_M` antes de apagar `GPS_BLOQUEA`.
+> Los umbrales de GPS viajan al teléfono en el paquete de rondas, así que basta cambiarlos en el servidor: la app se alinea al actualizar rondas, sin volver a desplegar nada. Si en terreno el bloqueo resulta demasiado duro, subir `GPS_MARGEN_MAX_M` antes de tocar `GPS_RADIO_M`, y apagar `GPS_BLOQUEA` solo como último recurso.
+
+> **Cómo se decide si una marca es válida (v1.13).** El sistema compara dos medidas de GPS, no una: la que tomó el administrador al fijar el punto y la que toma el teléfono al escanear. Cada una trae su propio error y los errores se suman, así que el tope no es un número fijo:
+>
+> ```
+> tope = radio del punto + mín(precisión del punto + precisión del fix, GPS_MARGEN_MAX_M)
+> ```
+>
+> Con un punto bien medido (±5 m) y buena señal (±5 m), el tope queda en 30 m: sigue exigiendo estar sobre el punto. Con señal mala (±30 m) se estira hasta 60 m, que es todo lo que ese hardware puede prometer. El margen lo pone el sensor, no el guardia, y sigue siendo imposible marcar desde la caseta a 200 m. Un fix peor que `GPS_PRECISION_MAX_M` no se usa para nada: no sirve ni para aceptar ni para rechazar.
 
 Para activar Telegram: `MOCK=false`, token en `.env`, y en el panel (pestaña Avisos) guardar el `chat_id` del administrador (se obtiene cuando el admin le escribe `/start` al bot).
 

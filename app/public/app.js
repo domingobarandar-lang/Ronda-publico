@@ -20,9 +20,14 @@ let gpsMotivoFalla = null;
 // ---------- GPS (CU-15 / CU-18): se observa mientras hay ronda activa ----------
 // Desde v1.9 el GPS SÍ bloquea. En un punto al que el administrador le fijó
 // ubicación, la app no deja marcar si el teléfono está a más del radio
-// configurado (20 m por defecto) o si no hay un fix reciente: la foto del QR
-// escaneada desde la caseta ya no entra. Los puntos SIN ubicación fijada —los de
-// bajo techo, donde el GPS no llega— se marcan igual que antes.
+// configurado o si no hay un fix reciente: la foto del QR escaneada desde la
+// caseta ya no entra. Los puntos SIN ubicación fijada —los de bajo techo, donde
+// el GPS no llega— se marcan igual que antes.
+//
+// Desde v1.13 el radio no es un número fijo: se le SUMA la imprecisión de las
+// dos medidas que se comparan (con qué precisión midió el admin el punto, y con
+// qué precisión ve el teléfono ahora). Ver el bloque largo de lib/rondas.js: acá
+// va el espejo exacto de ese cálculo, porque la app decide sin conexión.
 
 // Umbrales que manda el servidor en el paquete. Los defaults calzan con
 // configGps() de lib/rondas.js para que un paquete viejo en caché no acepte
@@ -31,7 +36,9 @@ function cfgGps() {
   const c = (estado.paquete && estado.paquete.gps) || {};
   return {
     radioOkM: Number.isFinite(c.radioOkM) ? c.radioOkM : 20,
-    margenMaxM: Number.isFinite(c.margenMaxM) ? c.margenMaxM : 0,
+    margenMaxM: Number.isFinite(c.margenMaxM) ? c.margenMaxM : 40,
+    precisionMaxM: Number.isFinite(c.precisionMaxM) ? c.precisionMaxM : 100,
+    precisionSupuestaM: Number.isFinite(c.precisionSupuestaM) ? c.precisionSupuestaM : 15,
     frescoMs: Number.isFinite(c.frescoMs) ? c.frescoMs : 20000,
     bloquea: c.bloquea !== false
   };
@@ -45,8 +52,20 @@ function umbralesDe(punto) {
   return {
     anclado,
     radioM: Number.isFinite(punto.radioM) ? punto.radioM : cfg.radioOkM,
-    ventanaMs: Number.isFinite(punto.ventanaMs) ? punto.ventanaMs : cfg.frescoMs
+    ventanaMs: Number.isFinite(punto.ventanaMs) ? punto.ventanaMs : cfg.frescoMs,
+    // Con qué precisión midió el administrador este punto. null = lo fijó antes
+    // de v1.13, sin registrar la calidad: se le asume precisionSupuestaM.
+    precisionM: Number.isFinite(punto.precisionM) ? punto.precisionM : null
   };
+}
+
+// Espejo de margenM() de lib/rondas.js: la imprecisión perdonada es la del punto
+// más la del fix actual, con techo. Ver la explicación larga allá.
+function margenM(precisionPuntoM, accFixM) {
+  const cfg = cfgGps();
+  // Sin dato = precisión DESCONOCIDA, no perfecta: se asume precisionSupuestaM.
+  const conocida = v => (Number.isFinite(v) && v >= 0 ? v : cfg.precisionSupuestaM);
+  return Math.round(Math.min(conocida(precisionPuntoM) + conocida(accFixM), cfg.margenMaxM));
 }
 
 function iniciarGps() {
@@ -57,16 +76,19 @@ function iniciarGps() {
   if (gpsWatchId !== null) return;
   gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
-      gpsActual = {
+      const fix = {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude,
-        acc: Math.round(pos.coords.accuracy || 0),
+        // null = el teléfono no declaró precisión. NO es lo mismo que 0: se
+        // trata como desconocida y el margen cae en precisionSupuestaM.
+        acc: Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : null,
         // pos.timestamp es la hora REAL del fix según el sistema operativo. Usar
         // Date.now() haría pasar por nuevo un fix cacheado que el SO acaba de
         // entregar, y la antigüedad es justo el criterio de un punto anclado.
         // Se acota a "no futuro" por si el reloj del teléfono va adelantado.
         ts: Math.min(pos.timestamp || Date.now(), Date.now())
       };
+      gpsActual = mejorFix(gpsActual, fix);
       gpsMotivoFalla = null;
       pintarGps();
     },
@@ -78,8 +100,25 @@ function iniciarGps() {
         : 'no hay señal todavía';
       pintarGps();
     },
-    { enableHighAccuracy: true, maximumAge: 15000, timeout: 12000 }
+    // maximumAge: 0 — no se acepta el fix cacheado del sistema. El GPS converge
+    // de a poco (el primero suele ser de WiFi o antena, con ±50-500 m) y acá el
+    // dato barato es justo el que arruina la verificación.
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
   );
+}
+
+// El GPS no mejora monótonamente: después de un fix de satélite de ±6 m puede
+// llegar uno de red de ±300 m. Quedarse con el ÚLTIMO haría que la app pase de
+// "puedes marcar" a "estás a 200 m" sola. Se conserva el mejor mientras siga
+// fresco; pasada la ventana de frescura, el nuevo manda aunque sea peor —
+// después de eso el guardia probablemente ya se movió.
+function mejorFix(anterior, nuevo) {
+  if (!anterior) return nuevo;
+  if (nuevo.ts - anterior.ts > cfgGps().frescoMs) return nuevo;
+  // Sin precisión declarada = lo peor posible para esta comparación; si no, un
+  // fix sin dato (acc null) le ganaría a uno bueno.
+  const calidad = f => (Number.isFinite(f.acc) ? f.acc : Infinity);
+  return calidad(nuevo) <= calidad(anterior) ? nuevo : anterior;
 }
 
 function detenerGps() {
@@ -143,7 +182,7 @@ function gpsParaMarca(punto) {
 function verificarPresencia(punto) {
   if (punto.lat == null || punto.lon == null) return null;
   const cfg = cfgGps();
-  const { anclado, radioM, ventanaMs } = umbralesDe(punto);
+  const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto);
   const g = gpsUltimo();
   if (!g) {
     return {
@@ -161,13 +200,22 @@ function verificarPresencia(punto) {
         : `📍 Tu ubicación es de hace ${minutos(g.edadMs)}: hace falta una más reciente para marcar "${punto.nombre}".`
     };
   }
+  // Fix de WiFi o antena: la distancia calculada con eso es ruido. Se dice qué
+  // pasa en vez de mandar a "acercarse" a alguien que ya está encima del punto.
+  if (g.acc != null && g.acc > cfg.precisionMaxM) {
+    return {
+      ok: false,
+      motivo: `📍 Señal demasiado imprecisa (±${g.acc} m) para confirmar que estás en "${punto.nombre}". Espera unos segundos a que el GPS afine y vuelve a escanear.`
+    };
+  }
   const d = distanciaM(g, punto);
-  const topeM = anclado ? radioM : radioM + Math.min(g.acc || 0, cfg.margenMaxM);
+  const topeM = radioM + margenM(precisionM, g.acc);
+  const senal = g.acc != null ? ` (señal ±${g.acc} m)` : '';
   return {
     ok: d <= topeM,
     motivo: anclado
-      ? `📍 Estás a ${d} m de la entrada de "${punto.nombre}" (máximo ${topeM} m). Pasa por la entrada del recinto y vuelve a escanear.`
-      : `📍 Estás a ${d} m de "${punto.nombre}". Hay que estar a menos de ${topeM} m para marcar.`
+      ? `📍 Estás a ${d} m de la entrada de "${punto.nombre}" y el máximo es ${topeM} m${senal}. Pasa por la entrada del recinto y vuelve a escanear.`
+      : `📍 Estás a ${d} m de "${punto.nombre}" y el máximo es ${topeM} m${senal}. Acércate, o espera unos segundos a que mejore la señal.`
   };
 }
 
@@ -676,8 +724,22 @@ function pintarGps() {
     el.className = 'nota nota-alerta';
     return;
   }
-  if (ultimo.edadMs <= cfg.frescoMs) {
-    el.textContent = `📍 Ubicación activa (±${ultimo.acc != null ? ultimo.acc : '?'} m) · hay que estar a menos de ${cfg.radioOkM} m del punto${detalleAnclados}`;
+  if (ultimo.acc != null && ultimo.acc > cfg.precisionMaxM) {
+    // Hay ubicación, pero es de WiFi/antena: no sirve para verificar nada. Vale
+    // decirlo antes de que el guardia camine hasta el punto y no pueda marcar.
+    el.textContent = `📍 Señal imprecisa (±${ultimo.acc} m): todavía no alcanza para marcar. Espera unos segundos a que el GPS afine, mejor a cielo abierto.`;
+    el.className = 'nota nota-alerta';
+  } else if (ultimo.edadMs <= cfg.frescoMs) {
+    // El tope real depende de la señal del momento y de cómo se midió cada
+    // punto, así que se muestra el del punto más exigente de la ronda: es el
+    // número con el que el guardia se va a topar primero.
+    const topes = conUbicacion
+      .filter(p => !umbralesDe(p).anclado)
+      .map(p => umbralesDe(p).radioM + margenM(umbralesDe(p).precisionM, ultimo.acc));
+    const tope = topes.length ? Math.min(...topes) : null;
+    el.textContent = `📍 Ubicación activa (±${ultimo.acc != null ? ultimo.acc : '?'} m)`
+      + (tope != null ? ` · con esta señal hay que estar a menos de ${tope} m del punto` : '')
+      + detalleAnclados;
     el.className = 'nota';
   } else {
     // Señal perdida pero con fix guardado: es la situación normal bajo techo, y
