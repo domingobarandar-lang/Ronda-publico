@@ -12,13 +12,19 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.13.0';
+const VERSION = 'v1.14.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.
   './',
   'index.html',
   'app.js',
+  // geo.js va ANTES que app.js en index.html y app.js lo necesita para
+  // consolidar los fixes. Si falta acá, la app del guardia queda en blanco sin
+  // señal después de la primera purga de caché: el <script> no carga y app.js
+  // revienta al primer fix. Es el único archivo nuevo del release y la razón de
+  // subir VERSION.
+  'geo.js',
   'estilos.css',
   'manifest.webmanifest',
   'icono.svg',
