@@ -1385,3 +1385,39 @@ test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)',
   assert.equal(tarde.status, 201);
   assert.equal(store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos.length, 2);
 });
+
+test('CU-23: la evidencia de la medición viaja con la coordenada y muere con ella', async () => {
+  const marta = await login('marta', '1111');
+  const medido = await api('/api/admin/puntos/p-quincho', {
+    metodo: 'PUT',
+    token: marta.token,
+    cuerpo: {
+      lat: -33.451, lon: -70.661, precisionM: 7,
+      muestras: 34, dispersionM: 6, precisionDeclaradaM: 12, medidoConVersion: 'v1.14.0'
+    }
+  });
+  assert.equal(medido.status, 200);
+  assert.equal(medido.datos.muestras, 34);
+  assert.equal(medido.datos.dispersionM, 6);
+  assert.equal(medido.datos.precisionDeclaradaM, 12);
+  assert.equal(medido.datos.medidoConVersion, 'v1.14.0');
+
+  // Una app vieja manda solo lat/lon/precisionM: la evidencia de la medición
+  // anterior no puede quedar pegada a una coordenada distinta, igual que
+  // precisionM. Sin dispersionM el panel lo marca como "conviene re-medir".
+  const conAppVieja = await api('/api/admin/puntos/p-quincho', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.452, lon: -70.662, precisionM: 9 }
+  });
+  assert.equal(conAppVieja.datos.precisionM, 9);
+  assert.equal(conAppVieja.datos.dispersionM, undefined);
+  assert.equal(conAppVieja.datos.muestras, undefined);
+  assert.equal(conAppVieja.datos.medidoConVersion, undefined);
+
+  // Y quitar la ubicación se lleva todo: no queda calidad huérfana.
+  const sinUbicacion = await api('/api/admin/puntos/p-quincho', {
+    metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true }
+  });
+  assert.equal(sinUbicacion.datos.lat, null);
+  assert.equal(sinUbicacion.datos.precisionM, undefined);
+  assert.equal(sinUbicacion.datos.dispersionM, undefined);
+});

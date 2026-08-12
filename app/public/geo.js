@@ -169,12 +169,13 @@ function precisionHonesta(muestras, centro, pisoM = PISO_FISICO_M) {
   return Math.max(Math.ceil(Math.max(dispersion, teorica)), piso);
 }
 
-// En el navegador estas funciones quedan como globales del documento (geo.js se
-// carga con <script> antes de app.js y de admin.js). En node, los tests las
-// piden por require.
-if (typeof module === 'object' && module.exports) {
-  module.exports = {
-    PISO_ACC_M, PISO_FISICO_M,
-    metrosEntre, mediana, filtrarOutliers, centroidePonderado, dispersion68, precisionHonesta
-  };
-}
+// Un solo objeto `geo`, no siete globales sueltas: geo.js se carga con <script>
+// antes de app.js y de admin.js, y en el navegador todo comparte un mismo
+// espacio de nombres. En node, los tests lo piden por require.
+const geo = {
+  PISO_ACC_M, PISO_FISICO_M,
+  metrosEntre, mediana, filtrarOutliers, centroidePonderado, dispersion68, precisionHonesta
+};
+
+if (typeof module === 'object' && module.exports) module.exports = geo;
+else if (typeof self !== 'undefined') self.geo = geo;

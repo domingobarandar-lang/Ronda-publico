@@ -394,10 +394,19 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.status(201).json(punto);
   });
 
+  // Campos que describen la medición, no la ubicación: viven y mueren con la
+  // coordenada que los produjo.
+  const EVIDENCIA_MEDICION = ['muestras', 'dispersionM', 'precisionDeclaradaM', 'medidoConVersion'];
+
   app.put('/api/admin/puntos/:id', ...admin, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
     const { lat, lon, precisionM, quitarUbicacion, verificacion, radioM, ventanaMin } = req.body || {};
+    // Evidencia de CÓMO se midió la coordenada (v1.14). No participa de ninguna
+    // decisión —el motor solo mira precisionM— pero es lo que va a permitir
+    // re-afinar los umbrales con datos reales sin volver a caminar el condominio,
+    // y lo que distingue un punto medido promediando de uno fijado a ojo.
+    const { muestras, dispersionM, precisionDeclaradaM, medidoConVersion } = req.body || {};
     const nombre = String((req.body || {}).nombre || '').trim();
     if (nombre) punto.nombre = nombre;
     if (quitarUbicacion) {
@@ -408,6 +417,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       delete punto.radioM;
       delete punto.ventanaMin;
       delete punto.precisionM;
+      for (const campo of EVIDENCIA_MEDICION) delete punto[campo];
     } else if (lat !== undefined || lon !== undefined) {
       const la = Number(lat);
       const lo = Number(lon);
@@ -431,6 +441,20 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       // que no tenerla. Sin este dato el motor asume GPS_PRECISION_SUPUESTA_M.
       delete punto.precisionM;
       if (pre != null) punto.precisionM = pre;
+      // Misma regla para la evidencia: describe la medición que trajo ESTA
+      // coordenada. Una app vieja no manda nada y el punto queda sin evidencia,
+      // que es exactamente lo que el panel marca como "conviene re-medir".
+      for (const campo of EVIDENCIA_MEDICION) delete punto[campo];
+      for (const [campo, valor, max] of [
+        ['muestras', muestras, 10000],
+        ['dispersionM', dispersionM, 500],
+        ['precisionDeclaradaM', precisionDeclaradaM, 500]
+      ]) {
+        const n = Number(valor);
+        if (valor == null || valor === '' || !Number.isFinite(n) || n < 0 || n > max) continue;
+        punto[campo] = Math.round(n);
+      }
+      if (medidoConVersion) punto.medidoConVersion = String(medidoConVersion).slice(0, 20);
     }
 
     // Modo de verificación (CU-19): 'gps' = la ubicación es el punto exacto;
