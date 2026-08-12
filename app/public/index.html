@@ -80,6 +80,10 @@
         <button id="btn-salir" class="btn btn-borde btn-chico">Salir</button>
       </div>
       <div id="estado-sync" class="tarjeta-sync oculta"></div>
+      <!-- El GPS se enciende al entrar, no al iniciar la ronda: así el primer
+           punto —el que más se marca en todo el sistema— no se escanea con el
+           receptor recién despertado. Acá se ve que está trabajando. -->
+      <p id="inicio-gps" class="nota"></p>
       <h2>Rondas</h2>
       <div id="lista-rondas"></div>
       <button id="btn-actualizar" class="btn btn-borde">↻ Actualizar rondas desde el servidor</button>
