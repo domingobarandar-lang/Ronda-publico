@@ -317,6 +317,47 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
+  // Telemetría de marcas RECHAZADAS por el GPS (v1.14). Hasta ahora el rechazo
+  // se resolvía entero en el teléfono y no dejaba rastro: los umbrales de v1.13
+  // se ajustaron a ciegas, sin un solo dato de terreno. Esto es lo que faltaba
+  // para que el próximo ajuste sea una decisión con números.
+  //
+  // NO es un control: es un registro. Por eso se acepta aunque la ronda ya esté
+  // cerrada (el rechazo pudo ocurrir en el último punto y llegar por la cola
+  // después del cierre) y no cambia la evaluación de nada.
+  const MAX_RECHAZOS = 50;
+  app.post('/api/ejecuciones/:id/rechazos', auth, (req, res) => {
+    const ejecucion = ejecucionAutorizada(req, res);
+    if (!ejecucion) return;
+    const { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs } = req.body || {};
+    const punto = db.puntos.find(p => p.id === puntoId && p.condominioId === ejecucion.condominioId);
+    if (!punto) return res.status(422).json({ error: 'Ese punto no es de esta ronda.' });
+    const cuando = String(ts || new Date().toISOString());
+    if (!ejecucion.rechazos) ejecucion.rechazos = [];
+    // La cola del teléfono reenvía hasta que el servidor conteste: sin esto, un
+    // mismo rechazo entraría tantas veces como intentos hubo.
+    const repetido = ejecucion.rechazos.some(r => r.puntoId === puntoId && r.ts === cuando);
+    if (!repetido) {
+      const num = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+      ejecucion.rechazos.push({
+        puntoId,
+        ts: cuando,
+        motivo: String(motivo || '').slice(0, 300),
+        distanciaM: num(distanciaM),
+        topeM: num(topeM),
+        acc: num(acc),
+        edadMs: num(edadMs)
+      });
+      // Un teléfono con el GPS roto podría encolar cientos: el registro no puede
+      // hacer crecer db.json sin techo. Se conservan los últimos.
+      if (ejecucion.rechazos.length > MAX_RECHAZOS) {
+        ejecucion.rechazos.splice(0, ejecucion.rechazos.length - MAX_RECHAZOS);
+      }
+      store.guardar();
+    }
+    res.status(repetido ? 200 : 201).json({ ok: true, repetido });
+  });
+
   app.post('/api/ejecuciones/:id/cerrar', auth, async (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;

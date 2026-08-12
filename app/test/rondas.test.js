@@ -1341,3 +1341,47 @@ test('seguridad: el login bloquea la fuerza bruta tras 10 intentos fallidos', as
   assert.equal(conElBueno.status, 429);
 });
 
+
+test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)', async () => {
+  const pedro = await login('pedro', '2222');
+  const ini = await api('/api/ejecuciones', {
+    metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' }
+  });
+  const url = `/api/ejecuciones/${ini.datos.id}/rechazos`;
+  const evento = {
+    puntoId: 'p-porteria',
+    ts: '2026-08-12T03:00:00.000Z',
+    motivo: 'Estás a 90 m de "Portería" y el máximo es 45 m',
+    distanciaM: 90, topeM: 45, acc: 25, edadMs: 3000
+  };
+
+  const primero = await api(url, { metodo: 'POST', token: pedro.token, cuerpo: evento });
+  assert.equal(primero.status, 201);
+  const guardado = store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos;
+  assert.equal(guardado.length, 1);
+  assert.equal(guardado[0].distanciaM, 90);
+  assert.equal(guardado[0].topeM, 45);
+  assert.equal(guardado[0].acc, 25);
+
+  // La cola del teléfono reenvía hasta que el servidor conteste: el mismo evento
+  // dos veces tiene que ser un solo registro, como todo lo demás de esta API.
+  const repetido = await api(url, { metodo: 'POST', token: pedro.token, cuerpo: evento });
+  assert.equal(repetido.status, 200);
+  assert.equal(repetido.datos.repetido, true);
+  assert.equal(store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos.length, 1);
+
+  // Un punto de otro condominio no entra: el registro no es puerta de atrás.
+  const ajeno = await api(url, {
+    metodo: 'POST', token: pedro.token, cuerpo: { ...evento, puntoId: 'p-inexistente', ts: 'otro' }
+  });
+  assert.equal(ajeno.status, 422);
+
+  // Y se acepta con la ronda ya cerrada: el rechazo del último punto llega por la
+  // cola después del cierre, y es justo el que más interesa no perder.
+  await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+  const tarde = await api(url, {
+    metodo: 'POST', token: pedro.token, cuerpo: { ...evento, ts: '2026-08-12T03:05:00.000Z' }
+  });
+  assert.equal(tarde.status, 201);
+  assert.equal(store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos.length, 2);
+});
