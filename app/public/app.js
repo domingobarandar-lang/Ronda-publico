@@ -39,6 +39,7 @@ function cfgGps() {
     margenMaxM: Number.isFinite(c.margenMaxM) ? c.margenMaxM : 40,
     precisionMaxM: Number.isFinite(c.precisionMaxM) ? c.precisionMaxM : 100,
     precisionSupuestaM: Number.isFinite(c.precisionSupuestaM) ? c.precisionSupuestaM : 15,
+    precisionMinM: Number.isFinite(c.precisionMinM) ? c.precisionMinM : 3,
     frescoMs: Number.isFinite(c.frescoMs) ? c.frescoMs : 20000,
     bloquea: c.bloquea !== false
   };
@@ -132,12 +133,20 @@ function detenerGps() {
 
 // Último fix conocido con su antigüedad, sin filtrar. Quién puede usarlo y hasta
 // qué edad lo decide cada punto: 20 s en uno exacto, 15 min en uno anclado.
+//
+// Espejo de limpiarGps() de lib/rondas.js, incluido su piso de precisión: es el
+// punto por donde el fix sale hacia la decisión y hacia el servidor, así que el
+// número que se declara acá tiene que ser el mismo que el servidor va a usar.
+// Un acc de 0 no es un fix perfecto, es un teléfono que no sabe.
 function gpsUltimo() {
   if (!gpsActual) return null;
+  const cfg = cfgGps();
   return {
     lat: gpsActual.lat,
     lon: gpsActual.lon,
-    acc: gpsActual.acc,
+    acc: Number.isFinite(gpsActual.acc) && gpsActual.acc >= 0
+      ? Math.max(Math.round(gpsActual.acc), cfg.precisionMinM)
+      : null,
     edadMs: Math.max(0, Date.now() - gpsActual.ts)
   };
 }

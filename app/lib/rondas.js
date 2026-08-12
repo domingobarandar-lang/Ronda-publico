@@ -29,6 +29,14 @@ const { id, interpretarCodigo } = require('./codigos');
 //                             la distancia es ruido y no se usa
 //   GPS_PRECISION_SUPUESTA_M (15) precisión que se asume cuando la medida no la
 //                             informó (puntos fijados antes de v1.13)
+//   GPS_PRECISION_MIN_M (3)   piso de la precisión declarada de un fix. Desde
+//                             v1.14 el acc que llega ya NO es el que dio el
+//                             navegador: lo calcula la app promediando varias
+//                             lecturas. Un error en esa fórmula que devuelva
+//                             ±2 m donde la realidad es ±40 aflojaría el margen
+//                             en cada marca del sistema, y el test de paridad no
+//                             lo vería (verifica que los dos lados coincidan, y
+//                             coincidirían en el número equivocado)
 //   GPS_FRESCO_MS    (20000)  antigüedad máxima del fix GPS para poder marcar
 //   GPS_BLOQUEA      (1)      1 = rechaza la marca lejos/sin GPS
 //                             0 = la acepta y solo la deja observada (v1.8)
@@ -51,6 +59,7 @@ function configGps() {
     margenMaxM: numEnv('GPS_MARGEN_MAX_M', 40),
     precisionMaxM: numEnv('GPS_PRECISION_MAX_M', 100),
     precisionSupuestaM: numEnv('GPS_PRECISION_SUPUESTA_M', 15),
+    precisionMinM: numEnv('GPS_PRECISION_MIN_M', 3),
     frescoMs: numEnv('GPS_FRESCO_MS', 20000),
     anclaRadioM: numEnv('GPS_ANCLA_RADIO_M', 40),
     anclaVentanaMin: numEnv('GPS_ANCLA_VENTANA_MIN', 15),
@@ -155,7 +164,13 @@ function saltosEnRafaga(escaneos) {
 // DURACIÓN, no como hora absoluta, para que el reloj desajustado de un teléfono
 // no invalide el control (la hora del teléfono ya es sospechosa por diseño).
 // Puede faltar: la mandan las apps desde v1.10 en adelante.
-function limpiarGps(gps) {
+// El piso de precisionMinM se aplica acá, en el borde: desde v1.14 el acc que
+// manda el teléfono ya no lo dio el navegador —lo calcula la app promediando
+// varias lecturas—, así que el servidor no puede seguir creyéndole cualquier
+// número. Un acc de 0 o de 1 no significa "exacto": significa que alguien se
+// equivocó. Y el mismo piso cubre la división por cero de public/geo.js, donde el
+// peso es 1/acc².
+function limpiarGps(gps, cfg = configGps()) {
   if (!gps || typeof gps !== 'object') return null;
   const lat = Number(gps.lat);
   const lon = Number(gps.lon);
@@ -169,7 +184,7 @@ function limpiarGps(gps) {
   return {
     lat,
     lon,
-    acc: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null,
+    acc: Number.isFinite(acc) && acc >= 0 ? Math.max(Math.round(acc), cfg.precisionMinM) : null,
     edadMs: Number.isFinite(edad) && edad >= 0 ? Math.round(edad) : null
   };
 }
@@ -190,7 +205,7 @@ function verificarPresencia(punto, gps, cfg = configGps()) {
   const modo = modoVerificacion(punto);
   if (modo === 'ninguna') return null;
   const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto, cfg);
-  const limpio = limpiarGps(gps);
+  const limpio = limpiarGps(gps, cfg);
 
   if (!limpio) {
     return {
@@ -344,7 +359,7 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
     puntoId: punto.id,
     ts: ts || new Date().toISOString(),
     offline: Boolean(offline),
-    gps: limpiarGps(gps)
+    gps: limpiarGps(gps, cfg)
   });
   return { punto, avance: avance(ejecucion, ronda) };
 }

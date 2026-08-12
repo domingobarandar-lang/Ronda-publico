@@ -38,7 +38,7 @@ function montarApp(cfg) {
     let gpsActual = null;
     let gpsMotivoFalla = null;
     ${nombres.map(extraer).join('\n')}
-    return { verificarPresencia, fijarGps: g => { gpsActual = g; } };
+    return { verificarPresencia, gpsUltimo, fijarGps: g => { gpsActual = g; } };
   `;
   return new Function('CFG', codigo)(cfg);
 }
@@ -90,4 +90,37 @@ test('la app del guardia y el servidor deciden lo mismo en toda la grilla', () =
   }
 
   assert.deepEqual(divergencias, [], `${divergencias.length} de ${puntos.length * fixes.length} escenarios divergen`);
+});
+
+// El piso de precisión (v1.14) es lo único que protege al servidor de un acc que
+// ahora CALCULA la app: desde que el teléfono promedia varias lecturas, un error
+// en esa fórmula podría declarar ±1 m donde la realidad es ±40 y aflojar el
+// margen de todo el sistema. La grilla de arriba ya prueba acc: 0 y lo cazaría
+// como divergencia, pero solo si los dos lados aplican el piso; este test dice en
+// voz alta cuál es el número, para que no se arregle "alineando" hacia abajo.
+test('acc 0 y acc 1 se tratan como el piso de precisión en los dos lados', () => {
+  const cfg = motor.configGps();
+  const app = montarApp(cfg);
+  const piso = cfg.precisionMinM;
+  assert.ok(piso > 0, 'sin piso, acc 0 pesa Infinity en el centroide de geo.js');
+
+  for (const acc of [0, 1, piso]) {
+    const enElServidor = motor.verificarPresencia(
+      { nombre: 'Punto', lat: -33.45, lon: -70.66, precisionM: 5 },
+      { lat: -33.45, lon: -70.66, acc, edadMs: 0 },
+      cfg
+    );
+    assert.equal(enElServidor.precisionM, piso, `el servidor aceptó acc ${acc} sin piso`);
+
+    app.fijarGps({ lat: -33.45, lon: -70.66, acc, ts: Date.now() });
+    assert.equal(app.gpsUltimo().acc, piso, `la app aceptó acc ${acc} sin piso`);
+  }
+
+  // Y por arriba del piso no se toca nada: sería inventar imprecisión.
+  app.fijarGps({ lat: -33.45, lon: -70.66, acc: 12, ts: Date.now() });
+  assert.equal(app.gpsUltimo().acc, 12);
+  // Sin dato declarado sigue siendo null (desconocida), NO el piso: el piso es
+  // para el número malo, no para el número ausente.
+  app.fijarGps({ lat: -33.45, lon: -70.66, acc: null, ts: Date.now() });
+  assert.equal(app.gpsUltimo().acc, null);
 });
