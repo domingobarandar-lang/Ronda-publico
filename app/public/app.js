@@ -1,8 +1,10 @@
 // PWA del guardia — local-first:
 // - El paquete de rondas se descarga al entrar y queda en localStorage.
 // - Los escaneos se validan localmente contra el paquete y se ENCOLAN.
-// - Una cola de eventos idempotentes (iniciar / escaneo / cerrar) se reenvía
-//   al servidor cada pocos segundos; si no hay señal, se reintenta después.
+// - Una cola de eventos idempotentes (iniciar / escaneo / rechazo / cerrar) se
+//   reenvía al servidor cada pocos segundos; si no hay señal, se reintenta
+//   después. Un evento de tipo desconocido cae por todas las ramas y se
+//   descarta, así que un teléfono con la app vieja nunca traba la cola.
 'use strict';
 
 const CLAVE = 'rondasqr';
@@ -28,7 +30,7 @@ let bufferFixes = [];
 let marcaPendiente = null;
 let pendienteTimer = null;
 
-// ---------- GPS (CU-15 / CU-18): se observa mientras hay ronda activa ----------
+// ---------- GPS (CU-15 / CU-18): se observa desde que hay sesión ----------
 // Desde v1.9 el GPS SÍ bloquea. En un punto al que el administrador le fijó
 // ubicación, la app no deja marcar si el teléfono está a más del radio
 // configurado o si no hay un fix reciente: la foto del QR escaneada desde la
@@ -39,6 +41,32 @@ let pendienteTimer = null;
 // dos medidas que se comparan (con qué precisión midió el admin el punto, y con
 // qué precisión ve el teléfono ahora). Ver el bloque largo de lib/rondas.js: acá
 // va el espejo exacto de ese cálculo, porque la app decide sin conexión.
+//
+// Desde v1.14 el fix que entra a ese cálculo ya no es UNA lectura del navegador
+// sino el promedio de las últimas. El camino completo:
+//
+//   watchPosition ─▶ bufferFixes[]          lecturas crudas, variable de módulo
+//                         │                 (poda al insertar; nunca en `estado`)
+//                         ▼
+//                  consolidarFixes()        centroide ponderado 1/acc² + ± honesto
+//                         │                 (matemática en public/geo.js)
+//                         ▼
+//                     gpsActual ─▶ gpsUltimo() ─▶ verificarPresencia()
+//                                       │              │
+//                              piso de precisión       ▼
+//                              (espejo del servidor)  ¿ok?  ──sí──▶ registrarMarca()
+//                                                      │
+//                                                      no
+//                                                      ▼
+//                                              ¿la espera sirve?
+//                                          sí ──▶ marcaPendiente ──▶ evaluarPendiente()
+//                                                  (15 s, se acepta sola si entra)
+//                                          no ──▶ rechazarMarca() + telemetría
+//
+// El buffer y la espera viven FUERA del espejo cliente/servidor a propósito:
+// verificarPresencia() sigue recibiendo UN fix y devolviendo un veredicto,
+// exactamente igual que lib/rondas.js, y paridad-gps.test.js los sigue barriendo
+// a los dos con la misma grilla.
 
 // Umbrales que manda el servidor en el paquete. Los defaults calzan con
 // configGps() de lib/rondas.js para que un paquete viejo en caché no acepte

@@ -19,6 +19,19 @@ const { id, interpretarCodigo } = require('./codigos');
 // sensor, no el guardia, y escanear la foto del QR desde la caseta —decenas o
 // cientos de metros— sigue rechazado.
 //
+// DE DÓNDE SALEN ESAS DOS MEDIDAS (v1.14). Hasta v1.13 las dos eran "la mejor de
+// N lecturas", que es elegir el error más favorable y llamarlo precisión: el
+// presupuesto de arriba estaba bien planteado y mal alimentado. Ahora las dos se
+// promedian —el punto en el panel, el fix en el teléfono— y declaran el ± que
+// corresponde: el máximo entre la dispersión observada y el techo teórico. Los
+// números que entran acá subieron en el papel y bajaron en la realidad.
+//
+// La consecuencia para ESTE archivo: `acc` ya no es un dato de la plataforma,
+// es un número que calcula la app. Por eso limpiarGps() le aplica un piso
+// (precisionMinM) antes de creerle. La decisión, en cambio, no cambió:
+// verificarPresencia() sigue recibiendo UN fix consolidado y devolviendo un
+// veredicto, y public/app.js sigue siendo su espejo exacto.
+//
 // Los valores se leen del entorno para poder ajustarlos en terreno sin tocar
 // código ni volver a desplegar la app del guardia:
 //   GPS_RADIO_M      (20)     distancia máxima aceptada, en metros
@@ -86,8 +99,9 @@ function modoVerificacion(punto) {
 // Umbrales efectivos de un punto: lo que definió el administrador para ese punto
 // manda; si no definió nada, el default del entorno.
 //
-// precisionM es la calidad de la medición con la que se fijó el punto: la app
-// del panel muestrea varios segundos y guarda la mejor precisión que alcanzó.
+// precisionM es la calidad de la medición con la que se fijó el punto: desde
+// v1.14 el panel muestrea 45 s y guarda el ± honesto del promedio (en v1.13
+// guardaba la mejor lectura de 12 s, que era el mismo dato mentido a la baja).
 // null = punto fijado antes de v1.13, con una sola lectura y sin registrar qué
 // tan buena era; se le asume precisionSupuestaM.
 function umbralesDe(punto, cfg) {

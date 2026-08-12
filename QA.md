@@ -93,7 +93,14 @@ La suite quedó en **20/20 en verde**. Cambios de cobertura respecto a la tabla 
 | `GPS_MARGEN_MAX_M=0` restaura el radio estricto de v1.9-v1.12 | CU-18 | ✅ |
 | El paquete del teléfono trae `precisionM` por punto y los umbrales nuevos | CU-02, CU-23 | ✅ |
 
-**Pendiente de terreno**: volver a medir los puntos de Condominio Piloto con la medición de 12 s (los actuales quedaron "fijados sin medir") y confirmar que con puntos bien medidos el tope típico se queda cerca de los 30 m, no del techo de 60.
+**Pendiente de terreno**: volver a medir los puntos de Condominio Piloto con la medición de 45 s de v1.14 (los actuales quedaron "fijados sin medir") y confirmar que con puntos bien medidos el tope típico se queda cerca de los 30 m, no del techo de 60.
+
+**Pendiente de terreno (v1.14)** — lo que ninguna suite puede responder:
+
+1. **Modo avión + purgar caché + abrir la app del guardia.** Debe arrancar. Si queda en blanco, falta un archivo en el `SHELL` del service worker. `test/sw-shell.test.js` cubre el caso conocido; esta prueba cubre el resto.
+2. **Medir el mismo punto bajo techo con el método viejo y el nuevo** y comparar `precisionM`. Es la premisa de todo el cambio: si el ± se queda plano entre el segundo 12 y el 45, ese punto **no tiene arreglo por GPS** y pertenece a la verificación por trayecto (fase 2), no a más muestreo.
+3. **Batería en una ronda larga** (60-90 min) con Wake Lock y GPS encendido desde el login. Es el riesgo aceptado de encender el GPS con la sesión: si el teléfono muere a mitad de ronda se pierde la ronda entera, que es peor que una marca rechazada.
+4. **La métrica que no se puede mover**: ninguna marca fuera de `topeM` aceptada. Si esa cifra se mueve, el motor se aflojó por accidente.
 
 ## Bugs encontrados y corregidos durante QA
 
