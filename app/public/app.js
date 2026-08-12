@@ -355,6 +355,7 @@ function verificarPresencia(punto, fix = gpsUltimo()) {
     return {
       ok: false,
       vencido: true,
+      anclado,
       acc: g.acc,
       edadMs: g.edadMs,
       motivo: anclado
@@ -684,7 +685,12 @@ function procesarCodigo(texto) {
 // error de medición, es distancia real: hacer esperar a alguien que está a tres
 // cuadras solo le hace perder tiempo antes del mismo "no".
 function esperaSirve(presencia) {
-  if (presencia.sinGps || presencia.vencido || presencia.impreciso) return true;
+  // Excepción: en un punto ANCLADO "vencido" significa que el fix de la entrada
+  // tiene más de 15 minutos. Quince segundos quietos no arreglan eso, y mientras
+  // tanto la pantalla le diría "quédate quieto" cuando el veredicto le está
+  // diciendo "sal a donde haya señal". Se le da el mensaje correcto de una vez.
+  if (presencia.vencido) return !presencia.anclado;
+  if (presencia.sinGps || presencia.impreciso) return true;
   if (presencia.distanciaM == null) return false;
   return presencia.distanciaM <= presencia.topeM + cfgGps().precisionMaxM;
 }
@@ -1043,15 +1049,21 @@ function renderSync() {
 function pintarGpsInicio() {
   const el = $('inicio-gps');
   if (!el) return;
-  const ultimo = gpsUltimo();
   if (!estado.sesion || !cfgGps().bloquea) { el.textContent = ''; return; }
-  if (!ultimo) {
-    el.textContent = `📍 Buscando señal (${gpsMotivoFalla || 'el GPS está despertando'}).`;
+  // gpsFresco() y no gpsUltimo(): un fix de hace diez minutos no es "señal
+  // lista". Decirle al guardia que el GPS está caliente cuando está frío es
+  // exactamente el engaño que este release vino a sacar.
+  const fresco = gpsFresco();
+  if (!fresco) {
+    const viejo = gpsUltimo();
+    el.textContent = viejo
+      ? `📍 Buscando señal · la última ubicación es de hace ${minutos(viejo.edadMs)}.`
+      : `📍 Buscando señal (${gpsMotivoFalla || 'el GPS está despertando'}).`;
     el.className = 'nota nota-alerta';
     return;
   }
-  el.textContent = ultimo.acc != null
-    ? `📍 Señal lista (±${ultimo.acc} m): el GPS ya está caliente para el primer punto.`
+  el.textContent = fresco.acc != null
+    ? `📍 Señal lista (±${fresco.acc} m): el GPS ya está caliente para el primer punto.`
     : '📍 Señal lista.';
   el.className = 'nota';
 }

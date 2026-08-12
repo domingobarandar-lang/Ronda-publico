@@ -44,7 +44,7 @@ function constante(nombre) {
 function montarApp(cfg) {
   const nombres = [
     'cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos',
-    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'evaluarPendiente'
+    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'evaluarPendiente', 'esperaSirve'
   ];
   const codigo = `
     let estado = { paquete: { gps: CFG } };
@@ -55,7 +55,7 @@ function montarApp(cfg) {
     const VENTANA_PENDIENTE_MS = ${constante('VENTANA_PENDIENTE_MS')};
     ${nombres.map(extraer).join('\n')}
     return {
-      consolidarFixes, evaluarPendiente, verificarPresencia, gpsUltimo,
+      consolidarFixes, evaluarPendiente, verificarPresencia, gpsUltimo, esperaSirve,
       fijarGps: g => { gpsActual = g; },
       alimentar: fixes => { bufferFixes = []; for (const f of fixes) agregarFix(f); return bufferFixes; },
       ventanaMs: VENTANA_PENDIENTE_MS
@@ -225,4 +225,22 @@ test('el veredicto que sale del reducer trae con qué registrar el rechazo', () 
   assert.ok(r.veredicto.distanciaM > 1000);
   assert.equal(r.veredicto.topeM, 20 + 5 + 12);
   assert.equal(r.veredicto.acc, 12);
+});
+
+// ---- esperaSirve: a quién le sirve esperar ----
+
+test('esperaSirve: en un punto anclado, un fix vencido NO se espera', () => {
+  // "Vencido" en un anclado son 15 minutos, no 20 segundos: quedarse quieto no
+  // lo arregla, y el mensaje de espera contradiría al veredicto.
+  assert.equal(app.esperaSirve({ vencido: true, anclado: true }), false);
+  assert.equal(app.esperaSirve({ vencido: true, anclado: false }), true);
+});
+
+test('esperaSirve: la señal fría se espera, la distancia real no', () => {
+  assert.equal(app.esperaSirve({ sinGps: true }), true);
+  assert.equal(app.esperaSirve({ impreciso: true }), true);
+  // Apenas sobre el tope: un fix malo puede estar equivocado por esto.
+  assert.equal(app.esperaSirve({ distanciaM: 60, topeM: 35 }), true);
+  // A 1,1 km no hay señal que arregle eso: es distancia, no error de medida.
+  assert.equal(app.esperaSirve({ distanciaM: 1100, topeM: 35 }), false);
 });

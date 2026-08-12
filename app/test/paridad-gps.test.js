@@ -116,6 +116,12 @@ test('acc 0 y acc 1 se tratan como el piso de precisión en los dos lados', () =
     assert.equal(app.gpsUltimo().acc, piso, `la app aceptó acc ${acc} sin piso`);
   }
 
+  // geo.js afirma en un comentario que su piso es el mismo del servidor. Un
+  // comentario no sostiene un invariante: si alguien mueve uno de los dos, el
+  // centroide empieza a ponderar con un piso distinto del que valida el motor.
+  assert.equal(require('../public/geo').PISO_ACC_M, piso,
+    'geo.PISO_ACC_M y GPS_PRECISION_MIN_M se separaron');
+
   // Y por arriba del piso no se toca nada: sería inventar imprecisión.
   app.fijarGps({ lat: -33.45, lon: -70.66, acc: 12, ts: Date.now() });
   assert.equal(app.gpsUltimo().acc, 12);

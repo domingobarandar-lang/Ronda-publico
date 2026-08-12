@@ -332,7 +332,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs } = req.body || {};
     const punto = db.puntos.find(p => p.id === puntoId && p.condominioId === ejecucion.condominioId);
     if (!punto) return res.status(422).json({ error: 'Ese punto no es de esta ronda.' });
-    const cuando = String(ts || new Date().toISOString());
+    // Se acota como el motivo: el cuerpo puede traer hasta 1 MB y esto se
+    // escribe en db.json, que se reserializa entero en cada guardado. Un ts de
+    // 300 KB no es un ataque sofisticado, es un campo sin cota.
+    const cuando = String(ts || new Date().toISOString()).slice(0, 40);
     if (!ejecucion.rechazos) ejecucion.rechazos = [];
     // La cola del teléfono reenvía hasta que el servidor conteste: sin esto, un
     // mismo rechazo entraría tantas veces como intentos hubo.
