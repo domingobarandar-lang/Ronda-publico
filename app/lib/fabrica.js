@@ -128,7 +128,6 @@ function altaCondominio(db, datos, deps) {
   const condominio = {
     id: idDesdeNombre(nombre, db.condominios.map(x => x.id)),
     nombre,
-    adminTelegramChatId: null,
     codigoRegistro: nuevoCodigoRegistro(db, codigoCorto),
     correosInforme: c.correos
   };

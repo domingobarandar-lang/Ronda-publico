@@ -30,7 +30,7 @@ Tres piezas, una sola app Node:
 - **CU-07 Offline**: sin conexión, los escaneos quedan en cola local con su timestamp original; al volver la conexión se sincronizan tal cual (marcados `offline` en el informe).
 - **CU-08 Cierre y evaluación**: al cerrar la ronda (guardia, o el admin desde el panel si quedó abierta), el servidor evalúa: puntos faltantes, orden violado (si la ronda es estricta) y duración vs máximo permitido.
 - **CU-09 Informe**: cada cierre genera un informe con condominio, ronda, guardia, inicio/fin/duración, detalle por punto (hora de marca o **FALTANTE**) y estado global: `Completa`, `Completa con observaciones` o `Incompleta`.
-- **CU-10 Alerta de punto saltado**: si faltan puntos, el informe queda `Incompleta` y el administrador recibe una notificación (Telegram real si está configurado; registro en mock por defecto) con los puntos faltantes.
+- **CU-10 Alerta de punto saltado**: si faltan puntos, el informe queda `Incompleta` y el administrador recibe una notificación (registro en el panel siempre, y push al teléfono si lo activó) con los puntos faltantes.
 - **CU-11 Panel admin**: alta/edición de puntos, guardias y rondas del condominio; listado de informes con estado visible de un vistazo.
 - **CU-12 Hoja de QR**: el admin genera una hoja imprimible con el QR de cada punto (+ código corto al pie) para pegar en los sectores.
 - **CU-13 Entrada manual de respaldo**: si la cámara falla o el QR está dañado, el guardia tipea el código corto de 6 caracteres impreso bajo el QR — misma validación que el escaneo.
@@ -79,7 +79,7 @@ Tres piezas, una sola app Node:
 
 ## Datos
 
-- `condominios`: id, nombre, adminTelegramChatId (opcional).
+- `condominios`: id, nombre, codigoRegistro, correosInforme.
 - `usuarios`: id, condominioId, usuario, pinHash, rol (`guardia`|`admin`), nombre.
 - `puntos`: id, condominioId, nombre, codigoCorto; `lat`/`lon` si tiene verificación de presencia; `verificacion` (`'anclaje'`, o ausente = ubicación exacta); `radioM`/`ventanaMin` opcionales por punto. El modo se **deduce**: sin lat/lon no se verifica, con lat/lon y sin `verificacion` es exacto. Así los puntos que ya existían siguen funcionando sin migración.
 - `rondas` (plantillas): id, condominioId, nombre, puntoIds (ordenados), ordenEstricto, duracionMaxMin.

@@ -36,7 +36,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Presupuesto de error del GPS** *(v1.13)*: el tope deja de ser un número fijo: **se le suma la imprecisión de las dos medidas que se comparan**, la del punto y la del teléfono ahora. Esto arregla el caso en que el guardia estaba parado sobre el QR y la app le decía "acércate al punto": con dos fixes de ±20 m, exigir 20 m clavados era imposible de cumplir. El control no se debilita — el margen lo pone el sensor, no el guardia — y un fix demasiado impreciso (WiFi/antena) se descarta en vez de usarse para decidir.
 - **Medición honesta del GPS** *(v1.14)*: v1.13 planteó bien ese presupuesto y lo alimentó mal — las dos medidas eran "la mejor de N lecturas", que es elegir el error más favorable y llamarlo precisión. Ahora las dos se promedian con [`public/geo.js`](public/geo.js) (centroide ponderado por `1/acc²`, outliers descartados por mediana) y declaran el **máximo** entre la dispersión observada, el techo teórico y un piso físico: promediar mata el error aleatorio, no el multipath. El panel **mide 45 s en vez de 12** —calentando el receptor desde que se abre la pestaña— y guarda junto al punto cómo llegó a ese número; los puntos fijados antes salen marcados para re-medir, sin que ninguno cambie solo. En el teléfono, un rechazo por señal fría deja la marca **esperando hasta 15 s** y se registra sola si la señal entra: el criterio no se afloja, solo se le da tiempo a cumplirse. Y el GPS se enciende al entrar, con Wake Lock durante la ronda, porque con la pantalla apagada el navegador lo mata.
 - **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
-- **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador — en el panel siempre, y por Telegram si está configurado.
+- **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador en el panel (pestaña Avisos). Si una ronda queda incompleta o sospechosa, además sale un push al teléfono.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
 - **Informe semanal por correo** *(v1.8, por destinatario desde v1.11)*: cada lunes a las 8 de la mañana (hora de Chile) sale por correo el informe de la semana anterior en Word, con estadísticas, ranking de guardias e incidencias. El administrador guarda su correo en el panel (pestaña **Avisos**); el que administra **varios condominios pone el mismo correo en cada uno y recibe un solo mensaje con un .docx por condominio adjunto**. Se puede poner más de un correo por condominio (el administrador y el comité, por ejemplo). El botón "Enviar uno de prueba ahora" manda el de esa semana sin esperar al lunes.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos.
@@ -49,7 +49,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 npm test
 ```
 
-Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre condominios y guardias, reenvío offline idempotente, cierres repetidos). Todo corre en MOCK: no llama a ningún servicio externo.
+Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre condominios y guardias, reenvío offline idempotente, cierres repetidos). No llama a ningún servicio externo.
 
 ## Configuración (.env)
 
@@ -57,8 +57,6 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 |---|---|---|
 | `PORT` | `3737` | Puerto del servidor |
 | `DB_PATH` | `data/db.json` | Ruta del archivo de datos (en Railway: `/data/db.json`, sobre el volumen persistente) |
-| `MOCK` | `true` | En `true`, los avisos al admin quedan solo en el panel/consola. En `false`, salen por Telegram |
-| `TELEGRAM_BOT_TOKEN` | — | Token del bot que envía los informes (necesario solo con `MOCK=false`) |
 | `FABRICA_USUARIO` | — | Cuenta de la operación para dar de alta condominios en `/fabrica`. Se crea sola al arrancar |
 | `FABRICA_PIN` | — | Su PIN, de **8 dígitos**. Cambiarlo acá y reiniciar recupera el acceso. Vacío = pantalla de fábrica inaccesible |
 | `GPS_RADIO_M` | `20` | Metros máximos entre el teléfono y el punto para poder marcar |
@@ -88,8 +86,6 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 >
 > Con un punto bien medido (±5 m) y buena señal (±5 m), el tope queda en 30 m: sigue exigiendo estar sobre el punto. Con señal mala (±30 m) se estira hasta 60 m, que es todo lo que ese hardware puede prometer. El margen lo pone el sensor, no el guardia, y sigue siendo imposible marcar desde la caseta a 200 m. Un fix peor que `GPS_PRECISION_MAX_M` no se usa para nada: no sirve ni para aceptar ni para rechazar.
 
-Para activar Telegram: `MOCK=false`, token en `.env`, y en el panel (pestaña Avisos) guardar el `chat_id` del administrador (se obtiene cuando el admin le escribe `/start` al bot).
-
 ## Estructura
 
 ```
@@ -103,7 +99,7 @@ lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
 lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
 lib/correo.js           envío por Resend, con un .docx por condominio adjunto
 lib/programador.js      reloj semanal: cada lunes revisa y manda lo que falte
-lib/notificar.js aviso al admin (mock | Telegram)
+lib/notificar.js aviso al admin (panel + consola)
 lib/push.js      push al teléfono del admin cuando una ronda queda incompleta
 lib/auth.js      PIN scrypt + sesiones Bearer
 public/          app guardia (index + manifest) + app panel (admin.html + panel.webmanifest) + hoja QR + informe

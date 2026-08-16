@@ -319,14 +319,25 @@ function minutos(ms) {
   return min >= 1 ? `${min} min` : `${Math.round(ms / 1000)} s`;
 }
 
-// Qué ubicación se adjunta a la marca. En un punto anclado sirve el último fix
-// aunque esté viejo: es precisamente el que tomó al pasar por la entrada, antes
-// de que el GPS se cortara adentro. En el resto, solo uno reciente.
+// Qué ubicación se adjunta a la marca: EXACTAMENTE la misma con la que
+// verificarPresencia() dio el veredicto. Que estas dos funciones usaran
+// criterios distintos era un bug silencioso y del peor tipo — la app aceptaba
+// (mirando la ventana del punto) y adjuntaba `null` (mirando solo `anclado`),
+// así que el guardia veía el ✅ y el servidor rechazaba la marca después: punto
+// hecho que no salía en el informe. Pasaba en cualquier punto EXACTO con ventana
+// propia mayor que frescoMs, y el test de paridad no podía verlo porque esta
+// función queda fuera del par espejado.
+//
+// La regla es una sola: si el fix sirvió para decidir, sirve para viajar.
 // edadMs viaja como duración, así el reenvío desde la cola offline horas después
 // sigue informando la misma antigüedad del momento del escaneo.
 function gpsParaMarca(punto) {
-  if (punto.lat != null && umbralesDe(punto).anclado) return gpsUltimo();
-  return gpsFresco();
+  // Punto sin ubicación fijada: no hay nada que verificar y el fix va solo como
+  // dato informativo, si es reciente.
+  if (punto.lat == null || punto.lon == null) return gpsFresco();
+  const g = gpsUltimo();
+  if (!g) return null;
+  return g.edadMs <= umbralesDe(punto).ventanaMs ? g : null;
 }
 
 // Espejo de verificarPresencia() de lib/rondas.js. null = el punto no tiene
@@ -445,6 +456,17 @@ function guardarEstado() {
 
 const $ = id => document.getElementById(id);
 
+// Escapa texto que va a parar a innerHTML. Mismo helper que admin.js y
+// fabrica.js: esta app era la única de las tres sin él, y es la que muestra
+// nombres que NO controla —el condominio en la pantalla de registro (que es
+// pública y sin sesión), y los nombres de ronda, punto y observación que
+// escribe el administrador—. Un nombre con `<` rompía el HTML en el mejor caso.
+function esc(texto) {
+  const div = document.createElement('div');
+  div.textContent = String(texto == null ? '' : texto);
+  return div.innerHTML;
+}
+
 function mostrarVista(id) {
   for (const v of document.querySelectorAll('.vista')) v.classList.add('oculta');
   $(id).classList.remove('oculta');
@@ -552,7 +574,7 @@ async function irARegistro() {
   try {
     const condominios = await api('/api/condominios');
     sel.innerHTML = condominios.length
-      ? condominios.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')
+      ? condominios.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('')
       : '<option value="">(no hay condominios)</option>';
   } catch {
     sel.innerHTML = '<option value="">— sin conexión —</option>';
@@ -1018,8 +1040,8 @@ function renderInicio() {
     ].filter(Boolean).join(' · ');
     tarjeta.innerHTML = `
       <div class="tarjeta-texto">
-        <div class="grande">${r.nombre}</div>
-        <div class="nota">${reglas}</div>
+        <div class="grande">${esc(r.nombre)}</div>
+        <div class="nota">${esc(reglas)}</div>
       </div>
       <button class="btn btn-principal">Iniciar</button>`;
     tarjeta.querySelector('button').addEventListener('click', () => iniciarRonda(r.id));
@@ -1154,16 +1176,18 @@ function renderRonda() {
   lista.innerHTML = '';
   const marcados = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
   ronda.puntos.forEach((p, i) => {
-    const esc = marcados.get(p.id);
+    // `marca`, no `esc`: esta variable se llamaba igual que el helper de
+    // escapado y lo dejaba tapado justo donde hace falta.
+    const marca = marcados.get(p.id);
     const fila = document.createElement('div');
-    fila.className = `punto ${esc ? 'punto-hecho' : ''}`;
+    fila.className = `punto ${marca ? 'punto-hecho' : ''}`;
     fila.innerHTML = `
       <div class="punto-numero">${i + 1}</div>
       <div class="punto-texto">
-        <div>${p.nombre}</div>
-        <div class="nota">${esc ? `Marcado ${hora(esc.ts)}${esc.offline ? ' (sin señal)' : ''}` : 'Pendiente'}</div>
+        <div>${esc(p.nombre)}</div>
+        <div class="nota">${marca ? `Marcado ${esc(hora(marca.ts))}${marca.offline ? ' (sin señal)' : ''}` : 'Pendiente'}</div>
       </div>
-      <div class="punto-check">${esc ? '✅' : '·'}</div>`;
+      <div class="punto-check">${marca ? '✅' : '·'}</div>`;
     lista.appendChild(fila);
   });
 }
@@ -1181,12 +1205,12 @@ function renderFinal() {
     };
     $('final-titulo').textContent = etiquetas[informe.estado] || informe.estado;
     const faltantes = informe.detalle.filter(d => d.faltante);
-    let html = `<p class="nota">${informe.ronda} · ${informe.guardia} · ${informe.evaluacion ? informe.evaluacion.duracionMin + ' min' : ''}</p>`;
+    let html = `<p class="nota">${esc(informe.ronda)} · ${esc(informe.guardia)} · ${informe.evaluacion ? esc(informe.evaluacion.duracionMin + ' min') : ''}</p>`;
     if (faltantes.length) {
-      html += `<div class="caja caja-alerta"><strong>Puntos sin marcar:</strong><br>${faltantes.map(f => f.nombre).join('<br>')}</div>`;
+      html += `<div class="caja caja-alerta"><strong>Puntos sin marcar:</strong><br>${faltantes.map(f => esc(f.nombre)).join('<br>')}</div>`;
     }
     if (informe.evaluacion && informe.evaluacion.observaciones.length) {
-      html += `<div class="caja">${informe.evaluacion.observaciones.map(o => `• ${o}`).join('<br>')}</div>`;
+      html += `<div class="caja">${informe.evaluacion.observaciones.map(o => `• ${esc(o)}`).join('<br>')}</div>`;
     }
     html += '<p class="nota centrado">El informe ya le llegó al administrador.</p>';
     $('final-resumen').innerHTML = html;
@@ -1202,7 +1226,7 @@ function renderFinal() {
   const faltantes = ronda.puntos.filter(p => !marcados.has(p.id));
   $('final-titulo').textContent = faltantes.length ? '⚠️ Ronda terminada (incompleta)' : '✅ Ronda terminada';
   $('final-resumen').innerHTML = faltantes.length
-    ? `<div class="caja caja-alerta"><strong>Puntos sin marcar:</strong><br>${faltantes.map(f => f.nombre).join('<br>')}</div>`
+    ? `<div class="caja caja-alerta"><strong>Puntos sin marcar:</strong><br>${faltantes.map(f => esc(f.nombre)).join('<br>')}</div>`
     : '<div class="caja">Todos los puntos quedaron marcados.</div>';
   $('final-sync').textContent = navigator.onLine
     ? 'Enviando el informe al administrador…'

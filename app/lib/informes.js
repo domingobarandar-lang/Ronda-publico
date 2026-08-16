@@ -1,5 +1,5 @@
 // Informe de una ejecución: estructura de datos + versión en texto plano
-// (para Telegram y consola). El HTML imprimible lo arma el navegador en
+// (para el registro de avisos y la consola). El HTML imprimible lo arma el navegador en
 // public/informe.html a partir del JSON.
 const ETIQUETAS = {
   completa: 'Completa',

@@ -18,8 +18,8 @@ function datosSemilla() {
     // correosInforme: a quién le llega el informe semanal del lunes. Si un mismo
     // administrador tiene varios condominios, va su correo en cada uno y recibe
     // un solo mensaje con todos los informes adjuntos.
-    { id: 'aromos', nombre: 'Condominio Los Aromos', adminTelegramChatId: null, codigoRegistro: 'AROMOS', correosInforme: [] },
-    { id: 'mirador', nombre: 'Condominio Mirador del Valle', adminTelegramChatId: null, codigoRegistro: 'MIRADOR', correosInforme: [] }
+    { id: 'aromos', nombre: 'Condominio Los Aromos', codigoRegistro: 'AROMOS', correosInforme: [] },
+    { id: 'mirador', nombre: 'Condominio Mirador del Valle', codigoRegistro: 'MIRADOR', correosInforme: [] }
   );
 
   db.usuarios.push(

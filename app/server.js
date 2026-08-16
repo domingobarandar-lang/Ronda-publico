@@ -39,6 +39,16 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   const auth = autenticar(store);
   const admin = [auth, soloAdmin];
 
+  // Express 4 NO atrapa el rechazo de un handler `async`: se vuelve un
+  // unhandledRejection y Node mata el proceso. No es un 500 con log feo, es el
+  // servicio caído para todos — y como la cola del teléfono reintenta sola,
+  // un solo evento malo lo tumba otra vez apenas se levanta.
+  //
+  // `alerta()` envuelve los handlers asíncronos para que cualquier error termine
+  // en el middleware de abajo, y el middleware es la red por si algún día entra
+  // un handler sin envolver.
+  const alerta = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
   // Sobre qué condominio trabaja esta petición.
   //
   // El GUARDIA queda siempre amarrado al suyo, pase lo que pase en la cabecera:
@@ -361,11 +371,11 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.status(repetido ? 200 : 201).json({ ok: true, repetido });
   });
 
-  app.post('/api/ejecuciones/:id/cerrar', auth, async (req, res) => {
+  app.post('/api/ejecuciones/:id/cerrar', auth, alerta(async (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     res.json(await cerrarYNotificar(ejecucion, { fin: (req.body || {}).fin }));
-  });
+  }));
 
   // ---------- Admin: en qué condominio se está parado ----------
 
@@ -467,6 +477,19 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       if (!['gps', 'anclaje'].includes(verificacion)) {
         return res.status(422).json({ error: 'Modo de verificación inválido.' });
       }
+      // Los umbrales propios se calibraron contra los defaults del modo ANTERIOR
+      // (20 m / 20 s en exacto, 40 m / 15 min en anclaje). Arrastrarlos al modo
+      // nuevo es la misma clase de error que dejar pegada la precisión de una
+      // medición vieja en una coordenada nueva, unas líneas más arriba — con una
+      // consecuencia peor: una ventana de anclaje sobreviviendo en un punto
+      // exacto hacía que la app aceptara marcas que el servidor después
+      // rechazaba. Si el mismo request trae umbrales explícitos, el bloque de
+      // abajo los vuelve a poner: por eso se limpia acá y no después.
+      const modoAntes = punto.verificacion === 'anclaje' ? 'anclaje' : 'gps';
+      if (verificacion !== modoAntes) {
+        delete punto.radioM;
+        delete punto.ventanaMin;
+      }
       if (verificacion === 'anclaje') punto.verificacion = 'anclaje';
       else delete punto.verificacion;
     }
@@ -510,6 +533,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   app.put('/api/admin/registro', ...admin, (req, res) => {
     const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
     const cuerpo = req.body || {};
     let codigo;
     if (cuerpo.generar) {
@@ -671,7 +695,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // Informe semanal por condominio en Word (.docx), para enviar por correo al
   // administrador. Rango de fechas por query (?desde=YYYY-MM-DD&hasta=YYYY-MM-DD);
   // por defecto, la semana anterior (lunes a domingo).
-  app.get('/api/admin/informe-semanal.docx', ...admin, async (req, res) => {
+  // Envuelto igual que el resto aunque tenga su propio try/catch: así la regla
+  // "ningún handler async se registra sin alerta()" es verificable de un vistazo
+  // (y por un test), en vez de depender de revisar el cuerpo de cada uno.
+  app.get('/api/admin/informe-semanal.docx', ...admin, alerta(async (req, res) => {
     try {
       const { desde, hasta } = req.query;
       const { buffer, datos } = await generarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta });
@@ -682,7 +709,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     } catch (err) {
       res.status(500).json({ error: 'No se pudo generar el informe semanal.' });
     }
-  });
+  }));
 
   // Correos a los que se manda el informe semanal de ESTE condominio (el
   // administrador y, si corresponde, el comité). Un administrador con varios
@@ -707,6 +734,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       return res.status(422).json({ error: `Esto no parece un correo: ${malos.join(', ')}` });
     }
     const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
     condominio.correosInforme = normalizarCorreos(crudos);
     store.guardar();
     res.json({ correos: condominio.correosInforme });
@@ -715,7 +743,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // Enviar el informe semanal por correo ahora mismo (para probar el envío o
   // mandarlo a demanda). Va a los correos del condominio salvo que se pase otro
   // destino; si el condominio no tiene ninguno, cae al respaldo INFORME_TO.
-  app.post('/api/admin/informe-semanal/enviar', ...admin, async (req, res) => {
+  app.post('/api/admin/informe-semanal/enviar', ...admin, alerta(async (req, res) => {
     if (!correo.configurado()) {
       return res.status(422).json({ error: 'El envío por correo no está configurado en el servidor (falta RESEND_API_KEY).' });
     }
@@ -728,18 +756,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const r = await correo.enviarInforme(db, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
-  });
+  }));
 
   // Cierre administrativo de una ronda que quedó abierta.
-  app.post('/api/admin/ejecuciones/:id/cerrar', ...admin, async (req, res) => {
+  app.post('/api/admin/ejecuciones/:id/cerrar', ...admin, alerta(async (req, res) => {
     const ejecucion = db.ejecuciones.find(e => e.id === req.params.id && e.condominioId === miCondominio(req));
     if (!ejecucion) return res.status(404).json({ error: 'La ejecución no existe.' });
     res.json(await cerrarYNotificar(ejecucion, { cerradaPorAdmin: true }));
-  });
+  }));
 
   // ---------- Admin: hoja de QR y notificaciones ----------
 
-  app.get('/api/admin/hoja-qr', ...admin, async (req, res) => {
+  app.get('/api/admin/hoja-qr', ...admin, alerta(async (req, res) => {
     const condominio = db.condominios.find(c => c.id === miCondominio(req)) || {};
     const puntos = db.puntos.filter(p => p.condominioId === miCondominio(req));
     const hoja = [];
@@ -752,7 +780,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       });
     }
     res.json({ condominio: condominio.nombre, puntos: hoja });
-  });
+  }));
 
   app.get('/api/admin/notificaciones', ...admin, (req, res) => {
     res.json(db.notificaciones
@@ -893,7 +921,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // Enviar el informe de un condominio ahora mismo, para probar que el correo
   // llega antes de esperar al lunes.
-  app.post('/api/fabrica/condominios/:id/informe-prueba', ...deFabrica, async (req, res) => {
+  app.post('/api/fabrica/condominios/:id/informe-prueba', ...deFabrica, alerta(async (req, res) => {
     const condominio = db.condominios.find(c => c.id === req.params.id);
     if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
     if (!correo.configurado()) {
@@ -904,14 +932,15 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const r = await correo.enviarInforme(db, { condominioIds: [condominio.id], to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
-  });
+  }));
 
-  // Chat id de Telegram del administrador (para pasar de mock a real).
-  app.put('/api/admin/telegram', ...admin, (req, res) => {
-    const condominio = db.condominios.find(c => c.id === miCondominio(req));
-    condominio.adminTelegramChatId = String((req.body || {}).chatId || '').trim() || null;
-    store.guardar();
-    res.json({ ok: true, adminTelegramChatId: condominio.adminTelegramChatId });
+  // Última red: cualquier error que se escape de un handler termina acá y sale
+  // como 500, en vez de matar el proceso. Se registra entero en consola porque
+  // un 500 sin rastro en el log es un bug que no se puede perseguir.
+  app.use((err, req, res, next) => {
+    console.error(`[error] ${req.method} ${req.originalUrl}`, err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
   return { app, store };
@@ -921,11 +950,11 @@ if (require.main === module) {
   const puerto = Number(process.env.PORT || 3737);
   const { app, store } = crearApp();
   app.listen(puerto, () => {
-    const modo = (process.env.MOCK || 'true') !== 'false' ? 'MOCK (quedan en consola y registro)' : 'REALES (Telegram)';
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
     console.log(`  Panel administrador: http://localhost:${puerto}/panel`);
-    console.log(`  Notificaciones: ${modo}`);
+    console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');
+    console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : 'sin configurar (falta RESEND_API_KEY)'}`);
     console.log(`  Base de datos: ${store.ruta}`);
   });
   programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)

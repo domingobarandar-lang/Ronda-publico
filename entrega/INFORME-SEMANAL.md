@@ -8,7 +8,7 @@
 
 Cada semana, la app arma **un informe por condominio** — estilo el de Hibiscus, con estadísticas y gráficos — que le llega por correo al administrador de ese condominio. El administrador **no entra a la app**: recibe el documento y listo.
 
-La app del guardia y el panel del administrador **quedan igual**. Esto se suma encima; no reemplaza el aviso por ronda (Telegram/push) que ya existe.
+La app del guardia y el panel del administrador **quedan igual**. Esto se suma encima; no reemplaza el aviso por ronda (panel + push) que ya existe.
 
 Maqueta visual aprobada como referencia de formato: informe semanal (datos de ejemplo), estilo acta imprimible.
 

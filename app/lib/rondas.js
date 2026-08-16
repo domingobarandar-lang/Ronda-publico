@@ -318,7 +318,7 @@ function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }
     rondaId,
     condominioId: ronda.condominioId,
     guardiaId: guardia.id,
-    inicio: inicio || new Date().toISOString(),
+    inicio: limpiarTs(inicio),
     fin: null,
     estado: 'en_curso',
     escaneos: [],
@@ -328,8 +328,34 @@ function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }
   return { ejecucion };
 }
 
+// La ronda de una ejecución puede haber sido ELIMINADA desde el panel mientras
+// el guardia la caminaba: db.ejecuciones guarda el rondaId, no la ronda. Todo lo
+// que la busque tiene que sobrevivir a que no esté — el informe ya lo hace
+// (armarInforme cae a `{ puntoIds: [] }`) y la lista del panel también, que
+// muestra "(ronda eliminada)". El motor era el único que la daba por segura, y
+// desreferenciarla mataba el proceso entero en el cierre.
+function rondaDe(db, ejecucion) {
+  return db.rondas.find(r => r.id === ejecucion.rondaId) || null;
+}
+
 function avance(ejecucion, ronda) {
-  return { hechos: ejecucion.escaneos.length, total: ronda.puntoIds.length };
+  return { hechos: ejecucion.escaneos.length, total: ronda ? ronda.puntoIds.length : 0 };
+}
+
+// La hora de la marca la manda el teléfono y es texto libre: se acota igual que
+// el ts de los rechazos. Sin esto un cliente podía guardar 200 KB en este campo
+// —db.json se reserializa ENTERO en cada guardado, así que engordarlo es
+// impuesto sobre todas las peticiones— y un ts que no fuera string reventaba
+// después en el `localeCompare` del orden estricto, tres funciones más allá.
+// Y además tiene que ser una fecha entendible: un ts que no se puede parsear
+// sale impreso como "Invalid Date" en el informe y en el correo del
+// administrador. La hora del servidor es peor dato que la del teléfono (por eso
+// se prefiere la del teléfono cuando sirve), pero es infinitamente mejor que
+// una fecha rota en el único documento que el administrador va a leer.
+function limpiarTs(ts) {
+  const texto = String(ts == null ? '' : ts).slice(0, 40);
+  if (!texto || Number.isNaN(Date.parse(texto))) return new Date().toISOString();
+  return texto;
 }
 
 function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
@@ -337,7 +363,10 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
   const interpretado = interpretarCodigo(codigo);
   if (!interpretado) return { error: 'Código no reconocido.', codigo: 422 };
 
-  const ronda = db.rondas.find(r => r.id === ejecucion.rondaId);
+  const ronda = rondaDe(db, ejecucion);
+  if (!ronda) {
+    return { error: 'Esta ronda ya no existe: fue eliminada desde el panel. Cierra y avisa al administrador.', codigo: 409 };
+  }
   let punto = null;
   if (interpretado.tipo === 'qr') {
     // El payload debe calzar completo (id + código corto): un QR forjado con
@@ -371,7 +400,7 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
 
   ejecucion.escaneos.push({
     puntoId: punto.id,
-    ts: ts || new Date().toISOString(),
+    ts: limpiarTs(ts),
     offline: Boolean(offline),
     gps: limpiarGps(gps, cfg)
   });
@@ -380,8 +409,8 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
 
 function cerrarEjecucion(db, ejecucion, { fin } = {}) {
   if (ejecucion.estado !== 'en_curso') return { ejecucion, repetida: true };
-  const ronda = db.rondas.find(r => r.id === ejecucion.rondaId);
-  ejecucion.fin = fin || new Date().toISOString();
+  const ronda = rondaDe(db, ejecucion);
+  ejecucion.fin = limpiarTs(fin);
   ejecucion.evaluacion = evaluar(db, ejecucion, ronda);
   const ev = ejecucion.evaluacion;
   ejecucion.estado = ev.faltantes.length ? 'incompleta'
@@ -391,10 +420,18 @@ function cerrarEjecucion(db, ejecucion, { fin } = {}) {
   return { ejecucion };
 }
 
+// `ronda` puede venir null: la eliminaron mientras la ejecución estaba abierta.
+// La ronda se evalúa igual con lo que el guardia alcanzó a marcar —sus marcas no
+// dejan de ser válidas porque el administrador borró la definición— pero sin
+// puntos esperados no se puede hablar de faltantes ni de orden.
 function evaluar(db, ejecucion, ronda) {
   const escaneados = new Set(ejecucion.escaneos.map(e => e.puntoId));
-  const faltantes = ronda.puntoIds.filter(pid => !escaneados.has(pid));
+  const puntoIds = ronda ? ronda.puntoIds : [];
+  const faltantes = puntoIds.filter(pid => !escaneados.has(pid));
   const observaciones = [];
+  if (!ronda) {
+    observaciones.push('La ronda fue eliminada del panel mientras esta ejecución estaba abierta: no se puede saber qué puntos faltaron.');
+  }
   // Sospechas = subconjunto de observaciones que huelen a datos falsos. Son las
   // que elevan el estado a "sospechosa" y disparan el aviso al administrador.
   const sospechas = [];
@@ -402,11 +439,14 @@ function evaluar(db, ejecucion, ronda) {
   // Orden (solo rondas estrictas): un punto queda "fuera de orden" si se marcó
   // después que otro que venía más adelante en la secuencia definida.
   const fueraDeOrden = [];
-  if (ronda.ordenEstricto) {
+  if (ronda && ronda.ordenEstricto) {
     let maxIndice = -1;
-    const porTs = [...ejecucion.escaneos].sort((a, b) => a.ts.localeCompare(b.ts));
+    // String(): el ts lo manda el teléfono. limpiarTs() ya lo normaliza al
+    // entrar, pero las ejecuciones guardadas antes de esa guarda siguen en la
+    // base, y acá un ts que no sea texto mata el proceso entero.
+    const porTs = [...ejecucion.escaneos].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
     for (const esc of porTs) {
-      const indice = ronda.puntoIds.indexOf(esc.puntoId);
+      const indice = puntoIds.indexOf(esc.puntoId);
       if (indice < maxIndice) fueraDeOrden.push(esc.puntoId);
       else maxIndice = indice;
     }
@@ -497,11 +537,15 @@ function evaluar(db, ejecucion, ronda) {
     sospechas.push('Varios puntos marcados en segundos (posible escaneo desde fotos)');
   }
 
-  const duracionMin = Math.max(0, Math.round((new Date(ejecucion.fin) - new Date(ejecucion.inicio)) / 60000));
-  if (ronda.duracionMaxMin && duracionMin > ronda.duracionMaxMin) {
+  // Las dos horas las manda el teléfono: si alguna no es una fecha entendible,
+  // la resta da NaN y el NaN se propaga al informe y al correo. 0 es una
+  // duración inútil pero honesta; NaN es un dato roto disfrazado de número.
+  const transcurrido = new Date(ejecucion.fin) - new Date(ejecucion.inicio);
+  const duracionMin = Number.isFinite(transcurrido) ? Math.max(0, Math.round(transcurrido / 60000)) : 0;
+  if (ronda && ronda.duracionMaxMin && duracionMin > ronda.duracionMaxMin) {
     observaciones.push(`La ronda tomó ${duracionMin} min (máximo definido: ${ronda.duracionMaxMin} min).`);
   }
-  if (ronda.duracionMinMin && duracionMin < ronda.duracionMinMin) {
+  if (ronda && ronda.duracionMinMin && duracionMin < ronda.duracionMinMin) {
     observaciones.push(`⚡ La ronda tomó solo ${duracionMin} min (mínimo definido: ${ronda.duracionMinMin} min).`);
     sospechas.push(`Ronda demasiado rápida: ${duracionMin} min (mínimo ${ronda.duracionMinMin} min)`);
   }

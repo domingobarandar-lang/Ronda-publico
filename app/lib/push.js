@@ -1,6 +1,6 @@
 // Aviso push al teléfono del administrador cuando una ronda queda INCOMPLETA
 // (el guardia la cerró sin escanear todos los puntos). Complementa a
-// lib/notificar.js: el informe completo sigue llegando al registro/Telegram;
+// lib/notificar.js: el informe completo sigue llegando al registro de avisos;
 // esto es la alerta inmediata que suena en el teléfono aunque el panel esté
 // cerrado.
 //

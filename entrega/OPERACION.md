@@ -57,14 +57,16 @@ Todo se hace en `https://<servidor>/panel` con su usuario y PIN. Es una app apar
 2. Entrar con usuario y PIN **con conexión** (wifi de portería basta). Después la ronda funciona sin señal.
 3. La cámara requiere **HTTPS** (o localhost). En producción el servidor ya va con HTTPS; si algún teléfono no da permiso de cámara, siempre está la entrada manual.
 
-## Activar avisos por Telegram (opcional, 5 minutos)
+## Cómo le llegan los avisos al administrador
 
-1. En el servidor: editar `.env` → `MOCK=false` (el token del bot ya viene configurado). Reiniciar.
-2. El administrador le escribe `/start` al bot del condominio en Telegram.
-3. Obtener su `chat_id` (visitar `https://api.telegram.org/bot<TOKEN>/getUpdates` tras el /start y copiar `message.chat.id`).
-4. Pegarlo en el panel → pestaña **Avisos** → guardar. Desde ahí, cada informe llega al Telegram del administrador.
+El aviso de cada cierre de ronda queda **siempre** en el panel → pestaña **Avisos**, y en la consola del servidor. No hay nada que activar.
 
-Mientras `MOCK=true`, los avisos quedan solo en el panel — útil para demos y para operar sin Telegram.
+Además hay dos canales que sí salen del servidor y se configuran aparte:
+
+- **Push al teléfono** (ronda incompleta o sospechosa): panel → pestaña Avisos → "Activar avisos en este teléfono". Requiere las claves VAPID en el `.env`.
+- **Informe semanal por correo**: panel → pestaña Avisos → cargar los correos. Requiere `RESEND_API_KEY` en el `.env`.
+
+> El canal **Telegram se eliminó en la v1.15**. Nunca se usó en producción y su llamada a la API no tenía tiempo máximo de espera: si Telegram no respondía, la petición del guardia al terminar la ronda quedaba colgada esperando a un tercero.
 
 ## Deploy a producción (cuando José apruebe)
 
@@ -87,5 +89,6 @@ Mientras `MOCK=true`, los avisos quedan solo en el panel — útil para demos y 
 | "La cámara no abre" | Sin permiso o sin HTTPS | Dar permiso en Chrome; usar entrada manual mientras |
 | "Ese código no corresponde…" | QR de otro condominio o punto fuera de la ronda | Verificar que la lámina pegada sea la del sector correcto |
 | Guardia sin acceso | PIN olvidado | Panel → Guardias → "Nuevo PIN" |
-| No llegan avisos a Telegram | `MOCK=true`, chat_id vacío o token inválido | Revisar los 4 pasos de activación; el error exacto queda en Avisos |
+| No llegan avisos push al teléfono | Permiso de notificaciones denegado o claves VAPID sin configurar | Panel → Avisos → "Activar avisos en este teléfono"; en iPhone hay que instalar el panel primero |
+| Guardia debe reingresar el PIN a mitad de ronda | La sesión dura 1 h 30 desde que entró | Es lo esperado. Las marcas NO se pierden: quedan en el teléfono y se envían al volver a entrar |
 | Ronda quedó "En curso" | Guardia no cerró | Panel → Informes → "Cerrar" |

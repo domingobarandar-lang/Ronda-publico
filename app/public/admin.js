@@ -1006,11 +1006,5 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
   $('btn-guardar-correos').addEventListener('click', guardarCorreosInforme);
   $('btn-enviar-informe').addEventListener('click', enviarInformeAhora);
-  $('btn-guardar-chatid').addEventListener('click', async () => {
-    try {
-      await api('/api/admin/telegram', { metodo: 'PUT', cuerpo: { chatId: $('campo-chatid').value } });
-      aviso('Guardado. Si el servidor tiene el bot configurado, los próximos informes llegarán por Telegram.');
-    } catch (err) { aviso(err.message, 'error'); }
-  });
   render();
 });
