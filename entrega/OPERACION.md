@@ -64,7 +64,7 @@ El aviso de cada cierre de ronda queda **siempre** en el panel → pestaña **Av
 Además hay dos canales que sí salen del servidor y se configuran aparte:
 
 - **Push al teléfono** (ronda incompleta o sospechosa): panel → pestaña Avisos → "Activar avisos en este teléfono". Requiere las claves VAPID en el `.env`.
-- **Informe semanal por correo**: panel → pestaña Avisos → cargar los correos. Requiere `RESEND_API_KEY` en el `.env`.
+- **Informe semanal por correo**: panel → pestaña Avisos → cargar los correos. Requiere `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` en el `.env` (se manda desde la cuenta real de Gmail, vía su API — ver `entrega/INFORME-SEMANAL.md`).
 
 > El canal **Telegram se eliminó en la v1.15**. Nunca se usó en producción y su llamada a la API no tenía tiempo máximo de espera: si Telegram no respondía, la petición del guardia al terminar la ronda quedaba colgada esperando a un tercero.
 

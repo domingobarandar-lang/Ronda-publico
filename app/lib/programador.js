@@ -4,7 +4,8 @@
 // Revisa cada hora: si es el día/hora configurados (hora de Chile) y no se
 // envió esta semana, manda el informe de la SEMANA ANTERIOR a cada
 // DESTINATARIO — un correo por administrador, con el .docx de cada uno de sus
-// condominios adjunto. Guarda en la base la semana ya enviada para no repetir
+// condominios adjunto, saliendo desde la cuenta de Gmail configurada (ver
+// lib/correo.js). Guarda en la base la semana ya enviada para no repetir
 // aunque el servidor se reinicie.
 //   INFORME_DIA         (0=dom .. 6=sáb; por defecto 1 = lunes)
 //   INFORME_HORA        (0-23, hora de Chile; por defecto 8)
@@ -74,7 +75,7 @@ async function revisar(store) {
 
 function iniciar(store) {
   if (!correo.configurado()) {
-    console.log('[informe-email] falta RESEND_API_KEY — envío semanal en pausa.');
+    console.log(`[informe-email] faltan credenciales de Gmail (${correo.FALTA_CREDENCIALES}) — envío semanal en pausa.`);
     return null;
   }
   console.log(`[informe-email] programador activo (día ${process.env.INFORME_DIA ?? 1}, `

@@ -190,7 +190,7 @@ async function cargar() {
     const { condominios, envioActivo, respaldo } = await api('/api/fabrica/condominios');
     $('estado-correo').textContent = envioActivo
       ? `Envío por correo activo. Sale cada lunes a las 8 (hora de Chile).${respaldo ? ` Respaldo del servidor: ${respaldo}.` : ''}`
-      : 'Ojo: el envío por correo está en pausa (falta RESEND_API_KEY en el servidor).';
+      : 'Ojo: el envío por correo está en pausa (faltan las credenciales de Gmail en el servidor).';
     $('estado-correo').className = envioActivo ? 'nota' : 'nota rojo';
     if (!condominios.length) {
       $('lista-condominios').innerHTML = '<p class="nota">Todavía no hay condominios. Crea el primero arriba.</p>';

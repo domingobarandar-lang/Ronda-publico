@@ -745,7 +745,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // destino; si el condominio no tiene ninguno, cae al respaldo INFORME_TO.
   app.post('/api/admin/informe-semanal/enviar', ...admin, alerta(async (req, res) => {
     if (!correo.configurado()) {
-      return res.status(422).json({ error: 'El envío por correo no está configurado en el servidor (falta RESEND_API_KEY).' });
+      return res.status(422).json({ error: `El envío por correo no está configurado en el servidor (falta ${correo.FALTA_CREDENCIALES}).` });
     }
     const { desde, hasta, to } = req.body || {};
     const condominio = db.condominios.find(c => c.id === miCondominio(req)) || {};
@@ -925,7 +925,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const condominio = db.condominios.find(c => c.id === req.params.id);
     if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
     if (!correo.configurado()) {
-      return res.status(422).json({ error: 'El envío por correo no está configurado en el servidor (falta RESEND_API_KEY).' });
+      return res.status(422).json({ error: `El envío por correo no está configurado en el servidor (falta ${correo.FALTA_CREDENCIALES}).` });
     }
     const destinos = correosDelCondominio(condominio, process.env.INFORME_TO);
     if (!destinos.length) return res.status(422).json({ error: 'Ese condominio no tiene correos cargados.' });
@@ -954,7 +954,7 @@ if (require.main === module) {
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
     console.log(`  Panel administrador: http://localhost:${puerto}/panel`);
     console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');
-    console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : 'sin configurar (falta RESEND_API_KEY)'}`);
+    console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : `sin configurar (falta ${correo.FALTA_CREDENCIALES})`}`);
     console.log(`  Base de datos: ${store.ruta}`);
   });
   programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)

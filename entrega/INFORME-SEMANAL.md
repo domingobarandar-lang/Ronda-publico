@@ -85,7 +85,7 @@ El informe se entrega en **Word (.docx)** en vez de PDF (se edita si el administ
 | Roadmap | Cómo quedó |
 |---|---|
 | 1. Correo del administrador por condominio | `condominio.correosInforme[]` — una **lista** (el administrador y, si quiere, el comité), que **el propio administrador edita** desde el panel (pestaña Avisos). `INFORME_TO` quedó como respaldo global. |
-| 2. Servicio de correo | **Resend**, por API HTTP y no SMTP: Railway bloquea los puertos 465/587. Ver `app/lib/correo.js`. |
+| 2. Servicio de correo | **Gmail API (OAuth2)**, por API HTTP y no SMTP: Railway bloquea los puertos 465/587. Manda de verdad desde la cuenta de Gmail configurada, no desde un tercero. Ver `app/lib/correo.js` y `app/scripts/obtener-refresh-token.js`. |
 | 3. Trabajo semanal | `app/lib/programador.js`, **dentro del server** (no hay cron externo: el servicio de Railway está siempre encendido). Revisa cada hora y manda el lunes a las 8 de Chile, con la semana ya enviada guardada en la base para no repetir tras un reinicio. |
 | 4. Registro de envíos | **Pendiente.** Hoy queda en el log del server y en `db.informeEmailEstado` (qué semana se mandó a cada destinatario), pero no hay una pestaña de envíos en el panel ni registro de errores por destinatario. |
 
@@ -95,4 +95,4 @@ Es el caso real de una corredora: 4 administradores con 2 condominios cada uno. 
 
 La lógica vive en `app/lib/destinatarios.js` y está cubierta en `app/test/destinatarios.test.js`, incluido el caso 4×2. El correo cargado es el interruptor: **un condominio sin correo no se manda a nadie** (salvo que exista `INFORME_TO` de respaldo).
 
-> **Ojo con el remitente**: con el dominio de prueba de Resend (`onboarding@resend.dev`) el correo **solo se entrega a la cuenta dueña de la API key**. Para escribirle a administradores externos hay que verificar un dominio propio en Resend. Sin eso, el log dice "enviado" y el administrador no recibe nada.
+> **Ojo con el remitente**: `GMAIL_FROM` tiene que ser la misma cuenta dueña del `GMAIL_REFRESH_TOKEN` — Gmail rechaza mandar "de" una cuenta distinta a la autenticada. No hay problema para escribirle a administradores externos: al ser la API de Gmail (no un dominio de prueba de un tercero) entrega normal a cualquier destinatario.

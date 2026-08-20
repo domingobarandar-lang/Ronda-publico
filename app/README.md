@@ -68,13 +68,15 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 | `GPS_BLOQUEA` | `1` | `1` = rechaza la marca lejos/sin GPS. `0` = la acepta y solo la deja observada en el informe (comportamiento v1.8) |
 | `GPS_ANCLA_RADIO_M` | `40` | Radio alrededor del ancla en los puntos con verificación por entrada |
 | `GPS_ANCLA_VENTANA_MIN` | `15` | Minutos que vale la señal tomada en la entrada |
-| `RESEND_API_KEY` | — | Clave de Resend. Sin ella el informe semanal por correo queda en pausa (no rompe nada) |
-| `INFORME_FROM` | `Rondas QR <onboarding@resend.dev>` | Remitente. El dominio de prueba de Resend **solo entrega al dueño de la cuenta**: para escribirle a administradores externos hay que verificar un dominio propio |
+| `GMAIL_CLIENT_ID` | — | Client ID del OAuth client de Google (tipo "Desktop app", Gmail API habilitada) |
+| `GMAIL_CLIENT_SECRET` | — | Client secret de ese mismo OAuth client |
+| `GMAIL_REFRESH_TOKEN` | — | Se saca UNA VEZ desde tu compu con `node scripts/obtener-refresh-token.js`. Sin las 3 credenciales el informe semanal por correo queda en pausa (no rompe nada) |
+| `GMAIL_FROM` | `Rondas QR <tu-cuenta@gmail.com>` | Remitente. Tiene que ser la misma cuenta dueña del refresh token: Gmail rechaza mandar "de" otra cuenta |
 | `INFORME_TO` | — | Respaldo: a dónde va el informe de los condominios que aún no cargaron su correo en el panel. Vacío = esos no se envían |
 | `INFORME_DIA` / `INFORME_HORA` | `1` / `8` | Cuándo sale (1 = lunes, hora de Chile) |
 | `INFORME_CONDOMINIOS` | — | Lista blanca opcional de ids. Vacío = todos los que tengan correo cargado |
 
-> **A quién le llega el informe no se configura por `.env`**: vive en cada condominio (`correosInforme`) y lo edita el propio administrador desde el panel. El envío se agrupa por destinatario, así que un administrador con dos condominios recibe un correo, no dos. Se manda por la API HTTP de Resend y no por SMTP porque **Railway bloquea los puertos SMTP** (465/587 dan timeout).
+> **A quién le llega el informe no se configura por `.env`**: vive en cada condominio (`correosInforme`) y lo edita el propio administrador desde el panel. El envío se agrupa por destinatario, así que un administrador con dos condominios recibe un correo, no dos. Se manda por la API HTTP de Gmail (OAuth2) y no por SMTP porque **Railway bloquea los puertos SMTP** (465/587 dan timeout); así sale de verdad desde tu cuenta de Gmail y no desde un tercero.
 
 > Los umbrales de GPS viajan al teléfono en el paquete de rondas, así que basta cambiarlos en el servidor: la app se alinea al actualizar rondas, sin volver a desplegar nada. Si en terreno el bloqueo resulta demasiado duro, subir `GPS_MARGEN_MAX_M` antes de tocar `GPS_RADIO_M`, y apagar `GPS_BLOQUEA` solo como último recurso.
 
@@ -97,7 +99,8 @@ lib/informes.js  informe en datos y en texto
 lib/fabrica.js          alta de condominios y de cuentas de administrador
 lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
 lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
-lib/correo.js           envío por Resend, con un .docx por condominio adjunto
+lib/correo.js           envío por Gmail (OAuth2), con un .docx por condominio adjunto
+scripts/obtener-refresh-token.js  saca el GMAIL_REFRESH_TOKEN una sola vez (se corre local)
 lib/programador.js      reloj semanal: cada lunes revisa y manda lo que falte
 lib/notificar.js aviso al admin (panel + consola)
 lib/push.js      push al teléfono del admin cuando una ronda queda incompleta

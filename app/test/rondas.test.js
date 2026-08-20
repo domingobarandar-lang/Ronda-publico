@@ -468,10 +468,10 @@ test('CU-20: cada admin guarda los correos del informe de SU condominio', async 
   const apagado = await api('/api/admin/correos-informe', { metodo: 'PUT', token: carmen.token, cuerpo: { correos: '' } });
   assert.deepEqual(apagado.datos.correos, []);
 
-  // Sin RESEND_API_KEY el envío a demanda avisa en vez de fallar en silencio.
+  // Sin credenciales de Gmail el envío a demanda avisa en vez de fallar en silencio.
   const sinClave = await api('/api/admin/informe-semanal/enviar', { metodo: 'POST', token: marta.token, cuerpo: {} });
   assert.equal(sinClave.status, 422);
-  assert.match(sinClave.datos.error, /RESEND_API_KEY/);
+  assert.match(sinClave.datos.error, /GMAIL_CLIENT_ID/);
 });
 
 test('permisos: la ejecución de un guardia no la toca otro; guardias no entran al panel', async () => {
