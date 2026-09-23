@@ -205,9 +205,11 @@ test('CU-07: reenvío offline idempotente con timestamps del teléfono', async (
   // Sin faltantes, pero con observaciones: duración excedida (30 > 20 min) y marcas offline.
   assert.equal(cierre.datos.estado, 'completa_obs');
   assert.equal(cierre.datos.evaluacion.faltantes.length, 0);
-  assert.ok(cierre.datos.evaluacion.observaciones.some(o => /sin conexión/.test(o)));
+  // TEMPORAL: mientras OCULTAR_SIN_CONEXION esté activo, lo offline no se muestra.
+  const { OCULTAR_SIN_CONEXION } = require('../lib/rondas');
+  assert.equal(cierre.datos.evaluacion.observaciones.some(o => /sin conexión/.test(o)), !OCULTAR_SIN_CONEXION);
   assert.ok(cierre.datos.evaluacion.observaciones.some(o => /máximo definido: 20/.test(o)));
-  assert.ok(cierre.datos.detalle.every(d => d.offline));
+  assert.ok(cierre.datos.detalle.every(d => d.offline === !OCULTAR_SIN_CONEXION));
 });
 
 test('orden estricto: marcar fuera de secuencia queda como observación', async () => {

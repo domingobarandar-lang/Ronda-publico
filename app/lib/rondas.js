@@ -140,6 +140,14 @@ function margenM(precisionPuntoM, accFixM, cfg) {
 // para no castigar puntos legítimamente cercanos (dos puertas contiguas).
 const RAFAGA_SEG = 15;
 
+// TEMPORAL (sep-2026): el teléfono de la portería queda sin internet un par de
+// semanas, pero las rondas se hacen normal y el informe se envía al volver la
+// señal. Mientras dure, las marcas sin conexión NO se muestran como tales en el
+// panel ni en el informe. El dato `offline` se sigue guardando igual en cada
+// escaneo. Para volver a como era: borrar esta constante y sus dos usos
+// (acá en evaluar() y en lib/informes.js).
+const OCULTAR_SIN_CONEXION = true;
+
 function puntosDeRonda(db, ronda) {
   return ronda.puntoIds
     .map(pid => db.puntos.find(p => p.id === pid))
@@ -549,7 +557,7 @@ function evaluar(db, ejecucion, ronda) {
     observaciones.push(`⚡ La ronda tomó solo ${duracionMin} min (mínimo definido: ${ronda.duracionMinMin} min).`);
     sospechas.push(`Ronda demasiado rápida: ${duracionMin} min (mínimo ${ronda.duracionMinMin} min)`);
   }
-  if (ejecucion.escaneos.some(e => e.offline)) {
+  if (!OCULTAR_SIN_CONEXION && ejecucion.escaneos.some(e => e.offline)) {
     observaciones.push('Incluye marcas hechas sin conexión (hora tomada del teléfono del guardia).');
   }
 
@@ -564,5 +572,6 @@ function nombres(db, puntoIds) {
 
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
-  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM
+  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM,
+  OCULTAR_SIN_CONEXION
 };

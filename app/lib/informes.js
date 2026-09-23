@@ -1,6 +1,8 @@
 // Informe de una ejecución: estructura de datos + versión en texto plano
 // (para el registro de avisos y la consola). El HTML imprimible lo arma el navegador en
 // public/informe.html a partir del JSON.
+const { OCULTAR_SIN_CONEXION } = require('./rondas'); // TEMPORAL, ver lib/rondas.js
+
 const ETIQUETAS = {
   completa: 'Completa',
   completa_obs: 'Completa con observaciones',
@@ -24,7 +26,7 @@ function armarInforme(db, ejecucion) {
       puntoId: pid,
       nombre: punto.nombre,
       hora: esc ? esc.ts : null,
-      offline: esc ? esc.offline : false,
+      offline: esc && !OCULTAR_SIN_CONEXION ? esc.offline : false,
       gps: esc ? esc.gps || null : null,
       distanciaM: esc && esc.distanciaM != null ? esc.distanciaM : null,
       // anclado: la distancia es a la ENTRADA del recinto, no al punto. El
