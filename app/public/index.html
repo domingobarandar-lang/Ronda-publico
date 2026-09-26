@@ -31,15 +31,16 @@
       </label>
       <button id="btn-login" class="btn btn-principal btn-gigante">Entrar</button>
       <p id="error-login" class="error oculta"></p>
-      <!-- target=_blank: si la app del guardia está instalada, el panel abre en su
-           propia ventana en vez de quedar dentro de esta. -->
-      <a id="enlace-panel" class="btn btn-borde oculta" href="/panel" target="_blank" rel="noopener">🗂️ Abrir el panel del administrador</a>
       <button id="btn-ir-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
       <p class="nota centrado">¿Guardia nuevo? Crea tu usuario para empezar.</p>
       <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>
       <p id="nota-instalar-ios" class="nota centrado oculta">
         Para instalarla en iPhone: botón <strong>Compartir</strong> → <strong>Añadir a pantalla de inicio</strong>.
       </p>
+      <!-- Siempre visible: el administrador entra directo a su panel y ahí pone
+           su usuario y PIN. target=_blank: si la app del guardia está instalada,
+           el panel abre en su propia ventana en vez de quedar dentro de esta. -->
+      <a id="enlace-panel" class="btn btn-borde btn-chico btn-centrado" href="/panel" target="_blank" rel="noopener">🗂️ Soy administrador</a>
     </section>
 
     <!-- Registro del guardia (autoservicio) -->
