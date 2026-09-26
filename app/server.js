@@ -16,6 +16,7 @@ const fabrica = require('./lib/fabrica');
 const programador = require('./lib/programador');
 const { notificarAdmin } = require('./lib/notificar');
 const { crearPush } = require('./lib/push');
+const recordatorios = require('./lib/recordatorios');
 
 cargarEnv(__dirname);
 
@@ -280,6 +281,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       // Mismos umbrales que aplica el servidor: la app no puede quedar
       // desalineada con el motor ni aceptar lo que el servidor va a rechazar.
       gps: motor.configGps(),
+      // Cada cuánto suena la alarma de ronda (0 = apagada), para que la app
+      // muestre el estado junto al botón que la activa en este teléfono.
+      alarmaMin: Number(condominio.recordatorioMin) || 0,
       rondas
     });
   });
@@ -851,6 +855,80 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ ok: true });
   });
 
+  // ---------- Alarma de ronda (lib/recordatorios.js) ----------
+  // El administrador fija cada cuánto suena; el teléfono designado del
+  // condominio (el de la garita) la activa desde la app del guardia.
+
+  function estadoAlarma(condominio) {
+    const minutos = Number(condominio.recordatorioMin) || 0;
+    return {
+      minutos,
+      texto: recordatorios.textoIntervalo(minutos),
+      telefonos: push.dispositivos(condominio.id, 'guardia').length,
+      ultima: condominio.recordatorioUltimo || null
+    };
+  }
+
+  app.get('/api/admin/alarma-ronda', ...admin, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    res.json(estadoAlarma(condominio));
+  });
+
+  app.put('/api/admin/alarma-ronda', ...admin, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    const r = recordatorios.validarMinutos((req.body || {}).minutos);
+    if (r.error) return res.status(422).json({ error: r.error });
+    condominio.recordatorioMin = r.minutos;
+    // El conteo arranca de nuevo desde ahora: bajar de 2 h a 30 min no hace
+    // sonar de inmediato una alarma "atrasada".
+    condominio.recordatorioDesde = new Date().toISOString();
+    store.guardar();
+    res.json(estadoAlarma(condominio));
+  });
+
+  // Hace sonar la alarma ahora en los teléfonos designados, para comprobar que
+  // llega. No mueve el reloj de la alarma programada.
+  app.post('/api/admin/alarma-ronda/prueba', ...admin, alerta(async (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    const r = await push.recordar(condominio, {
+      titulo: '⏰ Prueba de alarma de ronda',
+      cuerpo: `${condominio.nombre}: así sonará el aviso de hacer la ronda.`,
+      url: './',
+      tag: `ronda-${condominio.id}`
+    });
+    if (!r.total) return res.status(422).json({ error: 'Ningún teléfono del condominio tiene la alarma activada.' });
+    res.json({ ok: r.ok, total: r.total });
+  }));
+
+  // Lado del guardia: el teléfono de la garita se suscribe a la alarma de su
+  // condominio. La suscripción queda del condominio, no de la persona: sigue
+  // sonando aunque cambie el turno y otro guardia inicie sesión.
+  app.get('/api/push/clave', auth, (req, res) => {
+    res.json({ clave: push.claves().publicKey });
+  });
+
+  app.post('/api/mi/push/suscribir', auth, (req, res) => {
+    const registro = push.suscribir({
+      condominioId: miCondominio(req),
+      usuarioId: req.usuario.id,
+      suscripcion: (req.body || {}).suscripcion,
+      destino: 'guardia'
+    });
+    if (!registro) return res.status(422).json({ error: 'Suscripción inválida.' });
+    res.status(201).json({ ok: true });
+  });
+
+  app.delete('/api/mi/push/suscribir', auth, (req, res) => {
+    const endpoint = String((req.body || {}).endpoint || '');
+    const propia = db.pushSuscripciones.some(s => s.suscripcion.endpoint === endpoint
+      && s.condominioId === miCondominio(req) && s.destino === 'guardia');
+    if (propia) push.desuscribir(endpoint);
+    res.json({ ok: true });
+  });
+
   // ---------- Fábrica: alta de condominios y de sus administradores ----------
   // Solo para la operación (rol 'fabrica', pantalla /fabrica). Es el único lugar
   // de la app que crea condominios y cuentas con rol 'admin'.
@@ -987,21 +1065,23 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
-  return { app, store };
+  return { app, store, push };
 }
 
 if (require.main === module) {
   const puerto = Number(process.env.PORT || 3737);
-  const { app, store } = crearApp();
+  const { app, store, push } = crearApp();
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
     console.log(`  Panel administrador: http://localhost:${puerto}/panel`);
     console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');
+    console.log('  Alarma de ronda: se configura por condominio en el panel (pestaña Avisos)');
     console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : `sin configurar (falta ${correo.FALTA_CREDENCIALES})`}`);
     console.log(`  Base de datos: ${store.ruta}`);
   });
   programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)
+  recordatorios.iniciar(store, push); // alarma de ronda a los teléfonos de cada condominio
 }
 
 module.exports = { crearApp };

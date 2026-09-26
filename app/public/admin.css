@@ -224,6 +224,8 @@ td { font-variant-numeric: tabular-nums; }
 /* Formularios en fila */
 .fila-form { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; align-items: center; }
 .fila-form input { width: auto; flex: 1; min-width: 140px; margin-top: 0; }
+.fila-form select { width: auto; flex: 1; min-width: 160px; margin-top: 0; }
+.fila-form label { margin: 0; }
 .check { display: flex; align-items: center; gap: var(--esp-2); margin: 0; }
 .check input { width: auto; margin: 0; accent-color: var(--marca-fuerte); }
 .campo-fecha { display: flex; flex-direction: column; gap: var(--esp-1); margin: 0; font-size: var(--texto-s); color: var(--texto-suave); }
