@@ -56,15 +56,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // otro condominio sería entregarle los códigos del vecino. Ese aislamiento es
   // el que sostiene el antifraude y no se toca.
   //
-  // El ADMINISTRADOR, en cambio, puede pararse en cualquier condominio: el panel
-  // manda el elegido en `x-condominio`. Es una decisión de producto tomada a
-  // sabiendas (v1.12) para que la operación pueda ir condominio por condominio
-  // fijando las ubicaciones de los puntos sin cambiar de cuenta. El costo es
-  // explícito: entre administradores ya NO hay aislamiento — cualquiera de ellos
-  // ve los informes, guardias y códigos de registro de todos. Si algún día vuelve
-  // a haber clientes con panel propio, esto se restringe al rol de la operación.
+  // El ADMINISTRADOR también queda en el suyo. La v1.12 dejó que cualquier
+  // admin se parara en cualquier condominio con la cabecera; eso se revirtió:
+  // un cliente con panel propio veía los informes, guardias y códigos de
+  // registro de todos los demás.
+  //
+  // La única excepción es la cuenta con `accesoTotal` (la de la operación), que
+  // sigue recorriendo condominio por condominio con el selector del panel. Esa
+  // marca solo la pone el arranque desde el entorno (ADMIN_TOTAL_*, ver
+  // fabrica.asegurarAccesoTotal); ninguna pantalla ni endpoint la escribe.
+  // Una cabecera con un condominio que no existe cae al de la cuenta.
   const miCondominio = req => {
-    if (req.usuario.rol !== 'admin') return req.usuario.condominioId;
+    if (req.usuario.rol !== 'admin' || !req.usuario.accesoTotal) return req.usuario.condominioId;
     const pedido = String(req.headers['x-condominio'] || '').trim();
     if (pedido && db.condominios.some(c => c.id === pedido)) return pedido;
     return req.usuario.condominioId;
@@ -91,6 +94,19 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   else if (estadoFabrica.actualizada) console.log(`[fabrica] PIN de "${estadoFabrica.usuario}" actualizado desde el entorno.`);
   else if (estadoFabrica.motivo && estadoFabrica.motivo !== 'sin configurar') {
     console.warn(`[fabrica] la cuenta de fábrica NO quedó disponible — ${estadoFabrica.motivo}`);
+  }
+
+  // La cuenta de panel con acceso total, igual: ADMIN_TOTAL_USUARIO/NOMBRE/PIN/
+  // CONDOMINIO. Es la ÚNICA forma de marcar `accesoTotal`.
+  const estadoTotal = fabrica.asegurarAccesoTotal(db, process.env, ayudantes);
+  if (estadoTotal.creada || estadoTotal.actualizada) store.guardar();
+  if (estadoTotal.creada) {
+    console.log(`[panel] cuenta de acceso total "${estadoTotal.usuario}" creada desde el entorno (condominio "${estadoTotal.condominioId}").`);
+    if (estadoTotal.avisoCasa) console.warn(`[panel] ADMIN_TOTAL_CONDOMINIO: ${estadoTotal.avisoCasa}`);
+  } else if (estadoTotal.actualizada) {
+    console.log(`[panel] cuenta de acceso total "${estadoTotal.usuario}" actualizada desde el entorno (${estadoTotal.cambios.join(', ')}).`);
+  } else if (estadoTotal.motivo && estadoTotal.motivo !== 'sin configurar') {
+    console.warn(`[panel] la cuenta de acceso total NO quedó disponible — ${estadoTotal.motivo}`);
   }
 
   // Alta de un guardia con validación de usuario/PIN. Compartido por el panel
@@ -121,12 +137,13 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Sesión ----------
 
-  // Límite de intentos de login. El PIN es de 4 a 8 dígitos y la app está en
-  // internet: sin esto, probar 10.000 PIN de 4 dígitos es cuestión de minutos.
-  // Se cuenta por usuario + IP; 10 fallos seguidos bloquean 15 minutos y un
-  // acierto limpia la cuenta. Vive en memoria: un redespliegue lo reinicia (para
-  // fuerza bruta sostenida haría falta llevarlo a la base).
-  const MAX_INTENTOS = 10;
+  // Límite de intentos de login. El PIN del guardia es de 4 a 8 dígitos y la app
+  // está en internet: sin esto, probar 10.000 PIN de 4 dígitos es cuestión de
+  // minutos. Se cuenta por usuario + IP; 5 fallos seguidos bloquean 15 minutos y
+  // un acierto limpia la cuenta. Vive en memoria: un redespliegue lo reinicia
+  // (para fuerza bruta sostenida haría falta llevarlo a la base). La misma
+  // mecánica cuenta los códigos de registro erróneos (/api/registro).
+  const MAX_INTENTOS = 5;
   const BLOQUEO_MS = 15 * 60 * 1000;
   const intentos = new Map();
 
@@ -193,6 +210,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const { condominioId, usuario, nombre, pin, codigo } = req.body || {};
     const condominio = db.condominios.find(c => c.id === condominioId);
     if (!condominio) return res.status(422).json({ error: 'Elige tu condominio de la lista.' });
+    // El código de registro es corto: sin tope se adivina probando. 5 códigos
+    // malos por condominio + IP bloquean 15 minutos (misma mecánica que el
+    // login, con otra clave). Ojo: detrás del proxy de Railway `req.ip` es el
+    // mismo para todos, así que en la práctica bloquea el registro de ESE
+    // condominio para todos durante 15 minutos. Es aceptado: registrarse es
+    // raro y esperar cuesta poco frente a regalar el código.
+    const claveRegistro = `registro|${req.ip}|${condominio.id}`;
+    const bloqueo = estadoIntentos(claveRegistro);
+    if (bloqueo && bloqueo.hasta) {
+      const minutos = Math.max(1, Math.ceil((bloqueo.hasta - Date.now()) / 60000));
+      return res.status(429).json({ error: `Demasiados códigos incorrectos para este condominio. Espera ${minutos} minuto(s) y vuelve a probar con el código que te dio tu administrador.` });
+    }
     // El código del condominio verifica que quien se registra es un guardia real:
     // lo entrega el administrador. Se compara sin distinguir mayúsculas/espacios.
     const codigoDado = String(codigo || '').trim().toUpperCase();
@@ -200,8 +229,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       return res.status(403).json({ error: 'Este condominio todavía no permite crear cuentas. Pídele el código a tu administrador.' });
     }
     if (codigoDado !== condominio.codigoRegistro) {
+      anotarFallo(claveRegistro);
       return res.status(403).json({ error: 'El código del condominio no es correcto. Pídeselo a tu administrador.' });
     }
+    intentos.delete(claveRegistro);
     const r = nuevoGuardia({ condominioId: condominio.id, usuario, nombre, pin });
     if (r.error) return res.status(r.codigo).json({ error: r.error });
     store.guardar();
@@ -253,9 +284,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
-  // Permisos sobre una ejecución: el guardia dueño, o cualquier administrador
-  // (desde v1.12 los administradores trabajan sobre todos los condominios; ver
-  // miCondominio). Un guardia sigue sin poder tocar la ronda de otro.
+  // Permisos sobre una ejecución: el guardia dueño, o un administrador parado en
+  // el condominio de esa ejecución (miCondominio: el suyo, o el elegido si es la
+  // cuenta de acceso total). Un guardia sigue sin poder tocar la ronda de otro,
+  // y un admin de un condominio no puede escanear ni cerrar rondas de otro.
   function ejecucionAutorizada(req, res) {
     const ejecucion = db.ejecuciones.find(e => e.id === req.params.id);
     if (!ejecucion) {
@@ -263,7 +295,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       return null;
     }
     const esDueno = ejecucion.guardiaId === req.usuario.id;
-    const esAdmin = req.usuario.rol === 'admin';
+    const esAdmin = req.usuario.rol === 'admin' && ejecucion.condominioId === miCondominio(req);
     if (!esDueno && !esAdmin) {
       res.status(403).json({ error: 'Esta ronda no te pertenece.' });
       return null;
@@ -380,11 +412,14 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // ---------- Admin: en qué condominio se está parado ----------
 
   // Los condominios entre los que puede moverse el panel, y cuál está activo
-  // según la cabecera que mandó. El selector del panel se arma con esto.
+  // según la cabecera que mandó. El selector del panel se arma con esto: un
+  // admin normal recibe solo el suyo; la cuenta de acceso total, todos.
   app.get('/api/admin/condominios', ...admin, (req, res) => {
     res.json({
       activo: miCondominio(req),
+      accesoTotal: Boolean(req.usuario.accesoTotal),
       condominios: db.condominios
+        .filter(c => req.usuario.accesoTotal || c.id === req.usuario.condominioId)
         .map(c => ({ id: c.id, nombre: c.nombre }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
     });
@@ -540,8 +575,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       codigo = codigoCorto(); // uno al azar, legible (sin 0/O/1/I)
     } else {
       codigo = String(cuerpo.codigo || '').trim().toUpperCase();
-      if (!/^[A-Z0-9]{4,12}$/.test(codigo)) {
-        return res.status(422).json({ error: 'El código debe tener de 4 a 12 letras o números (sin espacios ni símbolos).' });
+      // Mínimo 6, igual que los que se generan: con 4 se adivina probando.
+      if (!/^[A-Z0-9]{6,12}$/.test(codigo)) {
+        return res.status(422).json({ error: 'El código debe tener de 6 a 12 letras o números (sin espacios ni símbolos).' });
       }
     }
     condominio.codigoRegistro = codigo;
@@ -571,6 +607,11 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     if (pin !== undefined && pin !== '') {
       if (!/^\d{4,8}$/.test(String(pin))) return res.status(422).json({ error: 'El PIN debe tener entre 4 y 8 dígitos.' });
       guardia.pinHash = hashPin(pin);
+      // Las sesiones abiertas con el PIN viejo se cierran (como en el DELETE):
+      // cambiarle el PIN a un guardia que lo filtró tiene que sacarlo YA.
+      for (const [token, sesion] of Object.entries(db.sesiones)) {
+        if (sesion.usuarioId === guardia.id) delete db.sesiones[token];
+      }
     }
     store.guardar();
     res.json({ id: guardia.id, usuario: guardia.usuario, nombre: guardia.nombre });
@@ -826,7 +867,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         correosInforme: normalizarCorreos(c.correosInforme),
         administradores: db.usuarios
           .filter(u => u.condominioId === c.id && u.rol === 'admin')
-          .map(u => ({ id: u.id, usuario: u.usuario, nombre: u.nombre })),
+          .map(u => ({ id: u.id, usuario: u.usuario, nombre: u.nombre, accesoTotal: Boolean(u.accesoTotal) })),
         guardias: db.usuarios.filter(u => u.condominioId === c.id && u.rol === 'guardia').length,
         puntos: cuenta(db.puntos, c.id),
         rondas: cuenta(db.rondas, c.id),
@@ -839,7 +880,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // Alta de un condominio: nombre, código de registro y correos del informe.
   // Sin cuenta de panel, salvo que se pidan adminUsuario + adminPin: la operación
-  // entra con su propia cuenta y lo elige en el selector (v1.12).
+  // entra con la cuenta de acceso total y lo elige en el selector.
   app.post('/api/fabrica/condominios', ...deFabrica, (req, res) => {
     const r = fabrica.altaCondominio(db, req.body || {}, ayudantes);
     if (r.error) return res.status(r.codigo || 422).json({ error: r.error });
@@ -857,9 +898,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
-  // Cuenta de panel para un condominio, para el caso excepcional de un cliente
-  // que quiera operar el suyo. Ojo: desde la v1.12 cualquier cuenta de
-  // administrador ve TODOS los condominios (ver miCondominio arriba).
+  // Cuenta de panel para un condominio, para un cliente que quiera operar el
+  // suyo. Es una cuenta normal: queda encerrada en ESE condominio (ver
+  // miCondominio arriba). El acceso total no se da desde acá.
   app.post('/api/fabrica/condominios/:id/administradores', ...deFabrica, (req, res) => {
     const cuerpo = req.body || {};
     const r = fabrica.nuevoAdmin(db, {
@@ -889,7 +930,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.put('/api/fabrica/administradores/:id/pin', ...deFabrica, (req, res) => {
     const usuario = db.usuarios.find(u => u.id === req.params.id && u.rol === 'admin');
     if (!usuario) return res.status(404).json({ error: 'Ese administrador no existe.' });
-    const p = fabrica.validarPin((req.body || {}).pin);
+    const p = fabrica.validarPinAdmin((req.body || {}).pin);
     if (p.error) return res.status(422).json({ error: p.error });
     usuario.pinHash = hashPin(p.pin);
     // Las sesiones abiertas con el PIN viejo se cierran.
@@ -900,13 +941,16 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ ok: true, usuario: usuario.usuario, pin: p.pin });
   });
 
-  // Quitar una cuenta de panel. Importa desde la v1.12: como cualquier cuenta
-  // 'admin' ve todos los condominios, cada una que sobra (la de una demo, la de
-  // un cliente que solo recibe el informe) es otra llave que abre todo. No se
-  // deja borrar la última: sin ninguna cuenta 'admin' no se puede entrar al panel.
+  // Quitar una cuenta de panel (la de una demo, la de un cliente que ya no
+  // opera). No se deja borrar la última: sin ninguna cuenta 'admin' no se puede
+  // entrar al panel. Tampoco la de acceso total: la maneja el entorno
+  // (ADMIN_TOTAL_*) y se volvería a crear en el siguiente arranque.
   app.delete('/api/fabrica/administradores/:id', ...deFabrica, (req, res) => {
     const usuario = db.usuarios.find(u => u.id === req.params.id && u.rol === 'admin');
     if (!usuario) return res.status(404).json({ error: 'Ese administrador no existe.' });
+    if (usuario.accesoTotal) {
+      return res.status(409).json({ error: 'Es la cuenta de acceso total: se maneja desde el entorno del servidor (ADMIN_TOTAL_*), no desde acá.' });
+    }
     if (db.usuarios.filter(u => u.rol === 'admin').length <= 1) {
       return res.status(409).json({ error: 'Es la última cuenta de panel: si la borras, nadie puede entrar al panel. Crea otra primero.' });
     }

@@ -100,6 +100,8 @@ Usuarios de prueba (usuario / PIN):
   Para ti           → administrador: admin / 1234 · guardia: guardia / 5678 (mismo condominio)
   Los Aromos        → admin: marta / 1111 · guardias: pedro / 2222, luis / 3333
   Mirador del Valle → admin: carmen / 4444 · guardia: jorge / 5555
+  (cada administrador ve solo SU condominio; para recorrerlos todos desde el
+   panel, configura la cuenta de acceso total con ADMIN_TOTAL_* en app/.env)
 
 Código de registro (para que un guardia cree su cuenta solo desde la app):
   Los Aromos → AROMOS · Mirador del Valle → MIRADOR

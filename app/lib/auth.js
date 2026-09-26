@@ -52,10 +52,17 @@ function crearSesion(db, usuario) {
   return token;
 }
 
+const TOKEN_VALIDO = /^[0-9a-f]{48}$/;
+
 function autenticar(store) {
   return (req, res, next) => {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const sesion = token && store.db.sesiones[token];
+    // Solo tokens con la forma que emite crearSesion (24 bytes en hex) y solo
+    // claves PROPIAS del mapa: `Bearer __proto__` encontraba el prototipo de
+    // Object, lo tomaba por sesión "vencida" y reescribía db.json en cada request.
+    const sesion = TOKEN_VALIDO.test(token) && Object.hasOwn(store.db.sesiones, token)
+      ? store.db.sesiones[token]
+      : null;
     if (!sesion) return res.status(401).json({ error: 'Sesión inválida. Vuelve a iniciar sesión.' });
     if (vencida(sesion)) {
       delete store.db.sesiones[token];

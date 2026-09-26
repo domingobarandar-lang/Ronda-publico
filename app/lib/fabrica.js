@@ -13,8 +13,15 @@ const { normalizarCorreos, esCorreo } = require('./destinatarios');
 const USUARIO_VALIDO = /^[a-z0-9._-]{3,20}$/;
 const PIN_VALIDO = /^\d{4,8}$/;
 // La cuenta de fábrica puede crear condominios y cuentas: se le exige el PIN
-// más largo que permite el login (el resto de las cuentas admite 4).
+// numérico más largo (8 dígitos).
 const PIN_FABRICA_LARGO = 8;
+// PIN de administrador: alfanumérico, 8 a 32, con al menos una letra y un
+// dígito. El panel abre informes, guardias y códigos de registro, y un PIN de
+// 4 dígitos se prueba entero en un rato aunque haya bloqueo por intentos. Se
+// guarda y compara TAL CUAL (distingue mayúsculas); solo se recortan espacios.
+// El login no valida formato: las cuentas con PIN numérico de antes siguen
+// entrando hasta que se les cambie.
+const PIN_ADMIN_VALIDO = /^[A-Za-z0-9]{8,32}$/;
 
 // "Condominio Portal Norte" -> "condominio-portal-norte". Sin tildes ni eñes,
 // porque el id viaja dentro del payload de cada QR (RQR:<condominio>:...).
@@ -65,6 +72,14 @@ function validarPin(pin, { largoMinimo = 4 } = {}) {
   return { pin: limpio };
 }
 
+function validarPinAdmin(pin) {
+  const limpio = String(pin == null ? '' : pin).trim();
+  if (!PIN_ADMIN_VALIDO.test(limpio) || !/[A-Za-z]/.test(limpio) || !/\d/.test(limpio)) {
+    return { error: 'El PIN de administrador debe tener de 8 a 32 letras y números, con al menos una letra y un número (sin espacios ni símbolos).' };
+  }
+  return { pin: limpio };
+}
+
 function validarCorreos(valor) {
   const crudos = (Array.isArray(valor) ? valor : String(valor || '').split(/[,;\s]+/))
     .map(t => String(t || '').trim()).filter(Boolean);
@@ -77,7 +92,7 @@ function validarCorreos(valor) {
 function nuevoAdmin(db, { condominioId, usuario, nombre, pin }, { hashPin, id }) {
   const u = validarUsuarioNuevo(db, usuario);
   if (u.error) return u;
-  const p = validarPin(pin);
+  const p = validarPinAdmin(pin);
   if (p.error) return { codigo: 422, error: p.error };
   if (!db.condominios.some(c => c.id === condominioId)) {
     return { codigo: 404, error: 'El condominio no existe.' };
@@ -97,11 +112,10 @@ function nuevoAdmin(db, { condominioId, usuario, nombre, pin }, { hashPin, id })
 // Alta de un condominio: nombre, código de registro para sus guardias y a quién
 // le llega el informe semanal. Todo o nada: si algo no valida, no toca la base.
 //
-// La cuenta de panel es OPCIONAL y por defecto NO se crea. Desde la v1.12 un
-// administrador trabaja sobre todos los condominios (selector del panel), así
-// que la operación entra con SU cuenta y elige el condominio: una cuenta por
-// condominio no aporta nada y cada una sería otra llave que abre todo. Se crea
-// solo si algún cliente va a operar su propio panel (pasando adminUsuario+adminPin).
+// La cuenta de panel es OPCIONAL y por defecto NO se crea: la operación entra
+// con la cuenta de acceso total (asegurarAccesoTotal) y elige el condominio en
+// el selector. Si se pide (adminUsuario+adminPin), es una cuenta normal que
+// queda encerrada en ESTE condominio: no ve ni toca ningún otro.
 function altaCondominio(db, datos, deps) {
   const { hashPin, id, codigoCorto } = deps;
   const nombre = String((datos || {}).nombre || '').trim();
@@ -121,7 +135,7 @@ function altaCondominio(db, datos, deps) {
   if (quiereCuenta) {
     u = validarUsuarioNuevo(db, datos.adminUsuario);
     if (u.error) return u;
-    p = validarPin(datos.adminPin);
+    p = validarPinAdmin(datos.adminPin);
     if (p.error) return { codigo: 422, error: p.error };
   }
 
@@ -179,8 +193,60 @@ function asegurarFabrica(db, env, { hashPin, verificarPin, id }) {
   return { creada: true, usuario };
 }
 
+// Cuenta de panel con ACCESO TOTAL (la de la operación), desde el entorno al
+// arrancar: ADMIN_TOTAL_USUARIO, ADMIN_TOTAL_NOMBRE, ADMIN_TOTAL_PIN y
+// ADMIN_TOTAL_CONDOMINIO. Es un admin común con `accesoTotal: true`: la única
+// cuenta que puede pararse en cualquier condominio con el selector del panel.
+//
+// La marca NO se pone desde ninguna pantalla ni endpoint, solo acá: si la
+// pudiera poner la fábrica, robarse la sesión de fábrica sería robarse todos
+// los condominios. Mismo patrón que asegurarFabrica: el entorno manda, y
+// cambiar el PIN en Railway lo actualiza en el siguiente arranque.
+function asegurarAccesoTotal(db, env, { hashPin, verificarPin, id }) {
+  const usuario = String(env.ADMIN_TOTAL_USUARIO || '').toLowerCase().trim();
+  const pin = String(env.ADMIN_TOTAL_PIN || '').trim();
+  if (!usuario || !pin) return { creada: false, motivo: 'sin configurar' };
+  if (!USUARIO_VALIDO.test(usuario)) return { creada: false, motivo: 'ADMIN_TOTAL_USUARIO inválido' };
+  const p = validarPinAdmin(pin);
+  if (p.error) return { creada: false, motivo: `ADMIN_TOTAL_PIN: ${p.error}` };
+
+  // Condominio "de casa": en el que arranca el panel. Si no existe (volumen
+  // nuevo, id mal escrito) se usa el primero; sin ninguno no hay dónde ponerla.
+  const pedido = String(env.ADMIN_TOTAL_CONDOMINIO || '').trim();
+  const casa = db.condominios.find(c => c.id === pedido) || db.condominios[0];
+  if (!casa) return { creada: false, motivo: 'no hay ningún condominio todavía' };
+  const nombre = String(env.ADMIN_TOTAL_NOMBRE || '').trim();
+
+  const existente = db.usuarios.find(u => u.usuario === usuario);
+  if (existente) {
+    // Nunca se convierte un guardia (ni la fábrica) en llave de todo.
+    if (existente.rol !== 'admin') return { creada: false, motivo: `"${usuario}" ya existe con otro rol` };
+    const cambios = [];
+    if (!existente.accesoTotal) { existente.accesoTotal = true; cambios.push('acceso total'); }
+    if (!verificarPin(p.pin, existente.pinHash)) { existente.pinHash = hashPin(p.pin); cambios.push('PIN'); }
+    if (nombre && existente.nombre !== nombre) { existente.nombre = nombre; cambios.push('nombre'); }
+    // El condominio de casa solo se corrige si lo pidieron y existe: caer al
+    // primero no debe mover una cuenta que ya estaba bien puesta.
+    if (pedido && casa.id === pedido && existente.condominioId !== pedido) {
+      existente.condominioId = pedido; cambios.push('condominio');
+    }
+    if (!cambios.length) return { creada: false, usuario };
+    return { creada: false, actualizada: true, usuario, cambios };
+  }
+  db.usuarios.push({
+    id: id(),
+    condominioId: casa.id,
+    usuario,
+    nombre: nombre || usuario,
+    rol: 'admin',
+    accesoTotal: true,
+    pinHash: hashPin(p.pin)
+  });
+  return { creada: true, usuario, condominioId: casa.id, avisoCasa: pedido && casa.id !== pedido ? `"${pedido}" no existe; quedó en "${casa.id}"` : null };
+}
+
 module.exports = {
-  USUARIO_VALIDO, PIN_FABRICA_LARGO,
-  idDesdeNombre, nuevoCodigoRegistro, validarUsuarioNuevo, validarPin, validarCorreos,
-  altaCondominio, nuevoAdmin, asegurarFabrica
+  USUARIO_VALIDO, PIN_FABRICA_LARGO, PIN_ADMIN_VALIDO,
+  idDesdeNombre, nuevoCodigoRegistro, validarUsuarioNuevo, validarPin, validarPinAdmin, validarCorreos,
+  altaCondominio, nuevoAdmin, asegurarFabrica, asegurarAccesoTotal
 };

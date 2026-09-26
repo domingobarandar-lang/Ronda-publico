@@ -53,12 +53,14 @@
         <details>
           <summary class="nota">Darle además una cuenta de panel al cliente (casi nunca)</summary>
           <p class="nota">
-            ⚠️ Cualquier cuenta de panel ve <strong>todos</strong> los condominios, no solo
-            el suyo. Créala únicamente si ese cliente va a operar su propio panel.
+            La cuenta queda encerrada en <strong>este</strong> condominio: no ve ni toca
+            ningún otro. Créala solo si ese cliente va a operar su propio panel.
+            El PIN lleva de 8 a 32 letras y números (al menos una de cada) y
+            distingue mayúsculas.
           </p>
           <div class="fila-form">
             <input id="alta-usuario" autocapitalize="none" placeholder="Usuario (ej: ana-portal)">
-            <input id="alta-pin" inputmode="numeric" placeholder="PIN inicial (4-8 dígitos)">
+            <input id="alta-pin" autocapitalize="none" autocomplete="off" placeholder="PIN inicial (8+ letras y números)">
             <button id="btn-pin-azar" class="btn btn-borde btn-chico" type="button">🎲 Generar PIN</button>
           </div>
         </details>

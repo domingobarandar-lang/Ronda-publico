@@ -892,14 +892,24 @@ async function cargarAvisos() {
 // ---------- Selector de condominio ----------
 
 // Carga los condominios en el selector de la barra. Si el guardado ya no existe
-// (lo borraron desde la fábrica), se cae al primero de la lista.
+// (lo borraron desde la fábrica, o es de una sesión vieja de cuando cualquier
+// admin veía todos), se cae al que diga el servidor.
+//
+// Solo la cuenta de acceso total recibe más de uno. Con uno solo el selector
+// no sirve para nada: se esconde y queda el nombre del condominio.
 async function cargarSelectorCondominios() {
   const sel = $('selector-condominio');
+  const fijo = $('nombre-condominio');
+  const mostrarFijo = nombre => {
+    fijo.textContent = nombre || '—';
+    fijo.classList.remove('oculta');
+    sel.classList.add('oculta');
+  };
   let datos;
   try {
     datos = await api('/api/admin/condominios');
   } catch {
-    sel.innerHTML = `<option>${esc((sesion.condominio && sesion.condominio.nombre) || '—')}</option>`;
+    mostrarFijo(sesion.condominio && sesion.condominio.nombre);
     return;
   }
   const lista = datos.condominios || [];
@@ -909,6 +919,12 @@ async function cargarSelectorCondominios() {
     : (datos.activo || (lista[0] && lista[0].id));
   sel.value = elegido;
   const nombre = (lista.find(c => c.id === elegido) || {}).nombre || '';
+  if (lista.length > 1) {
+    sel.classList.remove('oculta');
+    fijo.classList.add('oculta');
+  } else {
+    mostrarFijo(nombre);
+  }
   sesion.condominioActivo = { id: elegido, nombre };
   guardarSesion();
 }

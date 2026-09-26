@@ -7,6 +7,13 @@ process.env.MOCK = 'true';
 // Cuenta de fábrica (alta de condominios): se crea sola al arrancar el server.
 process.env.FABRICA_USUARIO = 'fabrica';
 process.env.FABRICA_PIN = '87654321';
+// Cuenta de panel con acceso total: solo se crea así, desde el entorno.
+// Valores de prueba (no son los de producción).
+process.env.ADMIN_TOTAL_USUARIO = 'operacion';
+process.env.ADMIN_TOTAL_NOMBRE = 'Operación (test)';
+process.env.ADMIN_TOTAL_PIN = 'Prueba2026Total';
+process.env.ADMIN_TOTAL_CONDOMINIO = 'aromos';
+const PIN_TOTAL = process.env.ADMIN_TOTAL_PIN;
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,6 +23,7 @@ const path = require('path');
 
 const { crearApp } = require('../server');
 const { datosSemilla } = require('../seed');
+const { hashPin } = require('../lib/auth');
 
 let base;
 let servidor;
@@ -395,45 +403,118 @@ test('CU-14: el guardia queda encerrado en su condominio', async () => {
   assert.ok(paquete.datos.rondas.every(r => r.id === 'ronda-mirador'));
 });
 
-test('CU-22: un administrador trabaja sobre cualquier condominio (v1.12)', async () => {
+test('CU-22: un administrador normal queda encerrado en su condominio aunque mande x-condominio', async () => {
   const carmen = await login('carmen', '4444'); // admin de Mirador del Valle
 
-  // Sin cabecera sigue viendo el suyo.
   const propios = await api('/api/admin/puntos', { token: carmen.token });
-  assert.ok(propios.datos.every(p => p.condominioId === 'mirador'));
+  assert.ok(propios.datos.length && propios.datos.every(p => p.condominioId === 'mirador'));
 
-  // El selector del panel se arma con esto: todos los condominios, y en cuál
-  // está parada ahora.
-  const lista = await api('/api/admin/condominios', { token: carmen.token });
+  // El selector del panel le trae solo el suyo.
+  const lista = await api('/api/admin/condominios', { token: carmen.token, condominio: 'aromos' });
   assert.equal(lista.status, 200);
   assert.equal(lista.datos.activo, 'mirador');
-  assert.ok(lista.datos.condominios.some(c => c.id === 'aromos'));
+  assert.equal(lista.datos.accesoTotal, false);
+  assert.deepEqual(lista.datos.condominios.map(c => c.id), ['mirador']);
 
-  // Eligiendo Los Aromos ve y edita ESE condominio: es lo que permite ir
-  // fijando las ubicaciones de los puntos condominio por condominio.
+  // Pidiendo Los Aromos por cabecera sigue viendo y editando Mirador.
   const ajenos = await api('/api/admin/puntos', { token: carmen.token, condominio: 'aromos' });
-  assert.ok(ajenos.datos.length && ajenos.datos.every(p => p.condominioId === 'aromos'));
+  assert.ok(ajenos.datos.every(p => p.condominioId === 'mirador'));
+  const guardias = await api('/api/admin/guardias', { token: carmen.token, condominio: 'aromos' });
+  assert.ok(!guardias.datos.some(g => g.usuario === 'pedro'), 'no ve los guardias de Los Aromos');
+  const registro = await api('/api/admin/registro', { token: carmen.token, condominio: 'aromos' });
+  assert.notEqual(registro.datos.codigo, store.db.condominios.find(c => c.id === 'aromos').codigoRegistro);
 
   const creado = await api('/api/admin/puntos', {
     metodo: 'POST', token: carmen.token, condominio: 'aromos', cuerpo: { nombre: 'Bodega prueba' }
   });
   assert.equal(creado.status, 201);
-  assert.equal(creado.datos.condominioId, 'aromos');
+  assert.equal(creado.datos.condominioId, 'mirador', 'el punto nuevo cae en SU condominio');
+  await api(`/api/admin/puntos/${creado.datos.id}`, { metodo: 'DELETE', token: carmen.token });
 
-  const ubicado = await api(`/api/admin/puntos/${creado.datos.id}`, {
+  const puntoAromos = await api('/api/admin/puntos/p-porteria', {
     metodo: 'PUT', token: carmen.token, condominio: 'aromos', cuerpo: { lat: -33.41, lon: -70.6 }
   });
-  assert.equal(ubicado.status, 200, 'fijar la ubicación de un punto de otro condominio');
-  assert.equal(ubicado.datos.lat, -33.41);
+  assert.equal(puntoAromos.status, 404, 'no puede fijar la ubicación de un punto ajeno');
 
-  // Y el informe de una ronda de Los Aromos ya no le da 404.
-  const ejecucionAromos = store.db.ejecuciones.find(e => e.condominioId === 'aromos');
-  const informe = await api(`/api/admin/informes/${ejecucionAromos.id}`, { token: carmen.token, condominio: 'aromos' });
+  // Informes y ejecuciones de Los Aromos: invisibles, y no las puede tocar.
+  const pedro = await login('pedro', '2222');
+  const ejec = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+  assert.equal(ejec.status, 201);
+  const informe = await api(`/api/admin/informes/${ejec.datos.id}`, { token: carmen.token, condominio: 'aromos' });
+  assert.equal(informe.status, 404);
+  const escaneo = await api(`/api/ejecuciones/${ejec.datos.id}/escaneos`, {
+    metodo: 'POST', token: carmen.token, condominio: 'aromos', cuerpo: { codigo: 'PRT234' }
+  });
+  assert.equal(escaneo.status, 403, 'un admin de otro condominio no escanea en una ronda ajena');
+  const rechazo = await api(`/api/ejecuciones/${ejec.datos.id}/rechazos`, {
+    metodo: 'POST', token: carmen.token, condominio: 'aromos', cuerpo: { puntoId: 'p-porteria', motivo: 'x' }
+  });
+  assert.equal(rechazo.status, 403);
+  const cierre = await api(`/api/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: carmen.token, condominio: 'aromos' });
+  assert.equal(cierre.status, 403, 'ni la cierra por la ruta del guardia');
+  const cierreAdmin = await api(`/api/admin/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: carmen.token, condominio: 'aromos' });
+  assert.equal(cierreAdmin.status, 404, 'ni por la ruta del administrador');
+  assert.equal(store.db.ejecuciones.find(e => e.id === ejec.datos.id).estado, 'en_curso');
+
+  // Su propio administrador (marta, de Los Aromos) sí la cierra.
+  const marta = await login('marta', '1111');
+  const propia = await api(`/api/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: marta.token });
+  assert.equal(propia.status, 200);
+});
+
+test('CU-22: la cuenta de acceso total (creada desde el entorno) recorre todos los condominios', async () => {
+  const cuenta = store.db.usuarios.find(u => u.usuario === 'operacion');
+  assert.ok(cuenta, 'se creó al arrancar desde ADMIN_TOTAL_*');
+  assert.equal(cuenta.rol, 'admin', 'no es un rol nuevo: es un admin con la marca');
+  assert.equal(cuenta.accesoTotal, true);
+  assert.equal(cuenta.condominioId, 'aromos', 'condominio de casa');
+  assert.equal(cuenta.nombre, 'Operación (test)');
+
+  const op = await login('operacion', PIN_TOTAL);
+  const lista = await api('/api/admin/condominios', { token: op.token });
+  assert.equal(lista.datos.accesoTotal, true);
+  assert.equal(lista.datos.activo, 'aromos');
+  assert.ok(['aromos', 'mirador'].every(id => lista.datos.condominios.some(c => c.id === id)));
+
+  const ajenos = await api('/api/admin/puntos', { token: op.token, condominio: 'mirador' });
+  assert.ok(ajenos.datos.length && ajenos.datos.every(p => p.condominioId === 'mirador'));
+  const creado = await api('/api/admin/puntos', {
+    metodo: 'POST', token: op.token, condominio: 'mirador', cuerpo: { nombre: 'Bodega operación' }
+  });
+  assert.equal(creado.datos.condominioId, 'mirador');
+  const ubicado = await api(`/api/admin/puntos/${creado.datos.id}`, {
+    metodo: 'PUT', token: op.token, condominio: 'mirador', cuerpo: { lat: -33.41, lon: -70.6 }
+  });
+  assert.equal(ubicado.status, 200);
+  await api(`/api/admin/puntos/${creado.datos.id}`, { metodo: 'DELETE', token: op.token, condominio: 'mirador' });
+
+  // Cierra rondas de otro condominio, pero solo parada en ese condominio.
+  const jorge = await login('jorge', '5555');
+  const ejec = await api('/api/ejecuciones', { metodo: 'POST', token: jorge.token, cuerpo: { rondaId: 'ronda-mirador' } });
+  const desdeCasa = await api(`/api/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: op.token });
+  assert.equal(desdeCasa.status, 403, 'parada en Los Aromos no toca una ronda de Mirador');
+  const informe = await api(`/api/admin/informes/${ejec.datos.id}`, { token: op.token, condominio: 'mirador' });
   assert.equal(informe.status, 200);
+  const cierre = await api(`/api/admin/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: op.token, condominio: 'mirador' });
+  assert.equal(cierre.status, 200);
 
-  // Un condominio inventado no rompe nada: se cae a su propio condominio.
-  const inventado = await api('/api/admin/puntos', { token: carmen.token, condominio: 'no-existe' });
-  assert.ok(inventado.datos.every(p => p.condominioId === 'mirador'));
+  // Un condominio inventado cae al de casa.
+  const inventado = await api('/api/admin/puntos', { token: op.token, condominio: 'no-existe' });
+  assert.ok(inventado.datos.every(p => p.condominioId === 'aromos'));
+});
+
+test('CU-22: la marca de acceso total no se puede poner por la API', async () => {
+  const jefe = await login('fabrica', '87654321');
+  const creada = await api('/api/fabrica/condominios/mirador/administradores', {
+    metodo: 'POST', token: jefe.token, cuerpo: { usuario: 'intruso', pin: 'Intruso2026', accesoTotal: true }
+  });
+  assert.equal(creada.status, 201);
+  const u = store.db.usuarios.find(x => x.usuario === 'intruso');
+  assert.ok(!u.accesoTotal, 'la fábrica no regala acceso total');
+  const intruso = await login('intruso', 'Intruso2026');
+  const lista = await api('/api/admin/condominios', { token: intruso.token, condominio: 'aromos' });
+  assert.deepEqual(lista.datos.condominios.map(c => c.id), ['mirador']);
+  await api(`/api/fabrica/administradores/${u.id}`, { metodo: 'DELETE', token: jefe.token });
 });
 
 test('CU-20: cada admin guarda los correos del informe de SU condominio', async () => {
@@ -1156,17 +1237,22 @@ test('CU-21: el alta no crea cuenta de panel, y el condominio queda operable', a
   assert.deepEqual(alta.datos.condominio.correosInforme, ['ana@corredora.cl']);
   assert.ok(!store.db.usuarios.some(u => u.condominioId === alta.datos.condominio.id));
 
-  // Y aun así se puede operar: la cuenta de la operación lo elige en el selector.
-  const marta = await login('marta', '1111');
+  // Y aun así se puede operar: la cuenta de acceso total lo elige en el selector.
+  const op = await login('operacion', PIN_TOTAL);
   const cual = alta.datos.condominio.id;
-  const lista = await api('/api/admin/condominios', { token: marta.token });
+  const lista = await api('/api/admin/condominios', { token: op.token });
   assert.ok(lista.datos.condominios.some(c => c.id === cual), 'aparece en el selector del panel');
   const punto = await api('/api/admin/puntos', {
-    metodo: 'POST', token: marta.token, condominio: cual, cuerpo: { nombre: 'Portería Vista Sur' }
+    metodo: 'POST', token: op.token, condominio: cual, cuerpo: { nombre: 'Portería Vista Sur' }
   });
   assert.equal(punto.status, 201);
-  const suyos = await api('/api/admin/puntos', { token: marta.token, condominio: cual });
+  const suyos = await api('/api/admin/puntos', { token: op.token, condominio: cual });
   assert.equal(suyos.datos.length, 1);
+
+  // Un admin normal no lo ve.
+  const marta = await login('marta', '1111');
+  const deMarta = await api('/api/admin/condominios', { token: marta.token });
+  assert.ok(!deMarta.datos.condominios.some(c => c.id === cual));
 });
 
 test('CU-21: la fábrica quita cuentas de panel, pero nunca la última', async () => {
@@ -1174,7 +1260,7 @@ test('CU-21: la fábrica quita cuentas de panel, pero nunca la última', async (
 
   // Una cuenta de más (el caso del cliente que quería su panel y ya no).
   const creada = await api('/api/fabrica/condominios/aromos/administradores', {
-    metodo: 'POST', token: jefe.token, cuerpo: { usuario: 'admin-temporal', pin: '13571357' }
+    metodo: 'POST', token: jefe.token, cuerpo: { usuario: 'admin-temporal', pin: 'Temporal1357' }
   });
   assert.equal(creada.status, 201);
   const quien = creada.datos.admin.id;
@@ -1182,11 +1268,21 @@ test('CU-21: la fábrica quita cuentas de panel, pero nunca la última', async (
   const fuera = await api(`/api/fabrica/administradores/${quien}`, { metodo: 'DELETE', token: jefe.token });
   assert.equal(fuera.status, 200);
   assert.ok(!store.db.usuarios.some(u => u.id === quien), 'la cuenta ya no existe');
-  const yaNoEntra = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin-temporal', pin: '13571357' } });
+  const yaNoEntra = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin-temporal', pin: 'Temporal1357' } });
   assert.equal(yaNoEntra.status, 401);
 
   // Los datos del condominio no se tocan al quitar una cuenta.
   assert.ok(store.db.puntos.some(p => p.condominioId === 'aromos'));
+
+  // La de acceso total tampoco: la maneja el entorno.
+  const total = store.db.usuarios.find(u => u.accesoTotal);
+  const listado = await api('/api/fabrica/condominios', { token: jefe.token });
+  const enFicha = listado.datos.condominios.flatMap(c => c.administradores).find(a => a.id === total.id);
+  assert.equal(enFicha.accesoTotal, true, 'la fábrica la ve marcada');
+  const noTotal = await api(`/api/fabrica/administradores/${total.id}`, { metodo: 'DELETE', token: jefe.token });
+  assert.equal(noTotal.status, 409);
+  assert.match(noTotal.datos.error, /acceso total/);
+  assert.ok(store.db.usuarios.some(u => u.id === total.id));
 
   // Y la última cuenta de panel no se puede borrar: sería quedarse afuera.
   const idsAdmin = store.db.usuarios.filter(u => u.rol === 'admin').map(u => u.id);
@@ -1208,18 +1304,18 @@ test('CU-21: la fábrica da de alta un condominio con cuenta de panel (opcional)
     cuerpo: {
       nombre: 'Condominio Portal Ñuñoa',
       adminUsuario: 'ana-portal',
-      adminPin: '48213765',
+      adminPin: 'Portal4821x',
       correos: 'Ana@Corredora.cl, comite@correo.cl'
     }
   });
   assert.equal(alta.status, 201);
   assert.equal(alta.datos.condominio.id, 'condominio-portal-nunoa', 'el id sale del nombre, sin tildes ni eñes');
-  assert.equal(alta.datos.pin, '48213765', 'devuelve el PIN para dictárselo al administrador');
+  assert.equal(alta.datos.pin, 'Portal4821x', 'devuelve el PIN para dictárselo al administrador');
   assert.match(alta.datos.condominio.codigoRegistro, /^[A-Z2-9]{6}$/, 'código de registro generado solo');
   assert.deepEqual(alta.datos.condominio.correosInforme, ['ana@corredora.cl', 'comite@correo.cl']);
 
   // La cuenta creada entra al panel y ve su condominio vacío, no el de otros.
-  const ana = await login('ana-portal', '48213765');
+  const ana = await login('ana-portal', 'Portal4821x');
   assert.equal(ana.rol, 'admin');
   assert.equal(ana.condominio.nombre, 'Condominio Portal Ñuñoa');
   const puntos = await api('/api/admin/puntos', { token: ana.token });
@@ -1306,8 +1402,13 @@ test('CU-21: la fábrica carga correos y cambia el PIN de un administrador', asy
   // Cambio de PIN: el viejo deja de servir y la sesión abierta se cierra.
   const marta = await login('marta', '1111');
   const martaId = aromos.administradores.find(a => a.usuario === 'marta').id;
-  const cambio = await api(`/api/fabrica/administradores/${martaId}/pin`, {
+  // PIN de admin solo numérico: ya no sirve (8 a 32 letras y números).
+  const soloNumeros = await api(`/api/fabrica/administradores/${martaId}/pin`, {
     metodo: 'PUT', token: jefe.token, cuerpo: { pin: '55667788' }
+  });
+  assert.equal(soloNumeros.status, 422);
+  const cambio = await api(`/api/fabrica/administradores/${martaId}/pin`, {
+    metodo: 'PUT', token: jefe.token, cuerpo: { pin: 'Marta5566' }
   });
   assert.equal(cambio.status, 200);
 
@@ -1315,18 +1416,18 @@ test('CU-21: la fábrica carga correos y cambia el PIN de un administrador', asy
   assert.equal(sesionVieja.status, 401, 'la sesión abierta con el PIN viejo se cerró');
   const pinViejo = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'marta', pin: '1111' } });
   assert.equal(pinViejo.status, 401);
-  const pinNuevo = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'marta', pin: '55667788' } });
+  const pinNuevo = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'marta', pin: 'Marta5566' } });
   assert.equal(pinNuevo.status, 200);
 
-  // Se deja como estaba, que otros tests entran con marta/1111.
-  await api(`/api/fabrica/administradores/${martaId}/pin`, {
-    metodo: 'PUT', token: jefe.token, cuerpo: { pin: '1111' }
-  });
+  // Se deja como estaba, que otros tests entran con marta/1111. Ese PIN ya no
+  // lo acepta la fábrica: se repone directo en la base (el login no valida
+  // formato, por eso las cuentas viejas siguen entrando).
+  store.db.usuarios.find(u => u.id === martaId).pinHash = hashPin('1111');
 });
 
-test('seguridad: el login bloquea la fuerza bruta tras 10 intentos fallidos', async () => {
+test('seguridad: el login bloquea la fuerza bruta tras 5 intentos fallidos', async () => {
   let ultimo;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 5; i++) {
     ultimo = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'ana-portal', pin: '0000' } });
     assert.equal(ultimo.status, 401, `intento ${i + 1}: PIN incorrecto`);
   }
@@ -1339,7 +1440,7 @@ test('seguridad: el login bloquea la fuerza bruta tras 10 intentos fallidos', as
   assert.equal(otro.status, 200);
 
   // Y ni con el PIN correcto entra mientras está bloqueado.
-  const conElBueno = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'ana-portal', pin: '48213765' } });
+  const conElBueno = await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'ana-portal', pin: 'Portal4821x' } });
   assert.equal(conElBueno.status, 429);
 });
 
@@ -1422,4 +1523,123 @@ test('CU-23: la evidencia de la medición viaja con la coordenada y muere con el
   assert.equal(sinUbicacion.datos.lat, null);
   assert.equal(sinUbicacion.datos.precisionM, undefined);
   assert.equal(sinUbicacion.datos.dispersionM, undefined);
+});
+
+// ---------- Aislamiento entre administradores, PIN alfanumérico, intentos ----------
+
+test('seguridad: el registro bloquea tras 5 códigos malos del condominio, y un acierto limpia', async () => {
+  // Condominio propio del test: el bloqueo es por condominio + IP y no debe
+  // dejar sin registro a los condominios que usan los otros tests.
+  const jefe = await login('fabrica', '87654321');
+  const alta = await api('/api/fabrica/condominios', { metodo: 'POST', token: jefe.token, cuerpo: { nombre: 'Condominio Bloqueo' } });
+  const cid = alta.datos.condominio.id;
+  const bueno = alta.datos.condominio.codigoRegistro;
+  const intento = (codigo, usuario = 'nuevo-bloqueo') => api('/api/registro', {
+    metodo: 'POST', cuerpo: { condominioId: cid, usuario, pin: '4321', codigo }
+  });
+
+  // 4 malos y un acierto: el acierto limpia la cuenta.
+  for (let i = 0; i < 4; i++) assert.equal((await intento('MALO00')).status, 403);
+  assert.equal((await intento(bueno, 'guardia-limpia')).status, 201);
+  for (let i = 0; i < 4; i++) assert.equal((await intento('MALO00')).status, 403, 'volvió a contar desde cero');
+
+  // El 5º malo bloquea; desde ahí ni el código correcto entra.
+  assert.equal((await intento('MALO00')).status, 403);
+  const bloqueado = await intento(bueno);
+  assert.equal(bloqueado.status, 429);
+  assert.match(bloqueado.datos.error, /Demasiados códigos incorrectos/);
+  assert.ok(!store.db.usuarios.some(u => u.usuario === 'nuevo-bloqueo'));
+
+  // Es por condominio: los demás siguen registrando.
+  const otro = await api('/api/registro', {
+    metodo: 'POST', cuerpo: { condominioId: 'mirador', usuario: 'reg-mirador', pin: '4321', codigo: 'MIRADOR' }
+  });
+  assert.equal(otro.status, 201);
+});
+
+test('PIN de administrador: alfanumérico, 8 a 32, distingue mayúsculas', async () => {
+  const jefe = await login('fabrica', '87654321');
+  const crear = (usuario, pin) => api('/api/fabrica/condominios/mirador/administradores', {
+    metodo: 'POST', token: jefe.token, cuerpo: { usuario, pin }
+  });
+
+  for (const [pin, por] of [
+    ['1234', 'numérico corto'],
+    ['12345678', 'solo dígitos'],
+    ['abcdefgh', 'solo letras'],
+    ['Abc123', 'menos de 8'],
+    ['Abcd 1234', 'con espacio'],
+    ['Abcd-1234', 'con símbolo'],
+    ['A1' + 'x'.repeat(31), 'más de 32']
+  ]) {
+    const r = await crear('admin-pin-malo', pin);
+    assert.equal(r.status, 422, `se rechaza PIN ${por}`);
+  }
+  assert.ok(!store.db.usuarios.some(u => u.usuario === 'admin-pin-malo'));
+
+  const ok = await crear('admin-alfa', '  ClaveMirador7  ');
+  assert.equal(ok.status, 201);
+  assert.equal(ok.datos.pin, 'ClaveMirador7', 'se recortan espacios, no se cambian mayúsculas');
+  assert.equal((await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin-alfa', pin: 'ClaveMirador7' } })).status, 200);
+  assert.equal((await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin-alfa', pin: 'clavemirador7' } })).status, 401);
+  assert.equal((await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin-alfa', pin: 'CLAVEMIRADOR7' } })).status, 401);
+
+  // El cambio de PIN desde la fábrica y el alta con cuenta usan la misma regla.
+  const adminId = ok.datos.admin.id;
+  const cambioMalo = await api(`/api/fabrica/administradores/${adminId}/pin`, { metodo: 'PUT', token: jefe.token, cuerpo: { pin: '87654321' } });
+  assert.equal(cambioMalo.status, 422);
+  const altaMala = await api('/api/fabrica/condominios', {
+    metodo: 'POST', token: jefe.token, cuerpo: { nombre: 'Condominio Pin Corto', adminUsuario: 'pin-corto', adminPin: '4444' }
+  });
+  assert.equal(altaMala.status, 422);
+  assert.ok(!store.db.condominios.some(c => c.nombre === 'Condominio Pin Corto'));
+
+  // Una cuenta vieja con PIN numérico sigue entrando: el login no valida formato.
+  assert.equal((await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'carmen', pin: '4444' } })).status, 200);
+  await api(`/api/fabrica/administradores/${adminId}`, { metodo: 'DELETE', token: jefe.token });
+});
+
+test('PIN de guardia: sigue siendo de 4 a 8 dígitos', async () => {
+  const marta = await login('marta', '1111');
+  for (const pin of ['Abcd1234', '123', '123456789']) {
+    const r = await api('/api/admin/guardias', { metodo: 'POST', token: marta.token, cuerpo: { usuario: 'guardia-pin', pin } });
+    assert.equal(r.status, 422, `PIN de guardia "${pin}" se rechaza`);
+  }
+  const ok = await api('/api/admin/guardias', { metodo: 'POST', token: marta.token, cuerpo: { usuario: 'guardia-pin', pin: '2468' } });
+  assert.equal(ok.status, 201);
+  const cambioMalo = await api(`/api/admin/guardias/${ok.datos.id}`, { metodo: 'PUT', token: marta.token, cuerpo: { pin: 'abc12345' } });
+  assert.equal(cambioMalo.status, 422);
+  await api(`/api/admin/guardias/${ok.datos.id}`, { metodo: 'DELETE', token: marta.token });
+});
+
+test('seguridad: cambiarle el PIN a un guardia cierra sus sesiones abiertas', async () => {
+  const marta = await login('marta', '1111');
+  const alta = await api('/api/admin/guardias', { metodo: 'POST', token: marta.token, cuerpo: { usuario: 'guardia-sesion', pin: '1357' } });
+  const g = await login('guardia-sesion', '1357');
+  assert.equal((await api('/api/mi/paquete', { token: g.token })).status, 200);
+
+  // Cambiar solo el nombre no lo saca.
+  await api(`/api/admin/guardias/${alta.datos.id}`, { metodo: 'PUT', token: marta.token, cuerpo: { nombre: 'Otro nombre' } });
+  assert.equal((await api('/api/mi/paquete', { token: g.token })).status, 200);
+
+  await api(`/api/admin/guardias/${alta.datos.id}`, { metodo: 'PUT', token: marta.token, cuerpo: { pin: '8642' } });
+  assert.equal((await api('/api/mi/paquete', { token: g.token })).status, 401, 'la sesión con el PIN viejo se cerró');
+  assert.equal((await api('/api/mi/paquete', { token: marta.token })).status, 200, 'la del admin sigue viva');
+  await login('guardia-sesion', '8642');
+  await api(`/api/admin/guardias/${alta.datos.id}`, { metodo: 'DELETE', token: marta.token });
+});
+
+test('seguridad: un token con forma rara (Bearer __proto__) es 401 y no escribe la base', async () => {
+  const original = store.guardar;
+  let escrituras = 0;
+  store.guardar = () => { escrituras++; };
+  try {
+    for (const token of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'ABC', 'g'.repeat(48)]) {
+      const r = await api('/api/mi/paquete', { token });
+      assert.equal(r.status, 401, `token "${token}"`);
+    }
+  } finally {
+    store.guardar = original;
+  }
+  assert.equal(escrituras, 0, 'ningún request con token inválido reescribe db.json');
 });

@@ -87,10 +87,19 @@ function salir() {
 
 // ---------- Alta ----------
 
+// PIN de administrador al azar: 10 caracteres alfanuméricos con al menos una
+// letra y un dígito (la regla del servidor). Sin 0/O/1/l/I, que se confunden
+// al dictarlo por teléfono.
+const LETRAS_PIN = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+const DIGITOS_PIN = '23456789';
 function pinAlAzar() {
-  const d = new Uint8Array(8);
-  crypto.getRandomValues(d);
-  return [...d].map(n => n % 10).join('');
+  const todos = LETRAS_PIN + DIGITOS_PIN;
+  for (;;) {
+    const d = new Uint32Array(10);
+    crypto.getRandomValues(d);
+    const pin = [...d].map(n => todos[n % todos.length]).join('');
+    if (/[A-Za-z]/.test(pin) && /\d/.test(pin)) return pin;
+  }
 }
 
 async function darDeAlta() {
@@ -143,13 +152,18 @@ Informe semanal a: ${r.condominio.correosInforme.join(', ') || '(sin correo toda
 // ---------- Lista de condominios ----------
 
 function ficha(c) {
-  // Cada cuenta de panel abre TODOS los condominios (v1.12), así que la que
-  // sobra se quita: la lista es también un inventario de llaves.
+  // Cada cuenta de panel ve solo su condominio; la de acceso total (marcada)
+  // los ve todos y se maneja desde el entorno del servidor, así que acá no se
+  // le cambia el PIN ni se la quita.
   const admins = c.administradores.length
-    ? c.administradores.map(a => `
+    ? c.administradores.map(a => a.accesoTotal ? `
+        <div class="fila-form">
+          <span class="nota"><strong>${esc(a.usuario)}</strong> · ${esc(a.nombre)} ·
+            <strong>🔑 acceso total</strong> (ve todos los condominios; se maneja con ADMIN_TOTAL_* en el servidor)</span>
+        </div>` : `
         <div class="fila-form">
           <span class="nota"><strong>${esc(a.usuario)}</strong> · ${esc(a.nombre)}</span>
-          <input class="pin-nuevo" data-admin="${esc(a.id)}" inputmode="numeric" placeholder="PIN nuevo (4-8 dígitos)">
+          <input class="pin-nuevo" data-admin="${esc(a.id)}" autocapitalize="none" autocomplete="off" placeholder="PIN nuevo (8+ letras y números)">
           <button class="btn btn-borde btn-chico" data-accion="pin" data-admin="${esc(a.id)}">Cambiar PIN</button>
           <button class="btn btn-peligro btn-chico" data-accion="quitar-admin" data-admin="${esc(a.id)}" data-usuario="${esc(a.usuario)}">Quitar</button>
         </div>`).join('')
@@ -178,7 +192,7 @@ function ficha(c) {
         <summary class="nota">Agregar una cuenta de panel</summary>
         <div class="fila-form">
           <input class="admin-usuario" autocapitalize="none" placeholder="Usuario">
-          <input class="admin-pin" inputmode="numeric" placeholder="PIN inicial">
+          <input class="admin-pin" autocapitalize="none" autocomplete="off" placeholder="PIN inicial (8+ letras y números)">
           <button class="btn btn-borde btn-chico" data-accion="nuevo-admin">Agregar</button>
         </div>
       </details>
@@ -196,14 +210,15 @@ async function cargar() {
       $('lista-condominios').innerHTML = '<p class="nota">Todavía no hay condominios. Crea el primero arriba.</p>';
       return;
     }
-    // Inventario de llaves: cada cuenta de panel abre todos los condominios, así
-    // que conviene tener a la vista cuántas hay dando vueltas.
-    const cuentas = condominios.flatMap(c => c.administradores.map(a => a.usuario));
-    const alerta = cuentas.length > 1
-      ? `<p class="nota rojo">⚠️ Hay ${cuentas.length} cuentas de panel (${cuentas.join(', ')}) y
-         <strong>cada una ve todos los condominios</strong>. Si solo operas tú, deja únicamente la tuya
-         y quita el resto con "Quitar".</p>`
-      : '';
+    // Inventario de llaves: la de acceso total abre todos los condominios, y
+    // tiene que haber a lo sumo una. Si falta, la operación no puede recorrer
+    // los condominios desde el panel.
+    const totales = condominios.flatMap(c => c.administradores.filter(a => a.accesoTotal).map(a => a.usuario));
+    const alerta = totales.length === 0
+      ? '<p class="nota rojo">⚠️ No hay cuenta de acceso total: configura ADMIN_TOTAL_* en el servidor para recorrer todos los condominios desde el panel.</p>'
+      : totales.length > 1
+        ? `<p class="nota rojo">⚠️ Hay ${totales.length} cuentas de acceso total (${totales.map(esc).join(', ')}). Debería haber una sola.</p>`
+        : '';
     $('lista-condominios').innerHTML = alerta + condominios.map(ficha).join('');
   } catch (err) {
     if (sesion) aviso(err.message, 'error');

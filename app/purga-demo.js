@@ -3,9 +3,12 @@
 // POR QUÉ: railway.json arranca con `node seed.js --si-vacio`, así que en el
 // primer despliegue (y en cualquier volumen nuevo) se crearon las cuentas de
 // prueba con los PIN que están escritos en seed.js y en el README público
-// (admin/1234, marta/1111, guardia/5678, pedro/2222, luis/3333). Desde la v1.12
-// CUALQUIER cuenta con rol 'admin' ve TODOS los condominios, así que admin/1234
-// abre también Condominio Piloto: sus QR, sus guardias y sus informes.
+// (admin/1234, marta/1111, guardia/5678, pedro/2222, luis/3333). Entre la
+// v1.12 y la vuelta del aislamiento entre administradores, CUALQUIER cuenta
+// 'admin' veía TODOS los condominios, y admin/1234 abría también Reserva San
+// Francisco. Hoy cada una queda en su condominio (solo la cuenta de acceso
+// total, ADMIN_TOTAL_*, recorre todos), pero siguen siendo cuentas con PIN
+// publicado en git: sobran igual.
 //
 // CÓMO DECIDE QUÉ BORRAR: no borra por nombre a ciegas. Para cada cuenta de la
 // lista comprueba que el PIN siga siendo el publicado. Si alguien ya le cambió

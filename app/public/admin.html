@@ -18,7 +18,7 @@
       <h1>🗂️ Panel del administrador</h1>
       <p class="nota">Informes, puntos, guardias y avisos de Rondas QR</p>
       <label>Usuario <input id="campo-usuario" autocapitalize="none" placeholder="ej: admin"></label>
-      <label>PIN <input id="campo-pin" type="password" inputmode="numeric"></label>
+      <label>PIN <input id="campo-pin" type="password" autocapitalize="none" autocomplete="current-password"></label>
       <button id="btn-login" class="btn btn-principal">Entrar</button>
       <p id="error-login" class="error oculta"></p>
       <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar el panel en este equipo</button>
@@ -35,10 +35,13 @@
       <div class="barra-titulo">
         <strong>🛡️ Rondas QR</strong>
         <!-- Todo lo que se ve en el panel (puntos, rondas, guardias, informes)
-             es del condominio elegido acá. -->
+             es del condominio elegido acá. Con un solo condominio (toda cuenta
+             que no sea la de acceso total) el selector se esconde y queda el
+             nombre fijo. -->
         <label class="selector-condominio">
           <span class="nota">Condominio</span>
           <select id="selector-condominio"></select>
+          <strong id="nombre-condominio" class="oculta"></strong>
         </label>
       </div>
       <button id="btn-salir" class="btn btn-borde btn-chico">Salir</button>
@@ -99,7 +102,7 @@
             Si se filtra, genera uno nuevo y el anterior deja de servir.
           </p>
           <div class="fila-form">
-            <input id="campo-codigo-registro" placeholder="código del condominio" autocapitalize="characters" maxlength="12">
+            <input id="campo-codigo-registro" placeholder="código del condominio (6 a 12)" autocapitalize="characters" minlength="6" maxlength="12">
             <button id="btn-guardar-codigo" class="btn btn-principal">Guardar código</button>
             <button id="btn-generar-codigo" class="btn btn-borde">🎲 Generar al azar</button>
           </div>

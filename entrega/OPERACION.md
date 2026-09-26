@@ -8,7 +8,7 @@ Los condominios se crean desde `https://<servidor>/fabrica`, con la cuenta de la
 
 **Una sola vez**, en las variables del servidor: `FABRICA_USUARIO` y `FABRICA_PIN` (8 dígitos). La cuenta se crea sola en el primer arranque. Si se pierde el PIN, se cambia esa variable y se reinicia.
 
-El modelo es: **el panel lo opera solo la operación**, con **una** cuenta de administrador que recorre todos los condominios con el selector de la barra. Los administradores de los condominios **no entran a la app**: reciben el informe semanal por correo. Por eso el alta no crea cuentas de panel.
+El modelo es: **el panel lo opera la operación**, con **una** cuenta de administrador de **acceso total** que recorre todos los condominios con el selector de la barra. Esa cuenta se crea sola al arrancar desde las variables `ADMIN_TOTAL_USUARIO`, `ADMIN_TOTAL_NOMBRE`, `ADMIN_TOTAL_PIN` y `ADMIN_TOTAL_CONDOMINIO` (ver `app/.env.example`); no se puede crear ni marcar desde ninguna pantalla. Los administradores de los condominios **no entran a la app**: reciben el informe semanal por correo. Por eso el alta no crea cuentas de panel.
 
 **Por cada condominio nuevo:**
 
@@ -22,13 +22,13 @@ Eso es todo: el condominio queda andando sin que nadie más tenga acceso al pane
 
 **Si un administrador tiene varios condominios**, se pone **el mismo correo en cada uno** y el lunes recibe **un solo correo** con un informe adjunto por condominio.
 
-**Si algún cliente sí va a operar su propio panel** (excepción): en el alta se abre el bloque "Darle además una cuenta de panel al cliente", o se agrega después desde su ficha. Antes de hacerlo hay que entender el costo: desde la v1.12 **cualquier cuenta de panel ve todos los condominios**, no solo el suyo. Mientras eso no se restrinja, una cuenta entregada a un cliente le abre la información del resto.
+**Si algún cliente sí va a operar su propio panel** (excepción): en el alta se abre el bloque "Darle además una cuenta de panel al cliente", o se agrega después desde su ficha. Esa cuenta queda **encerrada en su condominio**: no ve ni toca los demás. El PIN es de 8 a 32 letras y números, con al menos una letra y un dígito, y distingue mayúsculas.
 
 Desde la ficha de cada condominio, la fábrica también: cambia los correos del informe, cambia el PIN de una cuenta de panel (le cierra las sesiones abiertas) y **quita** cuentas de panel que ya no correspondan (no deja borrar la última, o nadie podría entrar). La lista avisa cuando hay más de una cuenta dando vueltas.
 
-> **Cuentas heredadas**: las cuentas de las demos y de las migraciones anteriores (`admin`/1234, `marta`, `carmen`, `admin-piloto`/1234) eran inofensivas cuando cada una veía solo su condominio. Desde la v1.12 **cada una abre todos**. En producción hay que dejar solo la de la operación —con PIN de 8 dígitos— y quitar el resto desde la fábrica.
+> **Cuentas heredadas**: las cuentas de las demos y de las migraciones anteriores (`admin`/1234, `marta`, `carmen`, `admin-piloto`/1234) ya no abren todos los condominios, pero siguen entrando al suyo con un PIN publicado en git. En producción: purgar las demo (`purga-demo.js --aplicar`) y cambiarle el PIN a `admin-piloto` desde la fábrica.
 
-> El login admite 10 intentos fallidos por usuario e IP y después bloquea 15 minutos. Aun así, la cuenta de fábrica es la llave maestra: PIN de 8 dígitos y no se comparte.
+> El login admite 5 intentos fallidos por usuario e IP y después bloquea 15 minutos. El registro de guardias, 5 códigos erróneos por condominio. Aun así, la cuenta de fábrica es la llave maestra: PIN de 8 dígitos y no se comparte.
 
 ## Uso diario del administrador (panel web)
 
@@ -72,7 +72,7 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 
 - **Railway** (o VPS): `npm install && npm start`, variable `PORT` la pone la plataforma. Railway da HTTPS solo — necesario para la cámara. Costo estimado: plan chico (~US$5/mes). **Runtime sin LLM: el uso diario cuesta $0 en APIs.**
 - Un servidor sirve a **varios condominios** a la vez. Se dan de alta desde la pantalla de fábrica (ver arriba): no hace falta desplegar nada por cada condominio nuevo. Requiere `FABRICA_USUARIO` y `FABRICA_PIN` en las variables del servicio.
-- **Desde v1.12 el aislamiento es solo del lado del guardia**: cada guardia ve únicamente las rondas y los QR de su condominio, pero **cualquier cuenta de administrador ve todos los condominios** (selector en la barra del panel). Es una decisión tomada para poder fijar las ubicaciones de los puntos condominio por condominio con una sola cuenta. Mientras los condominios sean de la operación no hay problema; **antes de entregarle el panel a un cliente externo** hay que volver a cerrar esto (restringirlo a un rol de operación).
+- **Aislamiento entre condominios**: cada guardia ve únicamente las rondas y los QR de su condominio, y cada cuenta de administrador, únicamente su condominio. La excepción es la cuenta de **acceso total** de la operación (selector en la barra del panel), que se configura solo desde el entorno del servidor.
 - **Respaldo**: copiar `data/db.json` (todo el estado vive ahí). Basta un respaldo diario.
 - **Escala**: con más de ~3 condominios activos o mucho historial, migrar `lib/store.js` a SQLite/Postgres (es el único módulo que toca disco; el resto del código no cambia).
 
