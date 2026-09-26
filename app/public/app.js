@@ -545,15 +545,15 @@ async function entrar() {
   const usuario = $('campo-usuario').value.trim();
   const pin = $('campo-pin').value.trim();
   $('error-login').classList.add('oculta');
-  $('enlace-panel').classList.add('oculta');
   if (!usuario || !pin) return;
   try {
     await iniciarSesionGuardia(usuario, pin);
   } catch (err) {
     const el = $('error-login');
-    el.textContent = err.status ? err.message : 'No se pudo conectar al servidor.';
+    el.textContent = err.esAdmin
+      ? 'Ese usuario es de administrador: entra con el botón «Soy administrador» de abajo.'
+      : err.status ? err.message : 'No se pudo conectar al servidor.';
     el.classList.remove('oculta');
-    if (err.esAdmin) $('enlace-panel').classList.remove('oculta');
   }
 }
 
