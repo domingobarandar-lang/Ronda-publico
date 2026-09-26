@@ -834,6 +834,58 @@ async function alternarPush() {
   pintarEstadoPush();
 }
 
+// ---------- Alarma de ronda (teléfono de la garita) ----------
+
+function horaCorta(ts) {
+  return new Date(ts).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function pintarAlarma({ minutos, texto, telefonos, ultima }) {
+  const campo = $('campo-alarma-ronda');
+  // Un intervalo que no está en la lista (fijado por API) se agrega para no
+  // mostrar otro distinto del que de verdad rige.
+  if (![...campo.options].some(o => Number(o.value) === minutos)) {
+    campo.add(new Option(texto, String(minutos)));
+  }
+  campo.value = String(minutos);
+  const partes = [];
+  partes.push(minutos ? `Activa: suena cada ${texto}.` : 'Apagada: no se envían alarmas.');
+  partes.push(telefonos
+    ? `${telefonos} teléfono${telefonos === 1 ? '' : 's'} con la alarma activada.`
+    : 'Ningún teléfono la tiene activada todavía: actívala desde la app del guardia.');
+  if (ultima && ultima.ts) partes.push(`Última: ${horaCorta(ultima.ts)} (${ultima.ok} de ${ultima.total} teléfonos).`);
+  $('estado-alarma').textContent = partes.join(' ');
+}
+
+async function cargarAlarma() {
+  try {
+    pintarAlarma(await api('/api/admin/alarma-ronda'));
+  } catch (err) {
+    $('estado-alarma').textContent = err.message;
+  }
+}
+
+async function guardarAlarma() {
+  try {
+    const estado = await api('/api/admin/alarma-ronda', {
+      metodo: 'PUT', cuerpo: { minutos: Number($('campo-alarma-ronda').value) }
+    });
+    pintarAlarma(estado);
+    aviso(estado.minutos ? `Alarma cada ${estado.texto}.` : 'Alarma de ronda apagada.');
+  } catch (err) {
+    aviso(err.message, 'error');
+  }
+}
+
+async function probarAlarma() {
+  try {
+    const r = await api('/api/admin/alarma-ronda/prueba', { metodo: 'POST' });
+    aviso(`Alarma enviada a ${r.ok} de ${r.total} teléfonos.`);
+  } catch (err) {
+    aviso(err.message, 'error');
+  }
+}
+
 // ---------- Avisos ----------
 
 // Correos del informe semanal de este condominio.
@@ -876,6 +928,7 @@ async function enviarInformeAhora() {
 
 async function cargarAvisos() {
   pintarEstadoPush();
+  cargarAlarma();
   await cargarCorreosInforme();
   const avisos = await api('/api/admin/notificaciones');
   if (!avisos.length) {
@@ -1006,5 +1059,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-limpiar-ronda').addEventListener('click', limpiarEditorRonda);
   $('btn-guardar-correos').addEventListener('click', guardarCorreosInforme);
   $('btn-enviar-informe').addEventListener('click', enviarInformeAhora);
+  $('btn-guardar-alarma').addEventListener('click', guardarAlarma);
+  $('btn-probar-alarma').addEventListener('click', probarAlarma);
   render();
 });
