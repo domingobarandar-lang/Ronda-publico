@@ -175,6 +175,32 @@
         </div>
         <div class="caja-config">
           <p class="nota">
+            <strong>⏰ Alarma de ronda:</strong> suena una notificación en el teléfono de la
+            garita para que el guardia salga a hacer la ronda. Si el guardia ya empezó una
+            ronda, el conteo parte de nuevo desde ese momento. El teléfono se activa desde la
+            app del guardia (botón «Activar alarma de ronda en este teléfono»).
+          </p>
+          <div class="fila-form">
+            <label for="campo-alarma-ronda">Enviar alarma cada</label>
+            <select id="campo-alarma-ronda">
+              <option value="0">No enviar (apagada)</option>
+              <option value="30">Media hora</option>
+              <option value="60">1 hora</option>
+              <option value="90">1 hora y media</option>
+              <option value="120">2 horas</option>
+              <option value="180">3 horas</option>
+              <option value="240">4 horas</option>
+              <option value="360">6 horas</option>
+              <option value="480">8 horas</option>
+              <option value="720">12 horas</option>
+            </select>
+            <button id="btn-guardar-alarma" class="btn btn-principal">Guardar</button>
+            <button id="btn-probar-alarma" class="btn btn-borde">Hacerla sonar ahora</button>
+          </div>
+          <p id="estado-alarma" class="nota"></p>
+        </div>
+        <div class="caja-config">
+          <p class="nota">
             <strong>📧 Informe semanal por correo:</strong> cada lunes a las 8 de la mañana
             sale el informe de la semana anterior en Word. Puedes poner más de un correo
             separado por comas (por ejemplo el tuyo y el del comité). Si administras varios

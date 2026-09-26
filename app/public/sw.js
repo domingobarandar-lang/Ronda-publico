@@ -12,7 +12,7 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.15.0';
+const VERSION = 'v1.16.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.
@@ -64,16 +64,25 @@ self.addEventListener('fetch', e => {
   );
 });
 
-// Aviso push del panel admin (ronda incompleta): suena aunque la app esté cerrada.
+// Push: aviso del panel admin (ronda incompleta) o alarma de ronda en el
+// teléfono de la garita. Suena aunque la app esté cerrada.
+// La alarma trae `insistente`: queda en pantalla hasta que la toquen y vibra
+// fuerte; con `tag` la nueva reemplaza a la anterior en vez de apilarse.
 self.addEventListener('push', e => {
   let datos = {};
   try { datos = e.data ? e.data.json() : {}; } catch { /* payload no JSON: se muestra genérico */ }
-  e.waitUntil(self.registration.showNotification(datos.titulo || 'Rondas QR', {
+  const opciones = {
     body: datos.cuerpo || '',
     icon: 'icono-192.png',
     badge: 'icono-192.png',
     data: { url: datos.url || 'admin.html' }
-  }));
+  };
+  if (datos.tag) { opciones.tag = datos.tag; opciones.renotify = true; }
+  if (datos.insistente) {
+    opciones.requireInteraction = true;
+    opciones.vibrate = [400, 200, 400, 200, 400];
+  }
+  e.waitUntil(self.registration.showNotification(datos.titulo || 'Rondas QR', opciones));
 });
 
 // Tocar la notificación abre el informe de esa ronda (o enfoca la pestaña si ya está abierta).

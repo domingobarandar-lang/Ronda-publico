@@ -1023,6 +1023,7 @@ function renderInicio() {
   $('texto-condominio').textContent = estado.paquete ? estado.paquete.condominio.nombre : '';
   renderSync();
   pintarGpsInicio();
+  pintarAlarma();
 
   const contenedor = $('lista-rondas');
   contenedor.innerHTML = '';
@@ -1050,6 +1051,80 @@ function renderInicio() {
   $('texto-paquete').textContent = estado.paquete
     ? `Rondas descargadas: ${new Date(estado.paquete.generado).toLocaleString('es-CL')}`
     : '';
+}
+
+// ---------- Alarma de ronda en este teléfono ----------
+// Cada cuánto suena lo decide el administrador (viene en el paquete como
+// alarmaMin). La suscripción queda amarrada al condominio, no al guardia: si
+// cambia el turno y entra otro, el teléfono de la garita sigue sonando.
+
+function base64AUint8(base64) {
+  const relleno = '='.repeat((4 - (base64.length % 4)) % 4);
+  const crudo = atob((base64 + relleno).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(crudo, c => c.charCodeAt(0));
+}
+
+function pushSoportado() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+function textoIntervalo(min) {
+  if (min < 60) return `${min} minutos`;
+  const h = Math.floor(min / 60), resto = min % 60;
+  const horas = h === 1 ? '1 hora' : `${h} horas`;
+  if (!resto) return horas;
+  return resto === 30 ? `${horas} y media` : `${horas} ${resto} min`;
+}
+
+async function pintarAlarma() {
+  const btn = $('btn-alarma');
+  const nota = $('estado-alarma');
+  const min = (estado.paquete && estado.paquete.alarmaMin) || 0;
+  if (!pushSoportado()) {
+    btn.classList.add('oculta');
+    nota.textContent = min ? 'Este navegador no puede recibir la alarma de ronda. En iPhone: instala la app en la pantalla de inicio y ábrela desde ahí.' : '';
+    return;
+  }
+  btn.classList.remove('oculta');
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    btn.textContent = sub ? '🔕 Desactivar alarma de ronda en este teléfono' : '⏰ Activar alarma de ronda en este teléfono';
+    btn.disabled = Notification.permission === 'denied';
+    if (Notification.permission === 'denied') nota.textContent = 'Las notificaciones están bloqueadas para esta app. Actívalas en la configuración del teléfono.';
+    else if (!min) nota.textContent = 'El administrador todavía no programó la alarma de ronda.';
+    else nota.textContent = sub ? `Alarma activa: suena cada ${textoIntervalo(min)}.` : `El administrador programó una alarma cada ${textoIntervalo(min)}.`;
+  } catch {
+    btn.disabled = true;
+    nota.textContent = 'No se pudo consultar el estado de las notificaciones.';
+  }
+}
+
+async function alternarAlarma() {
+  const btn = $('btn-alarma');
+  btn.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('/api/mi/push/suscribir', { metodo: 'DELETE', cuerpo: { endpoint: sub.endpoint } });
+      await sub.unsubscribe();
+      aviso('Alarma de ronda desactivada en este teléfono.');
+    } else {
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') {
+        aviso('Sin permiso de notificaciones no puede sonar la alarma.', 'error');
+        return pintarAlarma();
+      }
+      const { clave } = await api('/api/push/clave');
+      const nueva = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64AUint8(clave) });
+      await api('/api/mi/push/suscribir', { metodo: 'POST', cuerpo: { suscripcion: nueva.toJSON() } });
+      aviso('Listo: la alarma de ronda sonará en este teléfono.', 'ok');
+    }
+  } catch (err) {
+    aviso(err.message || 'No se pudo cambiar la alarma de ronda.', 'error');
+  }
+  pintarAlarma();
 }
 
 function renderSync() {
@@ -1277,6 +1352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('campo-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('btn-salir').addEventListener('click', salir);
   $('btn-actualizar').addEventListener('click', () => bajarPaquete().then(render));
+  $('btn-alarma').addEventListener('click', alternarAlarma);
   $('btn-escanear').addEventListener('click', abrirEscaner);
   $('btn-cancelar-escaner').addEventListener('click', cerrarEscaner);
   $('btn-manual').addEventListener('click', () => {
