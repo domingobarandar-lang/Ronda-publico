@@ -2,7 +2,7 @@
 
 El deploy lo hace la operación, **de día y fuera del horario de rondas**. Tiempo estimado: 30-45 minutos con la verificación. Contexto: `entrega/PLAN-SQLITE.md`; operación del día a día: `entrega/OPERACION.md`, sección **Base de datos**.
 
-Los comandos `railway` van en **Git Bash**, no en PowerShell 5.1 (su redirección `>` guarda en UTF-16 y corrompe las copias). El CLI se instala con `npm i -g @railway/cli`, después `railway login` y `railway link` (proyecto `rondas-qr`). Si `railway ssh -- node scripts/…` no encuentra el script, anteponer la carpeta de la app: `railway ssh -- sh -c 'cd /app && node scripts/…'`.
+Los comandos `railway` van en **Git Bash**, no en PowerShell 5.1 (su redirección `>` guarda en UTF-16 y corrompe las copias). El CLI se instala con `npm i -g @railway/cli`, después `railway login` y `railway link` (proyecto `rondas-qr`). La llave SSH tiene que estar registrada en Railway (`railway ssh keys`; si no aparece, `railway ssh keys add`). **En cada Git Bash nuevo, antes de cualquier `railway ssh`, correr `export MSYS_NO_PATHCONV=1`**: si no, Git Bash convierte `/data` en `C:/Program Files/Git/data` y el comando falla (o, peor, `cat` no encuentra el archivo y la copia queda vacía). Si `railway ssh -- node scripts/…` no encuentra el script, anteponer la carpeta de la app: `railway ssh -- sh -c 'cd /app && node scripts/…'`.
 
 ## Antes (uno o dos días antes)
 

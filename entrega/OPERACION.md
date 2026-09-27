@@ -119,7 +119,7 @@ La base no se reemplaza en caliente: el script valida el respaldo y lo deja list
 1. Tener el respaldo **dentro del volumen**:
    - Los de las últimas dos semanas ya están en `/data/respaldos/`.
    - Uno que llegó por correo hay que subirlo, desde **Git Bash** (no PowerShell 5.1: la redirección cambia los bytes):
-     `railway ssh -- sh -c 'cat > /data/respaldos/subido.sqlite.gz' < rondas-AAAA-MM-DD.sqlite.gz`
+     `export MSYS_NO_PATHCONV=1` y después `railway ssh -- sh -c 'cat > /data/respaldos/subido.sqlite.gz' < rondas-AAAA-MM-DD.sqlite.gz`
      y comprobar que llegó entero: `railway ssh -- ls -l /data/respaldos/` (el tamaño tiene que ser el del archivo original).
 2. Validarlo en seco (no toca nada, muestra conteos y la fecha de la última ronda):
    `railway ssh -- node scripts/restaurar-respaldo.js /data/respaldos/rondas-AAAA-MM-DD.sqlite`
