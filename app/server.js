@@ -1070,7 +1070,17 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
 if (require.main === module) {
   const puerto = Number(process.env.PORT || 3737);
-  const { app, store, push } = crearApp();
+  let creado;
+  try {
+    creado = crearApp();
+  } catch (err) {
+    // Típicamente, una importación de db.json que no cuadró: el store ya dejó
+    // todo como estaba. Se sale con error para que Railway lo muestre.
+    console.error(`[arranque] el servidor NO arranca: ${err.message}`);
+    if (err.cause) console.error(err.cause);
+    process.exit(1);
+  }
+  const { app, store, push } = creado;
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);

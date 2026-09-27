@@ -308,28 +308,94 @@ function crearStore(rutaArchivo, opciones = {}) {
     };
   }
 
-  // ---------- Esquema e importación inicial ----------
+  // ---------- Esquema e importación desde db.json ----------
   // Base nueva (sin meta.version): se marca con la versión del esquema y, si
-  // hay un db.json al lado, se importa en la misma transacción.
+  // hay un db.json al lado, se importa TODO en la misma transacción. Si algo
+  // falla (JSON roto, conteos que no cuadran) se deshace, el .json queda
+  // intacto y crearStore lanza: el servidor no arranca. Mejor caído y con los
+  // datos enteros que arriba a medias. El próximo arranque lo vuelve a intentar.
+  const log = opciones.log || console.log;
+  let importacion = null;
   if (!st.meta.get('version')) {
-    transaccion(() => {
-      if (fs.existsSync(rutas.json)) importarDatos(JSON.parse(fs.readFileSync(rutas.json, 'utf8')));
-      st.metaPoner.run('version', VERSION_ESQUEMA);
-    });
+    const hayJson = fs.existsSync(rutas.json);
+    try {
+      transaccion(() => {
+        if (hayJson) importacion = importarJson(rutas.json);
+        st.metaPoner.run('version', VERSION_ESQUEMA);
+      });
+    } catch (err) {
+      sql.close();
+      const e = new Error(`No se pudo importar ${rutas.json} a ${rutas.sqlite}: ${err.message}. `
+        + 'No se cambió nada: el .json sigue intacto y el servidor no arranca hasta resolverlo.');
+      e.cause = err;
+      throw e;
+    }
+    if (importacion) {
+      // Recién con la transacción confirmada se aparta el .json (no se borra).
+      const destino = `${rutas.json}.migrado-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      try {
+        fs.renameSync(rutas.json, destino);
+        importacion.renombradoA = destino;
+      } catch (err) {
+        // Los datos ya están en SQLite y meta.version impide reimportar: no es
+        // motivo para no arrancar, pero hay que saberlo.
+        log(`[store] AVISO: importado, pero no se pudo renombrar ${rutas.json}: ${err.message}`);
+      }
+      const c = importacion.conteos;
+      log(`[store] importado ${rutas.json} → ${rutas.sqlite}: ${c.ejecuciones} ejecuciones, `
+        + `${c.notificaciones} notificaciones, ${c.usuarios} usuarios, ${c.puntos} puntos`
+        + (importacion.renombradoA ? `; el .json quedó como ${path.basename(importacion.renombradoA)}` : ''));
+      if (importacion.duplicadas) {
+        log(`[store] AVISO: ${importacion.duplicadas} ejecuciones con id repetido en el .json; se conservó la primera (la que leía la versión anterior).`);
+      }
+    }
   }
 
-  function importarDatos(datos) {
-    for (const [clave, valor] of Object.entries(datos || {})) {
+  function importarJson(ruta) {
+    const datos = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+    if (!datos || typeof datos !== 'object' || Array.isArray(datos)) throw new Error('el .json no es un objeto');
+    for (const [clave, valor] of Object.entries(datos)) {
       if (CON_TABLA.includes(clave) || valor === undefined) continue;
       const texto = JSON.stringify(valor);
       st.estadoPoner.run(clave, texto);
       db[clave] = JSON.parse(texto);
       escrito.set(clave, texto);
     }
-    for (const e of datos.ejecuciones || []) st.ejecPoner.run(filaEjecucion(e));
-    for (const n of datos.notificaciones || []) {
-      st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
+    // Con ids repetidos la versión anterior usaba el primero (Array.find).
+    const vistos = new Set();
+    let duplicadas = 0;
+    for (const e of datos.ejecuciones || []) {
+      if (vistos.has(String(e && e.id))) { duplicadas++; continue; }
+      st.ejecPoner.run(filaEjecucion(e));
+      vistos.add(String(e.id));
     }
+    const notifs = datos.notificaciones || [];
+    for (const n of notifs) st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
+
+    // Verificación dentro de la misma transacción: lo que quedó escrito tiene
+    // que cuadrar con lo que traía el .json.
+    const largoEnTabla = clave => {
+      const fila = sql.prepare('SELECT valor FROM estado WHERE clave = ?').get(clave);
+      return fila ? (JSON.parse(fila.valor) || []).length : 0;
+    };
+    const conteos = {
+      ejecuciones: ejecuciones.contar(),
+      notificaciones: notificaciones.contar(),
+      usuarios: largoEnTabla('usuarios'),
+      puntos: largoEnTabla('puntos')
+    };
+    const esperados = {
+      ejecuciones: vistos.size,
+      notificaciones: notifs.length,
+      usuarios: (datos.usuarios || []).length,
+      puntos: (datos.puntos || []).length
+    };
+    for (const k of Object.keys(esperados)) {
+      if (conteos[k] !== esperados[k]) {
+        throw new Error(`los conteos no cuadran (${k}: ${esperados[k]} en el .json, ${conteos[k]} en SQLite)`);
+      }
+    }
+    return { conteos, duplicadas };
   }
 
   if (puente.cargar) puente.cargar();
