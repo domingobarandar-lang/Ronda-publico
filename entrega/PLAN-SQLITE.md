@@ -3,6 +3,8 @@
 **Fecha**: 2026-09-26 · **Motivo**: pasar de ~3 a 30+ condominios y ~100 guardias en ~2 meses.
 **Criterio del dueño**: lo más rápido, económico y seguro.
 
+> Implementado en la **v1.17.0** (la 1.16.0 ya la usó la alarma de ronda). Ver `CHANGELOG.md`; operación en `entrega/OPERACION.md`, sección Base de datos.
+
 ## Problema
 
 `lib/store.js` guarda **toda** la base en `db.json` en cada `store.guardar()` (≈30 llamadas, una por escaneo). Medido: 10 mil rondas = 32 MB = ~100 ms por guardado con el event loop bloqueado; 80 mil = ~1 s. A 30 condominios × ~12 rondas/día (~360/día) se llega a 10 mil en ~1 mes y a 30 mil en ~3 meses. Además todo el historial vive en memoria.

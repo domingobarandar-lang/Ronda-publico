@@ -150,6 +150,21 @@ test('purga-demo --con-condominio borra también las rondas y avisos del condomi
   s.cerrar();
 });
 
+test('prueba-carga en miniatura: guardias a la vez sobre una base con historial, sin marcas perdidas', async () => {
+  const { pruebaCarga } = require('../scripts/prueba-carga');
+  const log = console.log;
+  console.log = () => {};
+  let r;
+  try {
+    r = await pruebaCarga({ guardias: 6, rondas: 600, log: () => {} });
+  } finally {
+    console.log = log;
+  }
+  assert.equal(r.marcasPerdidas, 0);
+  assert.equal(r.totalEjecuciones, 606);
+  assert.equal(r.tiempos.escanear.n, 60);
+});
+
 test('migracion-rsf borra las rondas y avisos de mirador y es idempotente', () => {
   const { aplicar, CONDOMINIO_A_ELIMINAR } = require('../migracion-rsf');
   const dir = carpeta();

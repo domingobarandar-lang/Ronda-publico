@@ -8,7 +8,7 @@ mismo servidor Express: la del guardia (`/`) y el panel del administrador
 - Contexto: [BRIEF.md](BRIEF.md) · [SPEC.md](SPEC.md) · [QA.md](QA.md)
 - Operación y seguridad: [entrega/](entrega/)
 
-El estado vive en `app/data/db.json` (fuera de git). El `.env` no se versiona:
+El estado vive en `app/data/rondas.sqlite` (SQLite, fuera de git; desde la v1.17 — antes `db.json`, que se importa solo). El `.env` no se versiona:
 copiar `app/.env.example` → `app/.env`.
 
 ## Skill routing

@@ -84,7 +84,13 @@ Tres piezas, una sola app Node:
 - `puntos`: id, condominioId, nombre, codigoCorto; `lat`/`lon` si tiene verificación de presencia; `verificacion` (`'anclaje'`, o ausente = ubicación exacta); `radioM`/`ventanaMin` opcionales por punto. El modo se **deduce**: sin lat/lon no se verifica, con lat/lon y sin `verificacion` es exacto. Así los puntos que ya existían siguen funcionando sin migración.
 - `rondas` (plantillas): id, condominioId, nombre, puntoIds (ordenados), ordenEstricto, duracionMaxMin.
 - `ejecuciones`: id, rondaId, condominioId, guardiaId, inicio, fin, estado, escaneos [{puntoId, ts, offline, gps {lat, lon, acc, edadMs}, distanciaM, anclado, edadGpsMs}], evaluacion {faltantes, fueraDeOrden, gpsLejos, sinGps, rafaga, duracionMin, observaciones, sospechas}.
-- Persistencia v1: archivo JSON con escritura atómica (cero dependencias nativas). Migración a SQLite/Postgres documentada para producción de volumen.
+- `notificaciones`: ts, condominioId, texto, medio (`registro`|`push`), enviada, dispositivos {ok, total}, error. El panel muestra las últimas 50 del condominio.
+- **Persistencia (v1.17)**: SQLite con `node:sqlite` (viene con Node 24: cero dependencias nativas), un solo archivo en el volumen, modo WAL. Híbrido por tamaño de colección:
+  - Lo chico y acotado (condominios, usuarios, puntos, rondas, sesiones, suscripciones push, claves VAPID, estado del informe y del respaldo) vive **en memoria** y se persiste en la tabla `estado` (una fila por colección, con su JSON). Guardar escribe solo las colecciones que cambiaron.
+  - `ejecuciones` y `notificaciones`, que crecen sin techo, tienen **tabla propia** y se leen y escriben por fila. La ejecución se guarda como documento JSON completo más columnas indexadas (condominio, inicio en UTC, estado): su formato no cambió.
+  - Reglas: entre leer una ejecución y guardarla no hay espera asíncrona (dos marcas simultáneas de la misma ronda no se pisan); el cierre de una ronda y su aviso se guardan en una sola transacción; los rangos por fecha (listado del panel, informe semanal) son días de **Chile**, no UTC.
+  - El listado de informes del panel trae las últimas 200 (acepta `desde`/`hasta` en días de Chile).
+  - Migración automática desde el `db.json` de versiones anteriores, respaldo diario con copia por correo y vuelta atrás a JSON: ver `entrega/OPERACION.md`.
 
 ## Datos semilla (demo)
 
