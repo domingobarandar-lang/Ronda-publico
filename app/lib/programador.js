@@ -61,7 +61,7 @@ async function revisar(store) {
   const grupos = agruparPorDestinatario(condominiosObjetivo(db), { respaldo: process.env.INFORME_TO });
   for (const { correo: destino, condominioIds } of grupos) {
     if (db.informeEmailEstado[destino] === semana) continue; // ya enviado esta semana
-    const r = await correo.enviarInforme(db, { condominioIds, to: [destino] });
+    const r = await correo.enviarInforme(store, { condominioIds, to: [destino] });
     if (r.enviada) {
       db.informeEmailEstado[destino] = semana;
       store.guardar();

@@ -42,13 +42,14 @@ function textoIntervalo(min) {
 
 const ms = ts => (ts ? Date.parse(ts) || 0 : 0);
 
-// ¿Le toca alarma a este condominio en `ahora`? Puro: no toca la base.
-function leToca(db, condominio, ahora = Date.now()) {
+// ¿Le toca alarma a este condominio en `ahora`? Solo lee la base: dos
+// consultas por índice (¿hay una en curso? ¿cuándo empezó la última?).
+function leToca(store, condominio, ahora = Date.now()) {
   const min = Number(condominio.recordatorioMin) || 0;
   if (!min) return false;
-  const deEste = db.ejecuciones.filter(e => e.condominioId === condominio.id);
-  if (deEste.some(e => e.estado === 'en_curso')) return false;
-  const ultimaRonda = Math.max(0, ...deEste.map(e => ms(e.inicio)));
+  if (store.ejecuciones.listar({ condominioId: condominio.id, estado: 'en_curso', limite: 1 }).length) return false;
+  const ultima = store.ejecuciones.ultimaDe(condominio.id);
+  const ultimaRonda = ultima ? ms(ultima.inicio) : 0;
   const ultimoAviso = ms((condominio.recordatorioUltimo || {}).ts);
   const referencia = Math.max(ms(condominio.recordatorioDesde), ultimoAviso, ultimaRonda);
   return ahora - referencia >= min * 60000;
@@ -57,7 +58,7 @@ function leToca(db, condominio, ahora = Date.now()) {
 async function revisar(store, push, ahora = Date.now()) {
   const db = store.db;
   for (const condominio of db.condominios) {
-    if (!leToca(db, condominio, ahora)) continue;
+    if (!leToca(store, condominio, ahora)) continue;
     // Se anota ANTES de enviar: si el envío tarda y el siguiente tick llega
     // antes de que termine, no sale una segunda alarma.
     condominio.recordatorioUltimo = { ts: new Date(ahora).toISOString(), ok: 0, total: 0 };

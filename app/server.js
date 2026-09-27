@@ -777,7 +777,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.get('/api/admin/informe-semanal.docx', ...admin, alerta(async (req, res) => {
     try {
       const { desde, hasta } = req.query;
-      const { buffer, datos } = await generarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta });
+      const { buffer, datos } = await generarInformeSemanal(store, { condominioId: miCondominio(req), desde, hasta });
       const nombre = `Informe-Semanal-${datos.desde}_a_${datos.hasta}.docx`;
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
@@ -829,7 +829,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     if (!destinos.length) {
       return res.status(422).json({ error: 'Todavía no hay correo del administrador: guárdalo acá arriba y vuelve a intentar.' });
     }
-    const r = await correo.enviarInforme(db, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
+    const r = await correo.enviarInforme(store, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   }));
@@ -978,8 +978,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         puntos: cuenta(db.puntos, c.id),
         rondas: cuenta(db.rondas, c.id),
         // Para ver de un vistazo si el condominio está andando o quedó a medias.
-        ultimaRonda: db.ejecuciones.filter(e => e.condominioId === c.id)
-          .map(e => e.inicio).sort().slice(-1)[0] || null
+        ultimaRonda: (store.ejecuciones.ultimaDe(c.id) || {}).inicio || null
       }))
     });
   });
@@ -1079,7 +1078,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
     const destinos = correosDelCondominio(condominio, process.env.INFORME_TO);
     if (!destinos.length) return res.status(422).json({ error: 'Ese condominio no tiene correos cargados.' });
-    const r = await correo.enviarInforme(db, { condominioIds: [condominio.id], to: destinos });
+    const r = await correo.enviarInforme(store, { condominioIds: [condominio.id], to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   }));

@@ -114,15 +114,15 @@ test('una ronda iniciada reinicia el conteo y, en curso, no suena', () => {
   const aromos = store.db.condominios.find(c => c.id === 'aromos');
   const ultimo = Date.parse(aromos.recordatorioUltimo.ts);
   const ejecucion = { id: 'e-alarma', condominioId: 'aromos', estado: 'en_curso', inicio: new Date(ultimo + 60 * 60000).toISOString() };
-  store.db.ejecuciones.push(ejecucion);
+  store.ejecuciones.guardar(ejecucion);
   try {
-    assert.equal(recordatorios.leToca(store.db, aromos, ultimo + 200 * 60000), false, 'en curso no suena');
-    ejecucion.estado = 'completa';
+    assert.equal(recordatorios.leToca(store, aromos, ultimo + 200 * 60000), false, 'en curso no suena');
+    store.ejecuciones.guardar({ ...ejecucion, estado: 'completa' });
     // Cuenta desde el inicio de la ronda (ultimo + 60), no desde la alarma.
-    assert.equal(recordatorios.leToca(store.db, aromos, ultimo + 179 * 60000), false);
-    assert.equal(recordatorios.leToca(store.db, aromos, ultimo + 180 * 60000), true);
+    assert.equal(recordatorios.leToca(store, aromos, ultimo + 179 * 60000), false);
+    assert.equal(recordatorios.leToca(store, aromos, ultimo + 180 * 60000), true);
   } finally {
-    store.db.ejecuciones = store.db.ejecuciones.filter(e => e.id !== 'e-alarma');
+    store.ejecuciones.eliminar('e-alarma');
   }
 });
 
@@ -131,7 +131,7 @@ test('apagada no suena; la prueba exige un teléfono activo', async () => {
   const marta = await login('marta', '1111');
   await api('/api/admin/alarma-ronda', { metodo: 'PUT', token: marta.token, cuerpo: { minutos: 0 } });
   const aromos = store.db.condominios.find(c => c.id === 'aromos');
-  assert.equal(recordatorios.leToca(store.db, aromos, Date.now() + 365 * 86400000), false);
+  assert.equal(recordatorios.leToca(store, aromos, Date.now() + 365 * 86400000), false);
 
   enviados.length = 0;
   const prueba = await api('/api/admin/alarma-ronda/prueba', { metodo: 'POST', token: marta.token });

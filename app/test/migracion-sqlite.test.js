@@ -59,6 +59,54 @@ test('push y notificar dejan el aviso en store.notificaciones (sin arreglo en me
   store.cerrar();
 });
 
+test('invariante 3: el informe semanal corta por fecha de Chile (borde del domingo 23:30)', async () => {
+  const { calcular, ejecucionesDelRango, generarInformeSemanal } = require('../lib/informe-semanal');
+  const store = nuevoStore();
+  store.db.condominios.push({ id: 'c1', nombre: 'Uno' });
+  store.db.usuarios.push({ id: 'g1', nombre: 'Pedro' });
+  const e = (id, inicio, estado = 'completa', condominioId = 'c1') => store.ejecuciones.guardar({
+    id, rondaId: 'r1', condominioId, guardiaId: 'g1', inicio, fin: inicio, estado,
+    escaneos: [{ puntoId: 'p1', ts: inicio }], evaluacion: { faltantes: [], sospechas: [] }
+  });
+  // Semana del lunes 14 al domingo 20 de septiembre de 2026 (Chile en UTC-3).
+  e('dom-anterior-2330', '2026-09-14T02:30:00.000Z');       // dom 13 23:30 Chile: semana ANTERIOR aunque en UTC ya es 14
+  e('lun-0030', '2026-09-14T03:30:00.000Z');                // lun 14 00:30 Chile
+  e('dom-2200-con-zona', '2026-09-20T22:00:00-03:00');      // dom 20 22:00, como lo manda el teléfono
+  e('dom-2330', '2026-09-21T02:30:00.000Z', 'incompleta');  // dom 20 23:30 Chile: ESTA semana aunque en UTC ya es 21
+  e('lun-sig-0030', '2026-09-21T03:30:00.000Z');            // lun 21 00:30 Chile: la siguiente
+  e('en-curso', '2026-09-16T03:00:00.000Z', 'en_curso');    // abierta: no entra
+  e('otro-condominio', '2026-09-16T03:00:00.000Z', 'completa', 'c2');
+  e('mucho-antes', '2026-08-01T03:00:00.000Z');
+
+  const rango = { condominioId: 'c1', desde: '2026-09-14', hasta: '2026-09-20' };
+  assert.deepEqual(ejecucionesDelRango(store, 'c1', rango.desde, rango.hasta).map(x => x.id),
+    ['lun-0030', 'dom-2200-con-zona', 'dom-2330'], 'de la más antigua a la más nueva');
+  const d = calcular(store, rango);
+  assert.equal(d.rondasTotal, 3);
+  assert.equal(d.incompletas, 1);
+  assert.equal(d.dias.at(-1)[1], 2, 'las dos del domingo cuentan para el domingo');
+  assert.equal(d.incidencias.length, 1);
+  const docx = await generarInformeSemanal(store, rango);
+  assert.ok(docx.buffer.length > 1000);
+  store.cerrar();
+});
+
+test('alarma de ronda y fábrica leen la última ronda del repositorio', () => {
+  const recordatorios = require('../lib/recordatorios');
+  const store = nuevoStore();
+  const condominio = { id: 'c1', recordatorioMin: 60, recordatorioDesde: '2026-09-20T00:00:00.000Z' };
+  const ahora = Date.parse('2026-09-20T05:00:00.000Z');
+  assert.equal(recordatorios.leToca(store, condominio, ahora), true, 'sin rondas cuenta desde la configuración');
+  store.ejecuciones.guardar({ id: 'x1', condominioId: 'c1', estado: 'completa', inicio: '2026-09-20T04:30:00.000Z' });
+  assert.equal(recordatorios.leToca(store, condominio, ahora), false, 'hace 30 min empezó una');
+  store.ejecuciones.guardar({ id: 'x0', condominioId: 'c1', estado: 'en_curso', inicio: '2026-09-19T00:00:00.000Z' });
+  assert.equal(recordatorios.leToca(store, condominio, ahora + 5 * 3600000), false, 'una abierta, aunque sea vieja, la calla');
+  store.ejecuciones.guardar({ id: 'x0', condominioId: 'c1', estado: 'incompleta', inicio: '2026-09-19T00:00:00.000Z' });
+  assert.equal(recordatorios.leToca(store, condominio, ahora + 5 * 3600000), true);
+  assert.equal(store.ejecuciones.ultimaDe('c1').id, 'x1');
+  store.cerrar();
+});
+
 // ---------- Handlers del servidor sobre el repositorio ----------
 
 const { crearApp } = require('../server');

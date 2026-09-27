@@ -183,6 +183,9 @@ function crearStore(rutaArchivo, opciones = {}) {
       const fila = st.ejecUltima.get(String(condominioId));
       return fila ? JSON.parse(fila.datos) : null;
     },
+    eliminar(id) {
+      return st.ejecQuitar.run(String(id)).changes > 0;
+    },
     contar() {
       return st.ejecContar.get().n;
     }

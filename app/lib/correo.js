@@ -150,7 +150,8 @@ async function obtenerAccessToken(c) {
 // Un correo con el .docx de cada condominio de `condominioIds` adjunto.
 // `to` acepta uno o varios destinatarios; si va vacío, cae a INFORME_TO.
 // No lanza nunca: devuelve { enviada, to, condominios, fallidos, error?, datos? }.
-async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
+async function enviarInforme(store, { condominioIds, desde, hasta, to } = {}) {
+  const db = store.db;
   const c = config();
   const destinos = normalizarCorreos(to && to.length ? to : c.to);
   const ids = (condominioIds || []).filter(Boolean);
@@ -160,7 +161,7 @@ async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
   const fallidos = [];
   for (const condominioId of ids) {
     try {
-      informes.push(await generarInformeSemanal(db, { condominioId, desde, hasta }));
+      informes.push(await generarInformeSemanal(store, { condominioId, desde, hasta }));
     } catch (err) {
       fallidos.push(condominioId);
     }
@@ -204,8 +205,8 @@ async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
 }
 
 // Un condominio, un correo (lo que usa el botón "enviar ahora" del panel).
-async function enviarInformeSemanal(db, { condominioId, desde, hasta, to } = {}) {
-  return enviarInforme(db, { condominioIds: [condominioId], desde, hasta, to });
+async function enviarInformeSemanal(store, { condominioId, desde, hasta, to } = {}) {
+  return enviarInforme(store, { condominioIds: [condominioId], desde, hasta, to });
 }
 
 module.exports = { configurado, enviarInforme, enviarInformeSemanal, config, FALTA_CREDENCIALES };
