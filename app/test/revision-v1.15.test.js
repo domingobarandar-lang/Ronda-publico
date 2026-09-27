@@ -149,9 +149,9 @@ test('el ts de una marca está acotado, igual que el de los rechazos', async () 
 test('el inicio y el fin también están acotados', () => {
   // Los tres campos de hora vienen del cliente; arreglar solo uno era dejar el
   // mismo agujero abierto en los otros dos.
-  const db = { rondas: [{ id: 'r', condominioId: 'c', puntoIds: [] }], puntos: [], ejecuciones: [] };
+  const db = { rondas: [{ id: 'r', condominioId: 'c', puntoIds: [] }], puntos: [] };
   const guardia = { id: 'g', condominioId: 'c' };
-  const r = motor.iniciarEjecucion(db, { rondaId: 'r', guardia, inicio: 'Y'.repeat(9000) });
+  const r = motor.iniciarEjecucion(db, { obtener: () => null }, { rondaId: 'r', guardia, inicio: 'Y'.repeat(9000) });
   assert.ok(r.ejecucion.inicio.length <= 40);
   motor.cerrarEjecucion(db, r.ejecucion, { fin: 'Z'.repeat(9000) });
   assert.ok(r.ejecucion.fin.length <= 40);

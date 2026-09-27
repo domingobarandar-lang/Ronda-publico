@@ -341,9 +341,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   app.post('/api/ejecuciones', auth, (req, res) => {
     const { id: ejecucionId, rondaId, inicio } = req.body || {};
-    const r = motor.iniciarEjecucion(db, { ejecucionId, rondaId, guardia: req.usuario, inicio });
+    const r = motor.iniciarEjecucion(db, store.ejecuciones, { ejecucionId, rondaId, guardia: req.usuario, inicio });
     if (r.error) return res.status(r.codigo).json({ error: r.error });
-    store.guardar();
+    if (!r.repetida) store.ejecuciones.guardar(r.ejecucion);
     res.status(r.repetida ? 200 : 201).json(r.ejecucion);
   });
 

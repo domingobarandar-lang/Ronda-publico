@@ -308,7 +308,11 @@ function verificarPresencia(punto, gps, cfg = configGps()) {
   };
 }
 
-function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }) {
+// `ejecuciones` es el repositorio del store (solo se usa `obtener`). No guarda:
+// devuelve la ejecución nueva y quien llama la persiste con
+// store.ejecuciones.guardar(). Con `repetida` (la cola offline reenvió el
+// inicio) la ejecución ya estaba guardada y no hay nada que escribir.
+function iniciarEjecucion(db, ejecuciones, { ejecucionId, rondaId, guardia, inicio, offline }) {
   const ronda = db.rondas.find(r => r.id === rondaId);
   if (!ronda) return { error: 'La ronda no existe.', codigo: 404 };
   if (ronda.condominioId !== guardia.condominioId) {
@@ -318,7 +322,7 @@ function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }
     return { error: 'Identificador de ejecución inválido.', codigo: 422 };
   }
   if (ejecucionId) {
-    const existente = db.ejecuciones.find(e => e.id === ejecucionId);
+    const existente = ejecuciones.obtener(ejecucionId);
     if (existente) return { ejecucion: existente, repetida: true };
   }
   const ejecucion = {
@@ -332,7 +336,6 @@ function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }
     escaneos: [],
     evaluacion: null
   };
-  db.ejecuciones.push(ejecucion);
   return { ejecucion };
 }
 
