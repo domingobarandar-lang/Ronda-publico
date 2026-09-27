@@ -30,6 +30,35 @@ test('iniciarEjecucion usa el repositorio: la nueva no se guarda sola y la repet
   store.cerrar();
 });
 
+test('push y notificar dejan el aviso en store.notificaciones (sin arreglo en memoria)', async () => {
+  const { crearPush } = require('../lib/push');
+  const { registrarAviso, notificarAdmin } = require('../lib/notificar');
+  const store = nuevoStore();
+  store.db.vapid = { publicKey: 'pub', privateKey: 'priv' };
+  store.db.pushSuscripciones.push(
+    { condominioId: 'c1', usuarioId: 'u1', destino: 'admin', suscripcion: { endpoint: 'https://push.ejemplo/ok', keys: { p256dh: 'a', auth: 'b' } } },
+    { condominioId: 'c1', usuarioId: 'u2', destino: 'admin', suscripcion: { endpoint: 'https://push.ejemplo/muerto', keys: { p256dh: 'a', auth: 'b' } } }
+  );
+  const push = crearPush(store, {
+    enviar: async s => { if (s.endpoint.endsWith('muerto')) { const e = new Error('gone'); e.statusCode = 410; throw e; } }
+  });
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const registro = await push.avisar({ id: 'c1' }, { titulo: 'T', cuerpo: 'C', url: 'u' });
+    assert.deepEqual(registro.dispositivos, { ok: 1, total: 2 });
+    registrarAviso(store, { id: 'c1', nombre: 'Uno' }, 'cierre');
+    await notificarAdmin(store, { id: 'c1', nombre: 'Uno' }, 'otro cierre');
+  } finally {
+    console.log = log;
+  }
+  assert.equal(store.db.notificaciones, undefined);
+  assert.deepEqual(store.notificaciones.ultimas('c1').map(n => [n.medio, n.texto]),
+    [['registro', 'otro cierre'], ['registro', 'cierre'], ['push', 'T\nC']]);
+  assert.equal(store.db.pushSuscripciones.length, 1, 'la suscripción muerta se limpió');
+  store.cerrar();
+});
+
 // ---------- Handlers del servidor sobre el repositorio ----------
 
 const { crearApp } = require('../server');
