@@ -11,7 +11,11 @@
 //   INFORME_HORA        (0-23, hora de Chile; por defecto 8)
 //   INFORME_CONDOMINIOS (ids separados por coma; vacío = todos los que tengan
 //                        correo cargado. Es una lista blanca opcional.)
+//
+// También programa el respaldo diario de la base (lib/respaldo.js), que corre
+// SIEMPRE: la foto en el volumen no depende de tener Gmail configurado.
 const correo = require('./correo');
+const respaldo = require('./respaldo');
 const { agruparPorDestinatario } = require('./destinatarios');
 
 // Fecha/hora actual en Chile (maneja el cambio de horario solo).
@@ -73,7 +77,17 @@ async function revisar(store) {
   }
 }
 
+function iniciarRespaldo(store) {
+  const op = respaldo.opcionesDesdeEnv(store);
+  console.log(`[respaldo] foto diaria desde las ${op.hora}:00 Chile en ${op.dir} (se guardan ${op.conservar}); `
+            + (op.to.length ? `copia por correo a ${op.to.join(', ')} cada ${op.cadaDias} día(s).` : 'SIN copia por correo (falta RESPALDO_TO).'));
+  const tick = () => respaldo.revisar(store, { ahora: ahoraChile() });
+  setTimeout(tick, 60000);            // primera revisión ~1 min tras arrancar
+  return setInterval(tick, 3600000);  // y luego cada hora
+}
+
 function iniciar(store) {
+  iniciarRespaldo(store);
   if (!correo.configurado()) {
     console.log(`[informe-email] faltan credenciales de Gmail (${correo.FALTA_CREDENCIALES}) — envío semanal en pausa.`);
     return null;
@@ -85,4 +99,4 @@ function iniciar(store) {
   return setInterval(tick, 3600000);  // y luego cada hora
 }
 
-module.exports = { iniciar, revisar, ahoraChile, lunesDeLaSemana };
+module.exports = { iniciar, iniciarRespaldo, revisar, ahoraChile, lunesDeLaSemana };

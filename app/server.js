@@ -1115,9 +1115,12 @@ if (require.main === module) {
     console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');
     console.log('  Alarma de ronda: se configura por condominio en el panel (pestaña Avisos)');
     console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : `sin configurar (falta ${correo.FALTA_CREDENCIALES})`}`);
-    console.log(`  Base de datos: ${store.ruta}`);
+    const c = store.conteos();
+    console.log(`  Base de datos: ${store.ruta} (SQLite, Node ${process.version})`);
+    console.log(`    ${c.condominios} condominios, ${c.usuarios} usuarios, ${c.puntos} puntos, ${c.rondas} rondas configuradas, `
+              + `${c.ejecuciones} ejecuciones, ${c.notificaciones} avisos`);
   });
-  programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)
+  programador.iniciar(store); // respaldo diario de la base y envío semanal del informe por correo
   recordatorios.iniciar(store, push); // alarma de ronda a los teléfonos de cada condominio
 }
 
