@@ -1,6 +1,6 @@
 // Aviso al administrador al cierre de cada ronda.
 //
-// El aviso queda en db.notificaciones (lo lee el panel, pestaña Avisos) y en la
+// El aviso queda en store.notificaciones (lo lee el panel, pestaña Avisos) y en la
 // consola del servidor. Los canales que SALEN del servidor son dos y viven en
 // otros módulos: el correo semanal (lib/correo.js) y el push al teléfono del
 // administrador (lib/push.js).
@@ -11,10 +11,10 @@
 // terminar la ronda— quedaba colgada esperando a un tercero. Se prefiere no
 // tener el canal a tener uno que puede colgar el cierre.
 //
-// Nunca lanza: el informe ya está guardado cuando esto corre, y un aviso que
-// falla no puede tumbar el cierre de una ronda.
-
-async function notificarAdmin(store, condominio, texto) {
+// Síncrono: el cierre de la ronda lo llama dentro de la misma transacción que
+// guarda la ejecución (store.transaccion), así no queda una ronda cerrada sin
+// su aviso ni un aviso de una ronda que no se cerró.
+function registrarAviso(store, condominio, texto) {
   const registro = {
     ts: new Date().toISOString(),
     condominioId: condominio.id,
@@ -25,9 +25,12 @@ async function notificarAdmin(store, condominio, texto) {
 
   console.log(`[aviso → admin de ${condominio.nombre}]\n${texto}\n`);
 
-  store.db.notificaciones.push(registro);
-  store.guardar();
+  store.notificaciones.agregar(registro);
   return registro;
 }
 
-module.exports = { notificarAdmin };
+async function notificarAdmin(store, condominio, texto) {
+  return registrarAviso(store, condominio, texto);
+}
+
+module.exports = { notificarAdmin, registrarAviso };

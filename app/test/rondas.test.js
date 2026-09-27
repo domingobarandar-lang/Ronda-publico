@@ -122,14 +122,14 @@ test('CU-03/04/09: ronda completa en orden → informe "completa" + notificació
     assert.equal(esc.datos.avance.hechos, i + 1);
   }
 
-  const notifsAntes = store.db.notificaciones.length;
+  const notifsAntes = store.notificaciones.contar();
   const cierre = await api(`/api/ejecuciones/${ejecucionId}/cerrar`, { metodo: 'POST', token });
   assert.equal(cierre.status, 200);
   assert.equal(cierre.datos.estado, 'completa');
   assert.ok(cierre.datos.detalle.every(d => !d.faltante));
 
-  assert.equal(store.db.notificaciones.length, notifsAntes + 1);
-  const notif = store.db.notificaciones.at(-1);
+  assert.equal(store.notificaciones.contar(), notifsAntes + 1);
+  const notif = store.notificaciones.ultimas('aromos', 1)[0];
   assert.equal(notif.condominioId, 'aromos');
   assert.match(notif.texto, /Nocturna completa/);
   assert.doesNotMatch(notif.texto, /ALERTA/);
@@ -173,12 +173,12 @@ test('CU-05/06/13: escaneos inválidos, duplicado y código manual', async () =>
   assert.equal(manual.datos.punto.nombre, 'Quincho');
 
   // CU-08/10: cierre con 2 de 4 puntos → INCOMPLETA + alerta con los faltantes
-  const notifsAntes = store.db.notificaciones.length;
+  const notifsAntes = store.notificaciones.contar();
   const cierre = await api(`/api/ejecuciones/${ejecucionId}/cerrar`, { metodo: 'POST', token });
   assert.equal(cierre.datos.estado, 'incompleta');
   assert.equal(cierre.datos.evaluacion.faltantes.length, 2);
-  const notif = store.db.notificaciones.at(-1);
-  assert.equal(store.db.notificaciones.length, notifsAntes + 1);
+  const notif = store.notificaciones.ultimas('aromos', 1)[0];
+  assert.equal(store.notificaciones.contar(), notifsAntes + 1);
   assert.match(notif.texto, /ALERTA/);
   assert.match(notif.texto, /Piscina — FALTANTE/);
   assert.match(notif.texto, /Acceso trasero — FALTANTE/);
@@ -454,7 +454,7 @@ test('CU-22: un administrador normal queda encerrado en su condominio aunque man
   assert.equal(cierre.status, 403, 'ni la cierra por la ruta del guardia');
   const cierreAdmin = await api(`/api/admin/ejecuciones/${ejec.datos.id}/cerrar`, { metodo: 'POST', token: carmen.token, condominio: 'aromos' });
   assert.equal(cierreAdmin.status, 404, 'ni por la ruta del administrador');
-  assert.equal(store.db.ejecuciones.find(e => e.id === ejec.datos.id).estado, 'en_curso');
+  assert.equal(store.ejecuciones.obtener(ejec.datos.id).estado, 'en_curso');
 
   // Su propio administrador (marta, de Los Aromos) sí la cierra.
   const marta = await login('marta', '1111');
@@ -578,17 +578,17 @@ test('cierre administrativo de una ronda olvidada + cierre repetido inocuo', asy
   const marta = await login('marta', '1111');
   const ejecucionId = global.__ejecucionOlvidada;
 
-  const notifsAntes = store.db.notificaciones.length;
+  const notifsAntes = store.notificaciones.contar();
   const cierre = await api(`/api/admin/ejecuciones/${ejecucionId}/cerrar`, { metodo: 'POST', token: marta.token });
   assert.equal(cierre.status, 200);
   assert.equal(cierre.datos.estado, 'incompleta');
-  assert.equal(store.db.notificaciones.length, notifsAntes + 1);
-  assert.match(store.db.notificaciones.at(-1).texto, /cerrada por el administrador/);
+  assert.equal(store.notificaciones.contar(), notifsAntes + 1);
+  assert.match(store.notificaciones.ultimas('aromos', 1)[0].texto, /cerrada por el administrador/);
 
   // Cerrar de nuevo no duplica notificaciones ni cambia el resultado.
   const repetido = await api(`/api/admin/ejecuciones/${ejecucionId}/cerrar`, { metodo: 'POST', token: marta.token });
   assert.equal(repetido.status, 200);
-  assert.equal(store.db.notificaciones.length, notifsAntes + 1);
+  assert.equal(store.notificaciones.contar(), notifsAntes + 1);
 
   // Y escanear sobre una ronda cerrada se rechaza.
   const pedro = await login('pedro', '2222');
@@ -754,7 +754,7 @@ test('push: ronda incompleta → notificación al teléfono del admin suscrito',
   assert.equal(payload.url, `informe.html?id=${ini.datos.id}`);
 
   // Queda constancia en la pestaña Avisos.
-  const registro = store.db.notificaciones.at(-1);
+  const registro = store.notificaciones.ultimas('aromos', 1)[0];
   assert.equal(registro.medio, 'push');
   assert.equal(registro.enviada, true);
   assert.deepEqual(registro.dispositivos, { ok: 1, total: 1 });
@@ -938,7 +938,7 @@ test('CU-17: marcas en ráfaga → ronda SOSPECHOSA + aviso al admin', async () 
   assert.equal(cierre.datos.estado, 'sospechosa');
   assert.ok(cierre.datos.evaluacion.rafaga >= 2);
   assert.ok(cierre.datos.evaluacion.sospechas.some(s => /segundos/.test(s)));
-  assert.ok(store.db.notificaciones.some(n => /ALERTA: ronda con datos sospechosos/.test(n.texto)));
+  assert.ok(store.notificaciones.ultimas('aromos', 50).some(n => /ALERTA: ronda con datos sospechosos/.test(n.texto)));
 
   // Y le suena el teléfono al administrador con el motivo.
   assert.equal(pushEnviados.length, pushAntes + 1);
@@ -1460,7 +1460,7 @@ test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)',
 
   const primero = await api(url, { metodo: 'POST', token: pedro.token, cuerpo: evento });
   assert.equal(primero.status, 201);
-  const guardado = store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos;
+  const guardado = store.ejecuciones.obtener(ini.datos.id).rechazos;
   assert.equal(guardado.length, 1);
   assert.equal(guardado[0].distanciaM, 90);
   assert.equal(guardado[0].topeM, 45);
@@ -1471,7 +1471,7 @@ test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)',
   const repetido = await api(url, { metodo: 'POST', token: pedro.token, cuerpo: evento });
   assert.equal(repetido.status, 200);
   assert.equal(repetido.datos.repetido, true);
-  assert.equal(store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos.length, 1);
+  assert.equal(store.ejecuciones.obtener(ini.datos.id).rechazos.length, 1);
 
   // Un punto de otro condominio no entra: el registro no es puerta de atrás.
   const ajeno = await api(url, {
@@ -1486,7 +1486,7 @@ test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)',
     metodo: 'POST', token: pedro.token, cuerpo: { ...evento, ts: '2026-08-12T03:05:00.000Z' }
   });
   assert.equal(tarde.status, 201);
-  assert.equal(store.db.ejecuciones.find(e => e.id === ini.datos.id).rechazos.length, 2);
+  assert.equal(store.ejecuciones.obtener(ini.datos.id).rechazos.length, 2);
 });
 
 test('CU-23: la evidencia de la medición viaja con la coordenada y muere con ella', async () => {
