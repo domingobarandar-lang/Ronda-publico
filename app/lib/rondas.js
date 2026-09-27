@@ -340,7 +340,7 @@ function iniciarEjecucion(db, ejecuciones, { ejecucionId, rondaId, guardia, inic
 }
 
 // La ronda de una ejecución puede haber sido ELIMINADA desde el panel mientras
-// el guardia la caminaba: db.ejecuciones guarda el rondaId, no la ronda. Todo lo
+// el guardia la caminaba: la ejecución guarda el rondaId, no la ronda. Todo lo
 // que la busque tiene que sobrevivir a que no esté — el informe ya lo hace
 // (armarInforme cae a `{ puntoIds: [] }`) y la lista del panel también, que
 // muestra "(ronda eliminada)". El motor era el único que la daba por segura, y

@@ -1,0 +1,164 @@
+// Scripts de operación sobre la base SQLite (v1.17): exportar de vuelta a
+// db.json, restaurar un respaldo, sembrar, purgar la demo y la migración RSF.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const zlib = require('zlib');
+const { execFileSync, spawnSync } = require('child_process');
+const { crearStore } = require('../lib/store');
+const { datosSemilla } = require('../seed');
+const { exportarJson } = require('../scripts/exportar-json');
+const { restaurar } = require('../scripts/restaurar-respaldo');
+const { hashPin } = require('../lib/auth');
+
+const APP = path.join(__dirname, '..');
+const silencio = { log: () => {} };
+const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-scripts-'));
+
+// Una base sembrada con rondas y avisos en los dos condominios de la demo.
+function baseConHistorial(dir) {
+  const ruta = path.join(dir, 'rondas.sqlite');
+  const store = crearStore(ruta, silencio);
+  Object.assign(store.db, datosSemilla());
+  store.guardar();
+  for (const [i, condominioId] of ['aromos', 'aromos', 'mirador'].entries()) {
+    store.ejecuciones.guardar({ id: `e-${i}`, rondaId: 'r', condominioId, guardiaId: 'u-pedro', inicio: `2026-09-2${i}T03:00:00.000Z`,
+      fin: null, estado: 'completa', escaneos: [{ puntoId: 'p', ts: 'x', gps: { lat: -33, lon: -70 } }], evaluacion: null });
+    store.notificaciones.agregar({ ts: `2026-09-2${i}T04:00:00.000Z`, condominioId, texto: `aviso ${i}`, medio: 'registro', enviada: true });
+  }
+  return { ruta, store };
+}
+
+const correr = (script, args, env) => spawnSync(process.execPath, [script, ...args], {
+  cwd: APP, env: { ...process.env, ...env }, encoding: 'utf8'
+});
+
+test('exportar-json: la vuelta atrás regenera un db.json que se reimporta idéntico', () => {
+  const dir = carpeta();
+  const { ruta, store } = baseConHistorial(dir);
+  const esperado = store.exportar();
+  store.cerrar();
+
+  const { destino, conteos } = exportarJson({ rutaDb: ruta, ...silencio });
+  assert.equal(destino, path.join(dir, 'db.json'));
+  assert.deepEqual(conteos, { ejecuciones: 3, notificaciones: 3, usuarios: esperado.usuarios.length, puntos: esperado.puntos.length });
+  const json = JSON.parse(fs.readFileSync(destino, 'utf8'));
+  assert.deepEqual(json, esperado);
+  for (const clave of ['condominios', 'usuarios', 'puntos', 'rondas', 'ejecuciones', 'sesiones', 'notificaciones', 'pushSuscripciones']) {
+    assert.ok(clave in json, `la v1.16 espera la clave "${clave}"`);
+  }
+
+  // No pisa un .json que ya esté, salvo que se pida.
+  assert.throws(() => exportarJson({ rutaDb: ruta, ...silencio }), /Ya existe/);
+  exportarJson({ rutaDb: ruta, forzar: true, ...silencio });
+
+  // Y ese .json, en una carpeta nueva, se importa idéntico (ida y vuelta).
+  const otra = carpeta();
+  fs.copyFileSync(destino, path.join(otra, 'db.json'));
+  const reimportada = crearStore(path.join(otra, 'db.json'), silencio);
+  assert.deepEqual(reimportada.exportar(), esperado);
+  reimportada.cerrar();
+});
+
+test('exportar-json: sin base no crea una vacía', () => {
+  const dir = carpeta();
+  assert.throws(() => exportarJson({ rutaDb: path.join(dir, 'rondas.sqlite'), ...silencio }), /No existe la base/);
+  assert.ok(!fs.existsSync(path.join(dir, 'rondas.sqlite')));
+  const r = correr('scripts/exportar-json.js', [], { DB_PATH: path.join(dir, 'rondas.sqlite') });
+  assert.equal(r.status, 1);
+});
+
+test('restaurar-respaldo: valida el .gz, en seco no toca nada, y con --aplicar se aplica al arrancar', async () => {
+  const dir = carpeta();
+  const { ruta, store } = baseConHistorial(dir);
+  const respaldo = path.join(dir, 'respaldos', 'rondas-2026-09-26.sqlite');
+  store.respaldar(respaldo);
+  fs.writeFileSync(`${respaldo}.gz`, zlib.gzipSync(fs.readFileSync(respaldo)));
+  // Después del respaldo pasan cosas que la restauración va a deshacer.
+  store.ejecuciones.guardar({ id: 'posterior', condominioId: 'aromos', inicio: '2026-09-27T03:00:00.000Z', estado: 'en_curso', escaneos: [] });
+  store.cerrar();
+
+  const seco = await restaurar(`${respaldo}.gz`, { rutaDb: ruta, ...silencio });
+  assert.equal(seco.info.ejecuciones, 3);
+  assert.equal(seco.pendiente, null);
+  assert.ok(!fs.existsSync(`${ruta}.restaurar`) && !fs.existsSync(`${ruta}.restaurar.tmp`));
+
+  const r = await restaurar(`${respaldo}.gz`, { rutaDb: ruta, aplicar: true, ...silencio });
+  assert.equal(r.pendiente, `${ruta}.restaurar`);
+  const abierta = crearStore(ruta, silencio);
+  assert.equal(abierta.ejecuciones.contar(), 3);
+  assert.equal(abierta.ejecuciones.obtener('posterior'), null);
+  assert.ok(fs.existsSync(abierta.restauracion.apartada), 'la base que estaba queda apartada');
+  abierta.cerrar();
+
+  // Un .sqlite sin comprimir (los de /data/respaldos/) también sirve.
+  assert.equal((await restaurar(respaldo, { rutaDb: ruta, ...silencio })).info.ejecuciones, 3);
+});
+
+test('restaurar-respaldo: un archivo roto se rechaza sin dejar nada pendiente', async () => {
+  const dir = carpeta();
+  const ruta = path.join(dir, 'rondas.sqlite');
+  const roto = path.join(dir, 'roto.sqlite.gz');
+  fs.writeFileSync(roto, zlib.gzipSync(Buffer.from('esto no es una base')));
+  await assert.rejects(restaurar(roto, { rutaDb: ruta, aplicar: true, ...silencio }), /El respaldo no sirve/);
+  const noGz = path.join(dir, 'no-gz.sqlite.gz');
+  fs.writeFileSync(noGz, 'tampoco gzip');
+  await assert.rejects(restaurar(noGz, { rutaDb: ruta, aplicar: true, ...silencio }));
+  assert.deepEqual(fs.readdirSync(dir).filter(f => f.includes('restaurar')), []);
+  const r = correr('scripts/restaurar-respaldo.js', [roto, '--aplicar'], { DB_PATH: ruta });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /El respaldo no sirve/);
+});
+
+test('seed sin --si-vacio resiembra desde cero, historial incluido', () => {
+  const dir = carpeta();
+  const { ruta, store } = baseConHistorial(dir);
+  store.cerrar();
+  execFileSync(process.execPath, ['seed.js'], { cwd: APP, env: { ...process.env, DB_PATH: ruta }, encoding: 'utf8' });
+  const despues = crearStore(ruta, silencio);
+  assert.equal(despues.ejecuciones.contar(), 0);
+  assert.equal(despues.notificaciones.contar(), 0);
+  assert.ok(despues.db.usuarios.some(u => u.usuario === 'admin'));
+  despues.cerrar();
+});
+
+test('purga-demo --con-condominio borra también las rondas y avisos del condominio demo', () => {
+  const dir = carpeta();
+  const { ruta, store } = baseConHistorial(dir);
+  // Una cuenta de panel real, para que la purga no quede bloqueada.
+  store.db.usuarios.push({ id: 'u-real', condominioId: 'mirador', usuario: 'real', nombre: 'Real', rol: 'admin', pinHash: hashPin('90817263') });
+  store.guardar();
+  store.cerrar();
+
+  const seco = correr('purga-demo.js', ['--con-condominio'], { DB_PATH: ruta });
+  assert.equal(seco.status, 0, seco.stderr);
+  assert.match(seco.stdout, /Se borraría el condominio de demo "aromos" y todos sus datos \(2 rondas y 2 avisos\)/);
+  let s = crearStore(ruta, silencio);
+  assert.equal(s.ejecuciones.contar(), 3, 'en seco no se tocó nada');
+  s.cerrar();
+
+  const r = correr('purga-demo.js', ['--aplicar', '--con-condominio'], { DB_PATH: ruta });
+  assert.equal(r.status, 0, r.stderr);
+  s = crearStore(ruta, silencio);
+  assert.equal(s.ejecuciones.contar('aromos'), 0);
+  assert.equal(s.notificaciones.contar('aromos'), 0);
+  assert.equal(s.ejecuciones.contar('mirador'), 1, 'lo de otros condominios queda');
+  assert.ok(!s.db.condominios.some(c => c.id === 'aromos'));
+  assert.ok(s.db.usuarios.some(u => u.id === 'u-real'));
+  s.cerrar();
+});
+
+test('migracion-rsf borra las rondas y avisos de mirador y es idempotente', () => {
+  const { aplicar, CONDOMINIO_A_ELIMINAR } = require('../migracion-rsf');
+  const dir = carpeta();
+  const { store } = baseConHistorial(dir);
+  const cambios = aplicar(store);
+  assert.ok(cambios.some(c => c.includes(`1 rondas y 1 avisos de "${CONDOMINIO_A_ELIMINAR}"`)));
+  assert.equal(store.ejecuciones.contar(CONDOMINIO_A_ELIMINAR), 0);
+  assert.equal(store.ejecuciones.contar('aromos'), 2);
+  assert.ok(store.db.condominios.some(c => c.id === 'piloto-sf'));
+  assert.deepEqual(aplicar(store), [], 'la segunda vez no hace nada');
+  store.cerrar();
+});

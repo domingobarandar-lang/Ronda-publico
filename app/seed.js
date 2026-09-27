@@ -102,8 +102,12 @@ function sembrar({ soloSiVacio = false } = {}) {
     store.cerrar();
     return false;
   }
-  Object.assign(store.db, datosSemilla());
-  store.guardar();
+  // Resembrar es empezar de cero: también se va el historial de rondas y avisos.
+  store.transaccion(() => {
+    store.sql.exec('DELETE FROM ejecuciones; DELETE FROM notificaciones');
+    Object.assign(store.db, datosSemilla());
+    store.guardar();
+  });
   console.log('Base de demo sembrada en', store.ruta);
   store.cerrar();
   console.log(`

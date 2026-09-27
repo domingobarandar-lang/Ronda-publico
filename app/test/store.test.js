@@ -8,9 +8,9 @@ const path = require('path');
 const { crearStore, resolverRutas } = require('../lib/store');
 
 const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-store-'));
-const nuevo = (opciones = { sinPuente: true }) => {
+const nuevo = () => {
   const ruta = path.join(carpeta(), 'rondas.sqlite');
-  return { ruta, store: crearStore(ruta, opciones) };
+  return { ruta, store: crearStore(ruta) };
 };
 
 const ejec = (id, condominioId, inicio, extra = {}) => ({
@@ -33,7 +33,7 @@ test('la base queda en WAL con el esquema y su versión', () => {
   const tablas = store.sql.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(t => t.name);
   for (const t of ['estado', 'ejecuciones', 'notificaciones', 'meta']) assert.ok(tablas.includes(t), t);
   assert.equal(store.sql.prepare("SELECT valor FROM meta WHERE clave = 'version'").get().valor, '1');
-  assert.equal(store.db.ejecuciones, undefined, 'sin puente, las ejecuciones no viven en memoria');
+  assert.equal(store.db.ejecuciones, undefined, 'las ejecuciones no viven en memoria');
   store.cerrar();
 });
 
@@ -43,7 +43,7 @@ test('store.db se persiste por clave y sobrevive a reabrir', () => {
   store.db.informeEmailEstado = { 'a@b.cl': '2026-09-21' };
   store.guardar();
   store.cerrar();
-  const otra = crearStore(ruta, { sinPuente: true });
+  const otra = crearStore(ruta);
   assert.deepEqual(otra.db.condominios, [{ id: 'c1', nombre: 'Uno' }]);
   assert.deepEqual(otra.db.informeEmailEstado, { 'a@b.cl': '2026-09-21' });
   otra.cerrar();
@@ -69,7 +69,7 @@ test('una clave que se borra de store.db se borra de la tabla', () => {
   delete store.db.temporal;
   assert.deepEqual(store.guardar(), ['temporal']);
   store.cerrar();
-  const otra = crearStore(ruta, { sinPuente: true });
+  const otra = crearStore(ruta);
   assert.equal(otra.db.temporal, undefined);
   otra.cerrar();
 });
@@ -167,26 +167,76 @@ test('respaldar() deja una copia consistente que se abre como base', () => {
   const destino = path.join(path.dirname(ruta), 'respaldos', 'copia.sqlite');
   store.respaldar(destino);
   store.cerrar();
-  const copia = crearStore(destino, { sinPuente: true });
+  const copia = crearStore(destino);
   assert.deepEqual(copia.db.condominios, [{ id: 'c1' }]);
   assert.equal(copia.ejecuciones.obtener('r1').id, 'r1');
   copia.cerrar();
 });
 
-test('puente transitorio: store.db.ejecuciones y los repositorios ven lo mismo', () => {
-  const { ruta, store } = nuevo({});
-  store.db.ejecuciones.push(ejec('p1', 'c1', '2026-09-20T10:00:00Z'));
-  store.db.notificaciones.push({ condominioId: 'c1', texto: 'vieja' });
+test('guardar() dentro de una transacción que se deshace: el próximo guardar() lo reintenta', () => {
+  const { ruta, store } = nuevo();
   store.guardar();
-  assert.equal(store.ejecuciones.obtener('p1').id, 'p1');
-  store.ejecuciones.guardar(ejec('p2', 'c1', '2026-09-21T10:00:00Z'));
-  store.notificaciones.agregar({ condominioId: 'c1', texto: 'nueva' });
-  assert.ok(store.db.ejecuciones.some(e => e.id === 'p2'));
-  store.guardar();
-  assert.equal(store.notificaciones.contar(), 2, 'la agregada por el repositorio no se duplica');
+  store.db.usuarios.push({ id: 'u1' });
+  assert.throws(() => store.transaccion(() => {
+    store.guardar();
+    throw new Error('falla después de guardar');
+  }));
+  assert.deepEqual(store.guardar(), ['usuarios'], 'no quedó anotado como escrito');
   store.cerrar();
-  const otra = crearStore(ruta, {});
-  assert.deepEqual(otra.db.ejecuciones.map(e => e.id), ['p1', 'p2']);
-  assert.deepEqual(otra.db.notificaciones.map(n => n.texto), ['vieja', 'nueva']);
+  const otra = crearStore(ruta);
+  assert.deepEqual(otra.db.usuarios, [{ id: 'u1' }]);
   otra.cerrar();
+});
+
+test('borrado por condominio y conteos por condominio', () => {
+  const { store } = nuevo();
+  store.ejecuciones.guardar(ejec('a', 'c1', '2026-09-20T10:00:00Z'));
+  store.ejecuciones.guardar(ejec('b', 'c1', '2026-09-21T10:00:00Z'));
+  store.ejecuciones.guardar(ejec('c', 'c2', '2026-09-21T10:00:00Z'));
+  store.notificaciones.agregar({ condominioId: 'c1', texto: 'x' });
+  store.notificaciones.agregar({ condominioId: 'c2', texto: 'y' });
+  assert.equal(store.ejecuciones.contar('c1'), 2);
+  assert.equal(store.ejecuciones.eliminarDeCondominio('c1'), 2);
+  assert.equal(store.notificaciones.eliminarDeCondominio('c1'), 1);
+  assert.equal(store.ejecuciones.contar(), 1);
+  assert.equal(store.notificaciones.contar('c2'), 1);
+  assert.equal(store.ejecuciones.eliminar('c'), true);
+  assert.equal(store.ejecuciones.eliminar('c'), false);
+  store.cerrar();
+});
+
+test('exportar() devuelve la base con la forma de un db.json', () => {
+  const { store } = nuevo();
+  store.db.condominios.push({ id: 'c1' });
+  store.guardar();
+  store.ejecuciones.guardar(ejec('a', 'c1', '2026-09-20T10:00:00Z'));
+  store.notificaciones.agregar({ condominioId: 'c1', texto: 'x' });
+  const json = store.exportar();
+  assert.deepEqual(json.condominios, [{ id: 'c1' }]);
+  assert.deepEqual(json.ejecuciones, [ejec('a', 'c1', '2026-09-20T10:00:00Z')]);
+  assert.deepEqual(json.notificaciones, [{ condominioId: 'c1', texto: 'x' }]);
+  assert.deepEqual(store.conteos(), { ejecuciones: 1, notificaciones: 1, condominios: 1, usuarios: 0, puntos: 0, rondas: 0 });
+  store.cerrar();
+});
+
+test('una restauración pendiente se aplica al abrir y la base anterior queda apartada', () => {
+  const { ruta, store } = nuevo();
+  store.db.condominios.push({ id: 'respaldado' });
+  store.guardar();
+  store.respaldar(`${ruta}.restaurar`);
+  store.db.condominios.push({ id: 'posterior' });
+  store.guardar();
+  store.cerrar();
+
+  const mensajes = [];
+  const restaurada = crearStore(ruta, { log: m => mensajes.push(m) });
+  assert.deepEqual(restaurada.db.condominios, [{ id: 'respaldado' }]);
+  assert.ok(restaurada.restauracion && restaurada.restauracion.apartada);
+  assert.ok(!fs.existsSync(`${ruta}.restaurar`));
+  assert.ok(mensajes.some(m => /RESTAURADO/.test(m)));
+  restaurada.cerrar();
+
+  const anterior = crearStore(restaurada.restauracion.apartada);
+  assert.deepEqual(anterior.db.condominios.map(c => c.id), ['respaldado', 'posterior'], 'la anterior no se perdió');
+  anterior.cerrar();
 });

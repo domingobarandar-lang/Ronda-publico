@@ -78,9 +78,34 @@ function isoNormal(ts) {
   return Number.isNaN(t) ? String(ts) : new Date(t).toISOString();
 }
 
+const sello = () => new Date().toISOString().replace(/[:.]/g, '-');
+
+// Restauración pendiente: scripts/restaurar-respaldo.js deja la base validada
+// en `<sqlite>.restaurar` y el cambio se hace acá, al arrancar, cuando nadie
+// tiene la base abierta. La actual no se borra: queda como
+// `<sqlite>.antes-restaurar-<fecha>` (con su -wal, si lo tiene).
+function aplicarRestauracion(rutaSqlite, log) {
+  const pendiente = `${rutaSqlite}.restaurar`;
+  if (!fs.existsSync(pendiente)) return null;
+  let apartada = null;
+  if (fs.existsSync(rutaSqlite)) {
+    apartada = `${rutaSqlite}.antes-restaurar-${sello()}`;
+    fs.renameSync(rutaSqlite, apartada);
+    for (const sufijo of ['-wal', '-shm']) {
+      if (fs.existsSync(rutaSqlite + sufijo)) fs.renameSync(rutaSqlite + sufijo, apartada + sufijo);
+    }
+  }
+  fs.renameSync(pendiente, rutaSqlite);
+  log(`[store] RESTAURADO un respaldo en ${rutaSqlite}`
+    + (apartada ? `; la base anterior quedó como ${path.basename(apartada)}` : ''));
+  return { apartada };
+}
+
 function crearStore(rutaArchivo, opciones = {}) {
+  const log = opciones.log || console.log;
   const rutas = resolverRutas(rutaArchivo);
   fs.mkdirSync(path.dirname(rutas.sqlite), { recursive: true });
+  const restauracion = aplicarRestauracion(rutas.sqlite, log);
   const sql = new DatabaseSync(rutas.sqlite);
   sql.exec('PRAGMA journal_mode = WAL');
   sql.exec('PRAGMA synchronous = NORMAL');
@@ -92,6 +117,7 @@ function crearStore(rutaArchivo, opciones = {}) {
   // tiene que ser síncrona: una promesa en medio dejaría la transacción
   // abierta mientras otros requests escriben.
   let profundidad = 0;
+  let alConfirmar = [];
   function transaccion(fn) {
     if (profundidad > 0) return fn();
     sql.exec('BEGIN IMMEDIATE');
@@ -103,9 +129,13 @@ function crearStore(rutaArchivo, opciones = {}) {
       }
       profundidad--;
       sql.exec('COMMIT');
+      const pendientes = alConfirmar;
+      alConfirmar = [];
+      for (const f of pendientes) f();
       return r;
     } catch (err) {
       profundidad--;
+      alConfirmar = [];
       sql.exec('ROLLBACK');
       throw err;
     }
@@ -116,6 +146,7 @@ function crearStore(rutaArchivo, opciones = {}) {
     meta: sql.prepare('SELECT valor FROM meta WHERE clave = ?'),
     metaPoner: sql.prepare('INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor'),
     estadoTodo: sql.prepare('SELECT clave, valor FROM estado'),
+    estadoUno: sql.prepare('SELECT valor FROM estado WHERE clave = ?'),
     estadoPoner: sql.prepare('INSERT INTO estado (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor'),
     estadoQuitar: sql.prepare('DELETE FROM estado WHERE clave = ?'),
     ejecObtener: sql.prepare('SELECT datos FROM ejecuciones WHERE id = ?'),
@@ -127,11 +158,17 @@ function crearStore(rutaArchivo, opciones = {}) {
         guardia_id = excluded.guardia_id, inicio = excluded.inicio, fin = excluded.fin,
         estado = excluded.estado, datos = excluded.datos`),
     ejecQuitar: sql.prepare('DELETE FROM ejecuciones WHERE id = ?'),
+    ejecQuitarCondo: sql.prepare('DELETE FROM ejecuciones WHERE condominio_id = ?'),
     ejecUltima: sql.prepare('SELECT datos FROM ejecuciones WHERE condominio_id = ? ORDER BY inicio DESC LIMIT 1'),
     ejecContar: sql.prepare('SELECT COUNT(*) AS n FROM ejecuciones'),
+    ejecContarCondo: sql.prepare('SELECT COUNT(*) AS n FROM ejecuciones WHERE condominio_id = ?'),
+    ejecTodas: sql.prepare('SELECT datos FROM ejecuciones ORDER BY rowid'),
     notifPoner: sql.prepare('INSERT INTO notificaciones (condominio_id, ts, datos) VALUES (?, ?, ?)'),
     notifUltimas: sql.prepare('SELECT datos FROM notificaciones WHERE condominio_id = ? ORDER BY id DESC LIMIT ?'),
-    notifContar: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones')
+    notifQuitarCondo: sql.prepare('DELETE FROM notificaciones WHERE condominio_id = ?'),
+    notifContar: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones'),
+    notifContarCondo: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones WHERE condominio_id = ?'),
+    notifTodas: sql.prepare('SELECT datos FROM notificaciones ORDER BY id')
   };
 
   // ---------- Repositorio de ejecuciones ----------
@@ -156,10 +193,9 @@ function crearStore(rutaArchivo, opciones = {}) {
       const fila = st.ejecObtener.get(String(id));
       return fila ? JSON.parse(fila.datos) : null;
     },
+    // Upsert de UNA ejecución.
     guardar(e) {
-      const fila = filaEjecucion(e);
-      st.ejecPoner.run(fila);
-      puente.ejecucionGuardada(e, fila.$datos);
+      st.ejecPoner.run(filaEjecucion(e));
       return e;
     },
     // Filtros opcionales: condominioId, desde (inclusive) / hasta (exclusive)
@@ -183,20 +219,22 @@ function crearStore(rutaArchivo, opciones = {}) {
       const fila = st.ejecUltima.get(String(condominioId));
       return fila ? JSON.parse(fila.datos) : null;
     },
+    contar(condominioId) {
+      return condominioId == null ? st.ejecContar.get().n : st.ejecContarCondo.get(String(condominioId)).n;
+    },
     eliminar(id) {
       return st.ejecQuitar.run(String(id)).changes > 0;
     },
-    contar() {
-      return st.ejecContar.get().n;
+    // Para las purgas de un condominio completo. Devuelve cuántas borró.
+    eliminarDeCondominio(condominioId) {
+      return Number(st.ejecQuitarCondo.run(String(condominioId)).changes);
     }
   };
 
   // ---------- Repositorio de notificaciones ----------
   const notificaciones = {
     agregar(n) {
-      const datos = JSON.stringify(n);
-      st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, datos);
-      puente.notificacionAgregada(n);
+      st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
       return n;
     },
     // Las últimas `limite` del condominio, la más reciente primero.
@@ -204,21 +242,26 @@ function crearStore(rutaArchivo, opciones = {}) {
       return st.notifUltimas.all(String(condominioId), Math.max(1, Math.floor(Number(limite)) || 1))
         .map(f => JSON.parse(f.datos));
     },
-    contar() {
-      return st.notifContar.get().n;
+    contar(condominioId) {
+      return condominioId == null ? st.notifContar.get().n : st.notifContarCondo.get(String(condominioId)).n;
+    },
+    eliminarDeCondominio(condominioId) {
+      return Number(st.notifQuitarCondo.run(String(condominioId)).changes);
     }
   };
 
   // ---------- Estado en memoria ----------
   const db = VACIA();
-  const escrito = new Map(); // clave → último JSON persistido
+  const escrito = new Map(); // clave → último JSON persistido (confirmado)
   for (const { clave, valor } of st.estadoTodo.all()) {
     db[clave] = JSON.parse(valor);
     escrito.set(clave, valor);
   }
 
   // Persiste solo las claves de `estado` cuyo JSON cambió. Devuelve las claves
-  // escritas (vacío si no había nada que guardar).
+  // escritas (vacío si no había nada que guardar). Dentro de una transacción
+  // se suma a ella, y lo "ya escrito" recién se anota cuando se confirma: si se
+  // deshace, el próximo guardar() lo vuelve a intentar.
   function guardar() {
     const cambios = [];
     for (const clave of Object.keys(db)) {
@@ -227,88 +270,17 @@ function crearStore(rutaArchivo, opciones = {}) {
       if (escrito.get(clave) !== valor) cambios.push([clave, valor]);
     }
     const quitadas = [...escrito.keys()].filter(c => !(c in db) || db[c] === undefined);
-    const hayPuente = puente.pendiente();
-    if (!cambios.length && !quitadas.length && !hayPuente) return [];
+    if (!cambios.length && !quitadas.length) return [];
+    const anotar = () => {
+      for (const [clave, valor] of cambios) escrito.set(clave, valor);
+      for (const clave of quitadas) escrito.delete(clave);
+    };
     transaccion(() => {
       for (const [clave, valor] of cambios) st.estadoPoner.run(clave, valor);
       for (const clave of quitadas) st.estadoQuitar.run(clave);
-      puente.sincronizar();
+      alConfirmar.push(anotar);
     });
-    for (const [clave, valor] of cambios) escrito.set(clave, valor);
-    for (const clave of quitadas) escrito.delete(clave);
     return [...cambios.map(c => c[0]), ...quitadas];
-  }
-
-  // ---------- Puente transitorio (se elimina al terminar la migración) ----------
-  // Mientras el resto del código siga leyendo `store.db.ejecuciones` y
-  // `store.db.notificaciones`, esos arreglos existen en memoria y se
-  // sincronizan con sus tablas en cada guardar(). Los repositorios también los
-  // mantienen al día. Con `opciones.sinPuente` el store queda como será al
-  // final: sin arreglos.
-  const puente = crearPuente();
-  function crearPuente() {
-    if (opciones.sinPuente) {
-      return { pendiente: () => false, sincronizar() {}, ejecucionGuardada() {}, notificacionAgregada() {} };
-    }
-    const cacheEjec = new Map(); // id → JSON persistido
-    let arrEjec = null;
-    let arrNotif = null;
-    let notifSincronizadas = 0;
-
-    function cargar() {
-      db.ejecuciones = sql.prepare('SELECT datos FROM ejecuciones ORDER BY rowid').all().map(f => {
-        cacheEjec.set(JSON.parse(f.datos).id, f.datos);
-        return JSON.parse(f.datos);
-      });
-      db.notificaciones = sql.prepare('SELECT datos FROM notificaciones ORDER BY id').all().map(f => JSON.parse(f.datos));
-      arrEjec = db.ejecuciones;
-      arrNotif = db.notificaciones;
-      notifSincronizadas = arrNotif.length;
-    }
-
-    return {
-      cargar,
-      pendiente: () => true,
-      sincronizar() {
-        const ejec = Array.isArray(db.ejecuciones) ? db.ejecuciones : [];
-        const vivos = new Set();
-        for (const e of ejec) {
-          vivos.add(String(e.id));
-          const fila = filaEjecucion(e);
-          if (cacheEjec.get(fila.$id) !== fila.$datos) {
-            st.ejecPoner.run(fila);
-            cacheEjec.set(fila.$id, fila.$datos);
-          }
-        }
-        for (const id of [...cacheEjec.keys()]) {
-          if (!vivos.has(id)) { st.ejecQuitar.run(id); cacheEjec.delete(id); }
-        }
-        arrEjec = ejec;
-
-        const notif = Array.isArray(db.notificaciones) ? db.notificaciones : [];
-        if (notif !== arrNotif || notif.length < notifSincronizadas) {
-          sql.exec('DELETE FROM notificaciones');
-          notifSincronizadas = 0;
-        }
-        for (const n of notif.slice(notifSincronizadas)) {
-          st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
-        }
-        notifSincronizadas = notif.length;
-        arrNotif = notif;
-      },
-      ejecucionGuardada(e, datos) {
-        cacheEjec.set(String(e.id), datos);
-        if (!Array.isArray(db.ejecuciones)) return;
-        const i = db.ejecuciones.findIndex(x => x.id === e.id);
-        if (i === -1) db.ejecuciones.push(e);
-        else db.ejecuciones[i] = e;
-      },
-      notificacionAgregada(n) {
-        if (!Array.isArray(db.notificaciones)) return;
-        db.notificaciones.push(n);
-        if (db.notificaciones === arrNotif) notifSincronizadas++;
-      }
-    };
   }
 
   // ---------- Esquema e importación desde db.json ----------
@@ -317,7 +289,6 @@ function crearStore(rutaArchivo, opciones = {}) {
   // falla (JSON roto, conteos que no cuadran) se deshace, el .json queda
   // intacto y crearStore lanza: el servidor no arranca. Mejor caído y con los
   // datos enteros que arriba a medias. El próximo arranque lo vuelve a intentar.
-  const log = opciones.log || console.log;
   let importacion = null;
   if (!st.meta.get('version')) {
     const hayJson = fs.existsSync(rutas.json);
@@ -335,7 +306,7 @@ function crearStore(rutaArchivo, opciones = {}) {
     }
     if (importacion) {
       // Recién con la transacción confirmada se aparta el .json (no se borra).
-      const destino = `${rutas.json}.migrado-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      const destino = `${rutas.json}.migrado-${sello()}`;
       try {
         fs.renameSync(rutas.json, destino);
         importacion.renombradoA = destino;
@@ -362,7 +333,7 @@ function crearStore(rutaArchivo, opciones = {}) {
       const texto = JSON.stringify(valor);
       st.estadoPoner.run(clave, texto);
       db[clave] = JSON.parse(texto);
-      escrito.set(clave, texto);
+      alConfirmar.push(() => escrito.set(clave, texto));
     }
     // Con ids repetidos la versión anterior usaba el primero (Array.find).
     const vistos = new Set();
@@ -373,12 +344,12 @@ function crearStore(rutaArchivo, opciones = {}) {
       vistos.add(String(e.id));
     }
     const notifs = datos.notificaciones || [];
-    for (const n of notifs) st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
+    for (const n of notifs) notificaciones.agregar(n);
 
     // Verificación dentro de la misma transacción: lo que quedó escrito tiene
     // que cuadrar con lo que traía el .json.
     const largoEnTabla = clave => {
-      const fila = sql.prepare('SELECT valor FROM estado WHERE clave = ?').get(clave);
+      const fila = st.estadoUno.get(clave);
       return fila ? (JSON.parse(fila.valor) || []).length : 0;
     };
     const conteos = {
@@ -401,7 +372,20 @@ function crearStore(rutaArchivo, opciones = {}) {
     return { conteos, duplicadas };
   }
 
-  if (puente.cargar) puente.cargar();
+  // ---------- Exportar, respaldar, cerrar ----------
+
+  // Toda la base con la forma de un db.json (la que lee la v1.16): para volver
+  // atrás (scripts/exportar-json.js) y para comparar en los tests. Se lee
+  // dentro de una transacción, así es una foto consistente.
+  function exportar() {
+    return transaccion(() => {
+      const salida = {};
+      for (const { clave, valor } of st.estadoTodo.all()) salida[clave] = JSON.parse(valor);
+      salida.ejecuciones = st.ejecTodas.all().map(f => JSON.parse(f.datos));
+      salida.notificaciones = st.notifTodas.all().map(f => JSON.parse(f.datos));
+      return salida;
+    });
+  }
 
   // Copia consistente de la base aunque haya escrituras en curso.
   function respaldar(destino) {
@@ -409,6 +393,17 @@ function crearStore(rutaArchivo, opciones = {}) {
     if (fs.existsSync(destino)) fs.unlinkSync(destino);
     sql.prepare('VACUUM INTO ?').run(destino);
     return destino;
+  }
+
+  function conteos() {
+    return {
+      ejecuciones: ejecuciones.contar(),
+      notificaciones: notificaciones.contar(),
+      condominios: (db.condominios || []).length,
+      usuarios: (db.usuarios || []).length,
+      puntos: (db.puntos || []).length,
+      rondas: (db.rondas || []).length
+    };
   }
 
   function cerrar() {
@@ -421,11 +416,15 @@ function crearStore(rutaArchivo, opciones = {}) {
     ejecuciones,
     notificaciones,
     transaccion,
+    exportar,
     respaldar,
+    conteos,
     cerrar,
     sql,
     ruta: rutas.sqlite,
-    rutaJson: rutas.json
+    rutaJson: rutas.json,
+    importacion,
+    restauracion
   };
 }
 

@@ -8,7 +8,7 @@ const path = require('path');
 const { crearStore } = require('../lib/store');
 const motor = require('../lib/rondas');
 
-const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-mig-')), 'rondas.sqlite'), { sinPuente: true });
+const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-mig-')), 'rondas.sqlite'));
 
 test('iniciarEjecucion usa el repositorio: la nueva no se guarda sola y la repetida vuelve la guardada', () => {
   const store = nuevoStore();

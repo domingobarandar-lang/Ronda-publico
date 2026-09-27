@@ -22,9 +22,12 @@
 //                                           → además borra el condominio de
 //                                             demo "aromos" y todos sus datos
 //
-// En Railway: DB_PATH ya apunta al volumen persistente.
-//   railway run node purga-demo.js            (en seco, para ver qué hay)
-//   railway run node purga-demo.js --aplicar  (para aplicarlo)
+// En Railway: DB_PATH ya apunta al volumen persistente. Se corre DENTRO del
+// contenedor (la base está en el volumen):
+//   railway ssh -- node purga-demo.js            (en seco, para ver qué hay)
+//   railway ssh -- node purga-demo.js --aplicar  (para aplicarlo)
+// Las rondas y avisos del condominio borrado se eliminan de sus tablas en la
+// misma transacción que el resto, así no queda nada a medias.
 const { crearStore } = require('./lib/store');
 const { verificarPin } = require('./lib/auth');
 
@@ -49,6 +52,8 @@ const CUENTAS_A_REVISAR = [
 
 const CONDOMINIO_DEMO = 'aromos';
 
+// Trabaja sobre store.db (en memoria). Las ejecuciones y notificaciones viven
+// en tablas propias: si `condominioBorrado`, main() las elimina al aplicar.
 function purgar(db, { conCondominio = false } = {}) {
   const aBorrar = [];
   const respetadas = [];
@@ -101,8 +106,6 @@ function purgar(db, { conCondominio = false } = {}) {
     db.usuarios = db.usuarios.filter(u => u.condominioId !== CONDOMINIO_DEMO);
     db.puntos = db.puntos.filter(p => p.condominioId !== CONDOMINIO_DEMO);
     db.rondas = db.rondas.filter(r => r.condominioId !== CONDOMINIO_DEMO);
-    db.ejecuciones = db.ejecuciones.filter(e => e.condominioId !== CONDOMINIO_DEMO);
-    db.notificaciones = (db.notificaciones || []).filter(n => n.condominioId !== CONDOMINIO_DEMO);
     db.pushSuscripciones = (db.pushSuscripciones || []).filter(s => s.condominioId !== CONDOMINIO_DEMO);
     for (const [token, sesion] of Object.entries(db.sesiones || {})) {
       if (usuariosFuera.has(sesion.usuarioId)) delete db.sesiones[token];
@@ -141,7 +144,10 @@ function main() {
     for (const u of r.respetadas) console.log(`  · ${u.usuario} (${u.rol})`);
   }
 
-  if (r.condominioBorrado) console.log(`\n${aplicar ? 'Borrado' : 'Se borraría'} el condominio de demo "${CONDOMINIO_DEMO}" y todos sus datos.`);
+  if (r.condominioBorrado) {
+    console.log(`\n${aplicar ? 'Borrado' : 'Se borraría'} el condominio de demo "${CONDOMINIO_DEMO}" y todos sus datos `
+      + `(${store.ejecuciones.contar(CONDOMINIO_DEMO)} rondas y ${store.notificaciones.contar(CONDOMINIO_DEMO)} avisos).`);
+  }
 
   if (r.avisos.length) {
     console.log('');
@@ -152,11 +158,18 @@ function main() {
   console.log(`\nCuentas de panel que quedan: ${quedan}`);
 
   if (aplicar) {
-    store.guardar();
+    store.transaccion(() => {
+      store.guardar();
+      if (r.condominioBorrado) {
+        store.ejecuciones.eliminarDeCondominio(CONDOMINIO_DEMO);
+        store.notificaciones.eliminarDeCondominio(CONDOMINIO_DEMO);
+      }
+    });
     console.log('Base guardada.');
   } else {
     console.log('\nNada se escribió. Corre con --aplicar cuando estés conforme.');
   }
+  store.cerrar();
 }
 
 if (require.main === module) main();

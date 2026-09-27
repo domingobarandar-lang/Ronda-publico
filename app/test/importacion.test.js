@@ -63,7 +63,7 @@ test('importa un db.json completo: objetos idénticos, conteos y .json renombrad
   const original = jsonDePrueba();
   fs.writeFileSync(rutaJson, JSON.stringify(original, null, 2));
   const mensajes = [];
-  const store = crearStore(rutaJson, { sinPuente: true, log: m => mensajes.push(m) });
+  const store = crearStore(rutaJson, { log: m => mensajes.push(m) });
 
   assert.equal(store.ruta, path.join(dir, 'rondas.sqlite'));
   compararConJson(store, original);
@@ -84,13 +84,13 @@ test('idempotente: el segundo arranque no reimporta aunque aparezca otro db.json
   const dir = carpeta();
   const rutaJson = path.join(dir, 'db.json');
   fs.writeFileSync(rutaJson, JSON.stringify(jsonDePrueba()));
-  const primero = crearStore(rutaJson, { sinPuente: true, ...silencio });
+  const primero = crearStore(rutaJson, silencio);
   primero.ejecuciones.guardar({ ...primero.ejecuciones.obtener('ejec-0001'), estado: 'modificada-despues' });
   primero.cerrar();
 
   // Alguien restaura un db.json viejo a mano: no puede pisar la base.
   fs.writeFileSync(rutaJson, JSON.stringify({ usuarios: [], ejecuciones: [] }));
-  const segundo = crearStore(rutaJson, { sinPuente: true, ...silencio });
+  const segundo = crearStore(rutaJson, silencio);
   assert.equal(segundo.ejecuciones.contar(), 40);
   assert.equal(segundo.ejecuciones.obtener('ejec-0001').estado, 'modificada-despues');
   assert.ok(segundo.db.usuarios.length > 0);
@@ -107,7 +107,7 @@ for (const [caso, contenido] of [
     const dir = carpeta();
     const rutaJson = path.join(dir, 'db.json');
     fs.writeFileSync(rutaJson, contenido);
-    assert.throws(() => crearStore(rutaJson, { sinPuente: true, ...silencio }), /No se pudo importar .*el servidor no arranca/s);
+    assert.throws(() => crearStore(rutaJson, silencio), /No se pudo importar .*el servidor no arranca/s);
     assert.equal(fs.readFileSync(rutaJson, 'utf8'), contenido, 'el .json sigue ahí, sin cambios');
     assert.ok(!fs.readdirSync(dir).some(f => f.includes('migrado')));
 
@@ -121,7 +121,7 @@ for (const [caso, contenido] of [
 
     // Arreglado el .json, arranca e importa.
     fs.writeFileSync(rutaJson, JSON.stringify(jsonDePrueba()));
-    const store = crearStore(rutaJson, { sinPuente: true, ...silencio });
+    const store = crearStore(rutaJson, silencio);
     assert.equal(store.ejecuciones.contar(), 40);
     store.cerrar();
   });
@@ -134,7 +134,7 @@ test('ids de ejecución repetidos: se conserva la primera, como leía la versió
   datos.ejecuciones.push({ ...datos.ejecuciones[0], estado: 'copia-tardia' });
   fs.writeFileSync(rutaJson, JSON.stringify(datos));
   const mensajes = [];
-  const store = crearStore(rutaJson, { sinPuente: true, log: m => mensajes.push(m) });
+  const store = crearStore(rutaJson, { log: m => mensajes.push(m) });
   assert.equal(store.ejecuciones.contar(), 40);
   assert.equal(store.ejecuciones.obtener(datos.ejecuciones[0].id).estado, datos.ejecuciones[0].estado);
   assert.ok(mensajes.some(m => /1 ejecuciones con id repetido/.test(m)));
@@ -163,7 +163,7 @@ test('seed --si-vacio mira el contenido: después de importar y renombrar el .js
     if (antes === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = antes;
     delete require.cache[require.resolve('../seed')];
   }
-  const store = crearStore(path.join(dir, 'rondas.sqlite'), { sinPuente: true, ...silencio });
+  const store = crearStore(path.join(dir, 'rondas.sqlite'), silencio);
   assert.deepEqual(store.db.usuarios.map(u => u.id), ['u-pedro'], 'los usuarios de producción siguen, sin la demo encima');
   assert.equal(estaVacia(store), false);
   store.cerrar();
@@ -179,7 +179,7 @@ test('importación de la copia real de producción', { skip: !fs.existsSync(ruta
   const rutaJson = path.join(dir, 'db.json');
   fs.copyFileSync(rutaReal, rutaJson);
   const original = JSON.parse(fs.readFileSync(rutaJson, 'utf8'));
-  const store = crearStore(rutaJson, { sinPuente: true, ...silencio });
+  const store = crearStore(rutaJson, silencio);
   try {
     const ids = new Set((original.ejecuciones || []).map(e => e.id));
     assert.equal(store.ejecuciones.contar(), ids.size);
