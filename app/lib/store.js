@@ -1,39 +1,363 @@
-// Persistencia: todo el estado vive en data/db.json con escritura atómica
-// (tmp + rename). Suficiente para pilotos — pocos condominios, decenas de
-// rondas al día. La migración a SQLite/Postgres está descrita en
-// entrega/OPERACION.md y no toca el resto del código (solo este módulo).
+// Persistencia sobre SQLite (node:sqlite, incluido en Node 24: sin dependencias
+// nativas que compilar en Railway). Un solo archivo en el volumen, modo WAL.
+//
+// Diseño híbrido por tamaño de colección (ver entrega/PLAN-SQLITE.md):
+//   - Lo chico y acotado (condominios, usuarios, puntos, rondas, sesiones,
+//     pushSuscripciones, vapid, informeEmailEstado…) sigue EN MEMORIA en
+//     `store.db`, igual que con db.json. Se persiste en la tabla `estado`, una
+//     fila por clave con su JSON, y `guardar()` solo escribe las claves cuyo
+//     JSON cambió. Así las lecturas de configuración del resto del código
+//     (db.usuarios.find, db.puntos.filter…) no cambian.
+//   - Lo que crece sin techo (ejecuciones, notificaciones) vive en tablas
+//     propias y se lee y escribe por fila con los repositorios
+//     `store.ejecuciones` y `store.notificaciones`.
+//
+// Todo es SÍNCRONO a propósito: un request no puede quedar a medias entre leer
+// una ejecución y guardarla (ver el invariante 1 del plan).
 const fs = require('fs');
 const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
 
+const VERSION_ESQUEMA = '1';
+
+// Colecciones que viven en `store.db`. Cualquier otra clave que el código
+// agregue (p. ej. informeEmailEstado) también se persiste en `estado`.
 const VACIA = () => ({
   condominios: [],
   usuarios: [],
   puntos: [],
   rondas: [],
-  ejecuciones: [],
   sesiones: {},
-  notificaciones: [],
   pushSuscripciones: [],
   vapid: null
 });
 
-function crearStore(rutaArchivo) {
-  const ruta = rutaArchivo || path.join(__dirname, '..', 'data', 'db.json');
-  fs.mkdirSync(path.dirname(ruta), { recursive: true });
-  let db;
-  if (fs.existsSync(ruta)) {
-    db = { ...VACIA(), ...JSON.parse(fs.readFileSync(ruta, 'utf8')) };
-  } else {
-    db = VACIA();
-  }
+// Las que tienen tabla propia y NUNCA van a `estado`.
+const CON_TABLA = ['ejecuciones', 'notificaciones'];
 
-  function guardar() {
-    const tmp = ruta + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-    fs.renameSync(tmp, ruta);
-  }
+const ESQUEMA = `
+  CREATE TABLE IF NOT EXISTS estado (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS ejecuciones (
+    id TEXT PRIMARY KEY,
+    condominio_id TEXT NOT NULL,
+    ronda_id TEXT,
+    guardia_id TEXT,
+    inicio TEXT,
+    fin TEXT,
+    estado TEXT,
+    datos TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS ejec_condo_inicio ON ejecuciones(condominio_id, inicio);
+  CREATE INDEX IF NOT EXISTS ejec_en_curso ON ejecuciones(condominio_id) WHERE estado = 'en_curso';
+  CREATE TABLE IF NOT EXISTS notificaciones (
+    id INTEGER PRIMARY KEY,
+    condominio_id TEXT,
+    ts TEXT,
+    datos TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS notif_condo ON notificaciones(condominio_id, id);
+  CREATE TABLE IF NOT EXISTS meta (clave TEXT PRIMARY KEY, valor TEXT);
+`;
 
-  return { db, guardar, ruta };
+// DB_PATH puede apuntar al .sqlite o, como hasta la v1.16, al db.json. En el
+// segundo caso se usa `rondas.sqlite` en la misma carpeta y el .json queda como
+// origen de la importación: así el día del deploy no hay que tocar Railway.
+function resolverRutas(ruta) {
+  const pedida = ruta || path.join(__dirname, '..', 'data', 'rondas.sqlite');
+  const dir = path.dirname(pedida);
+  if (/\.json$/i.test(pedida)) return { sqlite: path.join(dir, 'rondas.sqlite'), json: pedida };
+  return { sqlite: pedida, json: path.join(dir, 'db.json') };
 }
 
-module.exports = { crearStore, VACIA };
+// La columna `inicio` se guarda normalizada a ISO UTC para que ordenar y
+// filtrar por texto sea correcto aunque el teléfono mande otra zona horaria.
+// El objeto (columna `datos`) conserva el valor original tal cual.
+function isoNormal(ts) {
+  if (ts == null || ts === '') return null;
+  const t = Date.parse(ts);
+  return Number.isNaN(t) ? String(ts) : new Date(t).toISOString();
+}
+
+function crearStore(rutaArchivo, opciones = {}) {
+  const rutas = resolverRutas(rutaArchivo);
+  fs.mkdirSync(path.dirname(rutas.sqlite), { recursive: true });
+  const sql = new DatabaseSync(rutas.sqlite);
+  sql.exec('PRAGMA journal_mode = WAL');
+  sql.exec('PRAGMA synchronous = NORMAL');
+  sql.exec('PRAGMA busy_timeout = 5000');
+  sql.exec(ESQUEMA);
+
+  // ---------- Transacciones ----------
+  // Reentrante: una transacción dentro de otra se suma a la de afuera. `fn`
+  // tiene que ser síncrona: una promesa en medio dejaría la transacción
+  // abierta mientras otros requests escriben.
+  let profundidad = 0;
+  function transaccion(fn) {
+    if (profundidad > 0) return fn();
+    sql.exec('BEGIN IMMEDIATE');
+    profundidad++;
+    try {
+      const r = fn();
+      if (r && typeof r.then === 'function') {
+        throw new Error('store.transaccion() no acepta funciones asíncronas.');
+      }
+      profundidad--;
+      sql.exec('COMMIT');
+      return r;
+    } catch (err) {
+      profundidad--;
+      sql.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  // ---------- Sentencias ----------
+  const st = {
+    meta: sql.prepare('SELECT valor FROM meta WHERE clave = ?'),
+    metaPoner: sql.prepare('INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor'),
+    estadoTodo: sql.prepare('SELECT clave, valor FROM estado'),
+    estadoPoner: sql.prepare('INSERT INTO estado (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor'),
+    estadoQuitar: sql.prepare('DELETE FROM estado WHERE clave = ?'),
+    ejecObtener: sql.prepare('SELECT datos FROM ejecuciones WHERE id = ?'),
+    ejecPoner: sql.prepare(`
+      INSERT INTO ejecuciones (id, condominio_id, ronda_id, guardia_id, inicio, fin, estado, datos)
+      VALUES ($id, $condominio, $ronda, $guardia, $inicio, $fin, $estado, $datos)
+      ON CONFLICT(id) DO UPDATE SET
+        condominio_id = excluded.condominio_id, ronda_id = excluded.ronda_id,
+        guardia_id = excluded.guardia_id, inicio = excluded.inicio, fin = excluded.fin,
+        estado = excluded.estado, datos = excluded.datos`),
+    ejecQuitar: sql.prepare('DELETE FROM ejecuciones WHERE id = ?'),
+    ejecUltima: sql.prepare('SELECT datos FROM ejecuciones WHERE condominio_id = ? ORDER BY inicio DESC LIMIT 1'),
+    ejecContar: sql.prepare('SELECT COUNT(*) AS n FROM ejecuciones'),
+    notifPoner: sql.prepare('INSERT INTO notificaciones (condominio_id, ts, datos) VALUES (?, ?, ?)'),
+    notifUltimas: sql.prepare('SELECT datos FROM notificaciones WHERE condominio_id = ? ORDER BY id DESC LIMIT ?'),
+    notifContar: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones')
+  };
+
+  // ---------- Repositorio de ejecuciones ----------
+  // Cada lectura devuelve una COPIA nueva del objeto: quien la modifique tiene
+  // que llamar a guardar(e) antes de su primer `await`.
+  function filaEjecucion(e) {
+    if (!e || !e.id) throw new Error('La ejecución necesita id.');
+    return {
+      $id: String(e.id),
+      $condominio: String(e.condominioId ?? ''),
+      $ronda: e.rondaId ?? null,
+      $guardia: e.guardiaId ?? null,
+      $inicio: isoNormal(e.inicio),
+      $fin: isoNormal(e.fin),
+      $estado: e.estado ?? null,
+      $datos: JSON.stringify(e)
+    };
+  }
+
+  const ejecuciones = {
+    obtener(id) {
+      const fila = st.ejecObtener.get(String(id));
+      return fila ? JSON.parse(fila.datos) : null;
+    },
+    guardar(e) {
+      const fila = filaEjecucion(e);
+      st.ejecPoner.run(fila);
+      puente.ejecucionGuardada(e, fila.$datos);
+      return e;
+    },
+    // Filtros opcionales: condominioId, desde (inclusive) / hasta (exclusive)
+    // sobre el inicio en ISO UTC, estado, estadoDistintoDe, limite. Ordena por
+    // inicio, la más reciente primero.
+    listar({ condominioId, desde, hasta, estado, estadoDistintoDe, limite } = {}) {
+      const donde = [];
+      const params = {};
+      if (condominioId != null) { donde.push('condominio_id = $condominio'); params.$condominio = String(condominioId); }
+      if (desde) { donde.push('inicio >= $desde'); params.$desde = String(desde); }
+      if (hasta) { donde.push('inicio < $hasta'); params.$hasta = String(hasta); }
+      if (estado) { donde.push('estado = $estado'); params.$estado = String(estado); }
+      if (estadoDistintoDe) { donde.push('(estado IS NULL OR estado <> $distinto)'); params.$distinto = String(estadoDistintoDe); }
+      let consulta = 'SELECT datos FROM ejecuciones';
+      if (donde.length) consulta += ' WHERE ' + donde.join(' AND ');
+      consulta += ' ORDER BY inicio DESC, id DESC';
+      if (limite) { consulta += ' LIMIT $limite'; params.$limite = Math.max(1, Math.floor(Number(limite)) || 1); }
+      return sql.prepare(consulta).all(params).map(f => JSON.parse(f.datos));
+    },
+    ultimaDe(condominioId) {
+      const fila = st.ejecUltima.get(String(condominioId));
+      return fila ? JSON.parse(fila.datos) : null;
+    },
+    contar() {
+      return st.ejecContar.get().n;
+    }
+  };
+
+  // ---------- Repositorio de notificaciones ----------
+  const notificaciones = {
+    agregar(n) {
+      const datos = JSON.stringify(n);
+      st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, datos);
+      puente.notificacionAgregada(n);
+      return n;
+    },
+    // Las últimas `limite` del condominio, la más reciente primero.
+    ultimas(condominioId, limite = 50) {
+      return st.notifUltimas.all(String(condominioId), Math.max(1, Math.floor(Number(limite)) || 1))
+        .map(f => JSON.parse(f.datos));
+    },
+    contar() {
+      return st.notifContar.get().n;
+    }
+  };
+
+  // ---------- Estado en memoria ----------
+  const db = VACIA();
+  const escrito = new Map(); // clave → último JSON persistido
+  for (const { clave, valor } of st.estadoTodo.all()) {
+    db[clave] = JSON.parse(valor);
+    escrito.set(clave, valor);
+  }
+
+  // Persiste solo las claves de `estado` cuyo JSON cambió. Devuelve las claves
+  // escritas (vacío si no había nada que guardar).
+  function guardar() {
+    const cambios = [];
+    for (const clave of Object.keys(db)) {
+      if (CON_TABLA.includes(clave) || db[clave] === undefined) continue;
+      const valor = JSON.stringify(db[clave]);
+      if (escrito.get(clave) !== valor) cambios.push([clave, valor]);
+    }
+    const quitadas = [...escrito.keys()].filter(c => !(c in db) || db[c] === undefined);
+    const hayPuente = puente.pendiente();
+    if (!cambios.length && !quitadas.length && !hayPuente) return [];
+    transaccion(() => {
+      for (const [clave, valor] of cambios) st.estadoPoner.run(clave, valor);
+      for (const clave of quitadas) st.estadoQuitar.run(clave);
+      puente.sincronizar();
+    });
+    for (const [clave, valor] of cambios) escrito.set(clave, valor);
+    for (const clave of quitadas) escrito.delete(clave);
+    return [...cambios.map(c => c[0]), ...quitadas];
+  }
+
+  // ---------- Puente transitorio (se elimina al terminar la migración) ----------
+  // Mientras el resto del código siga leyendo `store.db.ejecuciones` y
+  // `store.db.notificaciones`, esos arreglos existen en memoria y se
+  // sincronizan con sus tablas en cada guardar(). Los repositorios también los
+  // mantienen al día. Con `opciones.sinPuente` el store queda como será al
+  // final: sin arreglos.
+  const puente = crearPuente();
+  function crearPuente() {
+    if (opciones.sinPuente) {
+      return { pendiente: () => false, sincronizar() {}, ejecucionGuardada() {}, notificacionAgregada() {} };
+    }
+    const cacheEjec = new Map(); // id → JSON persistido
+    let arrEjec = null;
+    let arrNotif = null;
+    let notifSincronizadas = 0;
+
+    function cargar() {
+      db.ejecuciones = sql.prepare('SELECT datos FROM ejecuciones ORDER BY rowid').all().map(f => {
+        cacheEjec.set(JSON.parse(f.datos).id, f.datos);
+        return JSON.parse(f.datos);
+      });
+      db.notificaciones = sql.prepare('SELECT datos FROM notificaciones ORDER BY id').all().map(f => JSON.parse(f.datos));
+      arrEjec = db.ejecuciones;
+      arrNotif = db.notificaciones;
+      notifSincronizadas = arrNotif.length;
+    }
+
+    return {
+      cargar,
+      pendiente: () => true,
+      sincronizar() {
+        const ejec = Array.isArray(db.ejecuciones) ? db.ejecuciones : [];
+        const vivos = new Set();
+        for (const e of ejec) {
+          vivos.add(String(e.id));
+          const fila = filaEjecucion(e);
+          if (cacheEjec.get(fila.$id) !== fila.$datos) {
+            st.ejecPoner.run(fila);
+            cacheEjec.set(fila.$id, fila.$datos);
+          }
+        }
+        for (const id of [...cacheEjec.keys()]) {
+          if (!vivos.has(id)) { st.ejecQuitar.run(id); cacheEjec.delete(id); }
+        }
+        arrEjec = ejec;
+
+        const notif = Array.isArray(db.notificaciones) ? db.notificaciones : [];
+        if (notif !== arrNotif || notif.length < notifSincronizadas) {
+          sql.exec('DELETE FROM notificaciones');
+          notifSincronizadas = 0;
+        }
+        for (const n of notif.slice(notifSincronizadas)) {
+          st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
+        }
+        notifSincronizadas = notif.length;
+        arrNotif = notif;
+      },
+      ejecucionGuardada(e, datos) {
+        cacheEjec.set(String(e.id), datos);
+        if (!Array.isArray(db.ejecuciones)) return;
+        const i = db.ejecuciones.findIndex(x => x.id === e.id);
+        if (i === -1) db.ejecuciones.push(e);
+        else db.ejecuciones[i] = e;
+      },
+      notificacionAgregada(n) {
+        if (!Array.isArray(db.notificaciones)) return;
+        db.notificaciones.push(n);
+        if (db.notificaciones === arrNotif) notifSincronizadas++;
+      }
+    };
+  }
+
+  // ---------- Esquema e importación inicial ----------
+  // Base nueva (sin meta.version): se marca con la versión del esquema y, si
+  // hay un db.json al lado, se importa en la misma transacción.
+  if (!st.meta.get('version')) {
+    transaccion(() => {
+      if (fs.existsSync(rutas.json)) importarDatos(JSON.parse(fs.readFileSync(rutas.json, 'utf8')));
+      st.metaPoner.run('version', VERSION_ESQUEMA);
+    });
+  }
+
+  function importarDatos(datos) {
+    for (const [clave, valor] of Object.entries(datos || {})) {
+      if (CON_TABLA.includes(clave) || valor === undefined) continue;
+      const texto = JSON.stringify(valor);
+      st.estadoPoner.run(clave, texto);
+      db[clave] = JSON.parse(texto);
+      escrito.set(clave, texto);
+    }
+    for (const e of datos.ejecuciones || []) st.ejecPoner.run(filaEjecucion(e));
+    for (const n of datos.notificaciones || []) {
+      st.notifPoner.run(n.condominioId ?? null, n.ts ?? null, JSON.stringify(n));
+    }
+  }
+
+  if (puente.cargar) puente.cargar();
+
+  // Copia consistente de la base aunque haya escrituras en curso.
+  function respaldar(destino) {
+    fs.mkdirSync(path.dirname(destino), { recursive: true });
+    if (fs.existsSync(destino)) fs.unlinkSync(destino);
+    sql.prepare('VACUUM INTO ?').run(destino);
+    return destino;
+  }
+
+  function cerrar() {
+    if (sql.isOpen) sql.close();
+  }
+
+  return {
+    db,
+    guardar,
+    ejecuciones,
+    notificaciones,
+    transaccion,
+    respaldar,
+    cerrar,
+    sql,
+    ruta: rutas.sqlite,
+    rutaJson: rutas.json
+  };
+}
+
+module.exports = { crearStore, VACIA, resolverRutas, VERSION_ESQUEMA };
