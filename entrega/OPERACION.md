@@ -73,8 +73,73 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 - **Railway** (o VPS): `npm install && npm start`, variable `PORT` la pone la plataforma. Railway da HTTPS solo — necesario para la cámara. Costo estimado: plan chico (~US$5/mes). **Runtime sin LLM: el uso diario cuesta $0 en APIs.**
 - Un servidor sirve a **varios condominios** a la vez. Se dan de alta desde la pantalla de fábrica (ver arriba): no hace falta desplegar nada por cada condominio nuevo. Requiere `FABRICA_USUARIO` y `FABRICA_PIN` en las variables del servicio.
 - **Aislamiento entre condominios**: cada guardia ve únicamente las rondas y los QR de su condominio, y cada cuenta de administrador, únicamente su condominio. La excepción es la cuenta de **acceso total** de la operación (selector en la barra del panel), que se configura solo desde el entorno del servidor.
-- **Respaldo**: copiar `data/db.json` (todo el estado vive ahí). Basta un respaldo diario.
-- **Escala**: con más de ~3 condominios activos o mucho historial, migrar `lib/store.js` a SQLite/Postgres (es el único módulo que toca disco; el resto del código no cambia).
+- **Datos y respaldo**: todo el estado vive en una base SQLite en el volumen (`/data/rondas.sqlite`). La app saca una foto diaria y la manda por correo a `RESPALDO_TO` — ver la sección **Base de datos** más abajo.
+- **Escala**: medido en la v1.17, 100 guardias haciendo su ronda a la vez sobre una base de 100 mil rondas: ninguna marca perdida y ~0,1 ms de base por marca. El límite de este diseño es **un solo servidor** (una réplica): si algún día hacen falta varias, toca Postgres.
+- **Node 24 o superior** (`engines` en `package.json`): la base usa `node:sqlite`, que viene con Node. Verificar en el log de build de Railway qué versión usa.
+
+## Base de datos: respaldo, restauración y vuelta atrás *(v1.17)*
+
+Desde la v1.17 todo el estado vive en **una base SQLite** (`rondas.sqlite`) en el volumen de Railway (`/data`). Junto a ella aparecen `rondas.sqlite-wal` y `rondas.sqlite-shm`: son parte de la base, **no se borran ni se copian por separado**.
+
+- `DB_PATH` puede apuntar a `/data/rondas.sqlite` o, como hasta la v1.16, a `/data/db.json`: en ese caso se usa `/data/rondas.sqlite` en la misma carpeta.
+- **Primer arranque de la v1.17**: si hay un `db.json` y la base no existe, se importa todo en una sola transacción, se verifican los conteos y el `.json` queda renombrado como `db.json.migrado-<fecha>` (no se borra). Si algo no cuadra, **el servidor no arranca** y el log dice por qué; el `.json` queda intacto.
+- El log de arranque muestra la ruta de la base, la versión de Node y los conteos (condominios, usuarios, puntos, rondas, ejecuciones, avisos).
+
+### Respaldo automático
+
+El plan de Railway **no incluye respaldos del volumen**: los hace la app.
+
+1. **Foto diaria** en `/data/respaldos/rondas-AAAA-MM-DD.sqlite` (fecha de Chile), desde las 10:00. Se conservan las últimas 14. Es una copia consistente aunque haya rondas en curso.
+2. **Copia fuera de Railway por correo**: la foto se comprime y se manda como adjunto `rondas-AAAA-MM-DD.sqlite.gz` a `RESPALDO_TO`, con la misma cuenta de Gmail del informe semanal. Si el envío falla, se reintenta a la hora siguiente.
+
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `RESPALDO_TO` | — | Buzón que recibe el respaldo. **Vacío = no sale copia fuera de Railway** (el log lo dice en cada foto). |
+| `RESPALDO_HORA` | `10` | Hora de Chile desde la que se hace la foto del día. |
+| `RESPALDO_CONSERVAR` | `14` | Fotos que se guardan en el volumen. |
+| `RESPALDO_CORREO_CADA_DIAS` | `1` | Cada cuántos días va por correo (la foto sigue siendo diaria). |
+| `RESPALDO_DIR` | `/data/respaldos` | Carpeta de las fotos. |
+
+> **El respaldo trae hashes de PIN, correos y ubicaciones GPS.** `RESPALDO_TO` tiene que ser un buzón de la operación con verificación en dos pasos, y el correo no se reenvía.
+
+**Tamaño**: Gmail rechaza mensajes de más de 25 MB y el adjunto viaja en base64 (+33 %). Sobre **12 MB** comprimido el correo llega con ⚠️ en el asunto; sobre **18 MB** ya no va adjunto (el correo llega igual, avisando). En ese punto hay que pasar la copia externa a almacenamiento de objetos (R2/S3). Como referencia, 100 mil rondas ocupan ~200 MB sin comprimir.
+
+**Espacio en el volumen**: 14 fotos ocupan 14 veces la base. Revisar el uso del volumen en Railway cuando la base pase de ~500 MB.
+
+**Probar el envío a mano** (el día del deploy, o después de cambiar `RESPALDO_TO`):
+
+```bash
+railway ssh -- node scripts/respaldo-ahora.js
+```
+
+### Restaurar un respaldo
+
+La base no se reemplaza en caliente: el script valida el respaldo y lo deja listo, y el cambio se hace al reiniciar el servicio. **La base actual no se borra**: queda como `rondas.sqlite.antes-restaurar-<fecha>`.
+
+1. Tener el respaldo **dentro del volumen**:
+   - Los de las últimas dos semanas ya están en `/data/respaldos/`.
+   - Uno que llegó por correo hay que subirlo, desde **Git Bash** (no PowerShell 5.1: la redirección cambia los bytes):
+     `export MSYS_NO_PATHCONV=1` y después `railway ssh -- sh -c 'cat > /data/respaldos/subido.sqlite.gz' < rondas-AAAA-MM-DD.sqlite.gz`
+     y comprobar que llegó entero: `railway ssh -- ls -l /data/respaldos/` (el tamaño tiene que ser el del archivo original).
+2. Validarlo en seco (no toca nada, muestra conteos y la fecha de la última ronda):
+   `railway ssh -- node scripts/restaurar-respaldo.js /data/respaldos/rondas-AAAA-MM-DD.sqlite`
+3. Dejarlo listo: el mismo comando con `--aplicar`.
+4. **Reiniciar el servicio** en Railway (Restart). El log de arranque dice `RESTAURADO` y los conteos nuevos.
+5. Lo que se registró entre la fecha del respaldo y ahora queda en la base apartada (`.antes-restaurar-…`), por si hay que rescatar algo a mano.
+
+En local es lo mismo sin `railway ssh --`, con el servidor detenido o reiniciándolo después.
+
+### Vuelta atrás a la v1.16 (si la v1.17 falla en producción)
+
+1. Exportar la base a un `db.json` con la forma que lee la v1.16:
+   `railway ssh -- node scripts/exportar-json.js`
+   (escribe `/data/db.json`; si ya existe uno, pide `--forzar`). Hacerlo **justo antes** de redesplegar: lo que se escriba después no queda en el `.json`.
+2. Redesplegar el deploy anterior (v1.16) en Railway, con `DB_PATH=/data/db.json`.
+3. **Antes de volver a la v1.17 más adelante**: apartar la base SQLite (`railway ssh -- mv /data/rondas.sqlite /data/rondas.sqlite.viejo`, junto con sus `-wal` y `-shm` si están). Si no, la v1.17 sigue con la base SQLite (ya tiene versión, no reimporta) y lo que la v1.16 haya escrito en el `db.json` queda fuera.
+
+### Scripts de mantenimiento con el servidor andando
+
+`purga-demo.js --aplicar` y `migracion-rsf.js` escriben la configuración (usuarios, condominios…) directo en la base. El servidor que está corriendo tiene su copia en memoria y podría volver a escribir la versión vieja en su próximo guardado. **Después de aplicar uno de esos scripts, reiniciar el servicio.** `exportar-json.js`, `respaldo-ahora.js` y `restaurar-respaldo.js` (que solo deja el respaldo pendiente) no tienen ese problema.
 
 ## Limitaciones conocidas de la v1 (transparencia con el cliente)
 
@@ -92,3 +157,6 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 | No llegan avisos push al teléfono | Permiso de notificaciones denegado o claves VAPID sin configurar | Panel → Avisos → "Activar avisos en este teléfono"; en iPhone hay que instalar el panel primero |
 | Guardia debe reingresar el PIN a mitad de ronda | La sesión dura 1 h 30 desde que entró | Es lo esperado. Las marcas NO se pierden: quedan en el teléfono y se envían al volver a entrar |
 | Ronda quedó "En curso" | Guardia no cerró | Panel → Informes → "Cerrar" |
+| El servidor no arranca y el log dice "No se pudo importar … db.json" | El `db.json` está roto o sus conteos no cuadraron al importarlo (primer arranque de la v1.17) | No se perdió nada: el `.json` sigue intacto. Revisar el motivo en el log; si no se resuelve, volver a la v1.16 (sección **Vuelta atrás**) |
+| El panel muestra solo las últimas 200 rondas | Desde la v1.17 el listado trae las últimas 200 | Para fechas anteriores, el informe semanal por rango de fechas |
+| No llega el correo del respaldo | `RESPALDO_TO` vacío, Gmail sin configurar, o respaldo sobre 18 MB | Mirar las líneas `[respaldo]` del log; probar con `node scripts/respaldo-ahora.js` |

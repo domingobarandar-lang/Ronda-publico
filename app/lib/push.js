@@ -7,7 +7,7 @@
 // cerrado.
 //
 // Sin configuración: las claves VAPID se generan solas la primera vez y quedan
-// en data/db.json (fuera de git). El administrador activa los avisos con un
+// en la base (data/rondas.sqlite, fuera de git). El administrador activa los avisos con un
 // botón en la pestaña Avisos del panel (requiere HTTPS o localhost).
 //
 // Nunca lanza: si un envío falla queda registrado y la app sigue. Las
@@ -93,7 +93,7 @@ function crearPush(store, { enviar } = {}) {
   }
 
   // Manda el aviso a los teléfonos del ADMINISTRADOR del condominio y deja
-  // constancia en db.notificaciones. Devuelve el registro (null si no hay
+  // constancia en store.notificaciones. Devuelve el registro (null si no hay
   // ningún dispositivo suscrito).
   async function avisar(condominio, { titulo, cuerpo, url }) {
     const destinos = dispositivos(condominio.id, 'admin');
@@ -109,13 +109,12 @@ function crearPush(store, { enviar } = {}) {
       dispositivos: { ok, total: destinos.length }
     };
     if (errores.length) registro.error = errores.join(' · ');
-    db.notificaciones.push(registro);
-    store.guardar();
+    store.notificaciones.agregar(registro);
     return registro;
   }
 
   // Alarma de ronda a los teléfonos designados del condominio (los de la
-  // garita). No se anota en db.notificaciones: sale cada pocas horas y taparía
+  // garita). No se anota en store.notificaciones: sale cada pocas horas y taparía
   // las alertas de verdad en la pestaña Avisos. El resultado queda en el
   // condominio (ver lib/recordatorios.js). Devuelve { ok, total, errores }.
   async function recordar(condominio, { titulo, cuerpo, url, tag }) {

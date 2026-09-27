@@ -193,11 +193,16 @@ async function cargarInformes() {
           : `<a class="btn btn-borde btn-chico" href="informe.html?id=${e.id}" target="_blank">Ver informe</a>`}
       </td>
     </tr>`).join('');
+  // El servidor manda como máximo las últimas 200 (las anteriores siguen en el
+  // informe semanal por rango de fechas).
+  const tope = lista.length >= 200
+    ? '<p class="nota">Se muestran las últimas 200 rondas. Para fechas anteriores usa el informe semanal.</p>'
+    : '';
   $('tabla-informes').innerHTML = `
     <table>
       <thead><tr><th>Inicio</th><th>Ronda</th><th>Guardia</th><th>Puntos</th><th>Estado</th><th></th></tr></thead>
       <tbody>${filas}</tbody>
-    </table>`;
+    </table>${tope}`;
   for (const btn of $('tabla-informes').querySelectorAll('[data-cerrar]')) {
     btn.addEventListener('click', async () => {
       if (!confirm('¿Cerrar esta ronda ahora? Se evaluará con lo que el guardia haya marcado hasta el momento.')) return;

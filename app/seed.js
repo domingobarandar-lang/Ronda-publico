@@ -1,13 +1,13 @@
 // Datos semilla de demo: dos condominios con guardias, puntos y rondas.
 // Uso:
-//   node seed.js            → crea/reemplaza data/db.json con la demo
-//   node seed.js --si-vacio → siembra solo si la base no existe (npm run demo)
-const fs = require('fs');
-const path = require('path');
+//   node seed.js            → siembra la demo en la base (data/rondas.sqlite)
+//   node seed.js --si-vacio → siembra solo si la base está vacía (npm run demo
+//                             y el arranque en Railway)
 const { crearStore, VACIA } = require('./lib/store');
 const { hashPin } = require('./lib/auth');
 
-const RUTA = process.env.DB_PATH || path.join(__dirname, 'data', 'db.json');
+// Misma resolución que el servidor: sin DB_PATH, data/rondas.sqlite.
+const RUTA = process.env.DB_PATH;
 
 function datosSemilla() {
   const db = VACIA();
@@ -86,15 +86,30 @@ function datosSemilla() {
   return db;
 }
 
+// "Vacía" se decide mirando el CONTENIDO, no si existe un archivo: desde la
+// v1.17 el db.json se importa y se renombra, y mirar el archivo haría que el
+// arranque de Railway (`seed.js --si-vacio && server.js`) sembrara la demo
+// encima de producción en el deploy siguiente. Abrir el store ya importa el
+// db.json si lo hay, así que esto ve los datos reales.
+function estaVacia(store) {
+  return !store.db.condominios.length && !store.db.usuarios.length && !store.ejecuciones.contar();
+}
+
 function sembrar({ soloSiVacio = false } = {}) {
-  if (soloSiVacio && fs.existsSync(RUTA)) {
-    console.log('La base ya existe — se conserva tal cual (usa "node seed.js" para resembrar la demo).');
+  const store = crearStore(RUTA);
+  if (soloSiVacio && !estaVacia(store)) {
+    console.log('La base ya tiene datos — se conserva tal cual (usa "node seed.js" para resembrar la demo).');
+    store.cerrar();
     return false;
   }
-  const store = crearStore(RUTA);
-  Object.assign(store.db, datosSemilla());
-  store.guardar();
-  console.log('Base de demo sembrada en', RUTA);
+  // Resembrar es empezar de cero: también se va el historial de rondas y avisos.
+  store.transaccion(() => {
+    store.sql.exec('DELETE FROM ejecuciones; DELETE FROM notificaciones');
+    Object.assign(store.db, datosSemilla());
+    store.guardar();
+  });
+  console.log('Base de demo sembrada en', store.ruta);
+  store.cerrar();
   console.log(`
 Usuarios de prueba (usuario / PIN):
   Para ti           → administrador: admin / 1234 · guardia: guardia / 5678 (mismo condominio)
@@ -114,4 +129,4 @@ if (require.main === module) {
   sembrar({ soloSiVacio: process.argv.includes('--si-vacio') });
 }
 
-module.exports = { datosSemilla, sembrar };
+module.exports = { datosSemilla, sembrar, estaVacia };

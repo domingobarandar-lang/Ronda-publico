@@ -120,7 +120,7 @@ test('CRÍTICO: un ts que no es texto no puede matar el cierre', async () => {
     });
     assert.equal(r.status, 200);
   }
-  const guardado = store.db.ejecuciones.find(e => e.id === ejecucion.id);
+  const guardado = store.ejecuciones.obtener(ejecucion.id);
   assert.equal(typeof guardado.escaneos[0].ts, 'string', 'el ts se persiste siempre como texto');
 
   const cierre = await api(`/api/ejecuciones/${ejecucion.id}/cerrar`, { metodo: 'POST', token });
@@ -142,16 +142,16 @@ test('el ts de una marca está acotado, igual que el de los rechazos', async () 
     metodo: 'POST', token, cuerpo: { codigo: ronda.puntos[0].payload, ts: 'X'.repeat(200000) }
   });
   assert.equal(r.status, 200);
-  const guardado = store.db.ejecuciones.find(e => e.id === ejecucion.id);
+  const guardado = store.ejecuciones.obtener(ejecucion.id);
   assert.ok(guardado.escaneos[0].ts.length <= 40, `el ts quedó con ${guardado.escaneos[0].ts.length} caracteres`);
 });
 
 test('el inicio y el fin también están acotados', () => {
   // Los tres campos de hora vienen del cliente; arreglar solo uno era dejar el
   // mismo agujero abierto en los otros dos.
-  const db = { rondas: [{ id: 'r', condominioId: 'c', puntoIds: [] }], puntos: [], ejecuciones: [] };
+  const db = { rondas: [{ id: 'r', condominioId: 'c', puntoIds: [] }], puntos: [] };
   const guardia = { id: 'g', condominioId: 'c' };
-  const r = motor.iniciarEjecucion(db, { rondaId: 'r', guardia, inicio: 'Y'.repeat(9000) });
+  const r = motor.iniciarEjecucion(db, { obtener: () => null }, { rondaId: 'r', guardia, inicio: 'Y'.repeat(9000) });
   assert.ok(r.ejecucion.inicio.length <= 40);
   motor.cerrarEjecucion(db, r.ejecucion, { fin: 'Z'.repeat(9000) });
   assert.ok(r.ejecucion.fin.length <= 40);
@@ -322,11 +322,11 @@ test('el aviso de cierre sigue quedando en el panel', async () => {
   // Sacar el canal externo no puede llevarse el aviso que sí se usa.
   const { ronda, token } = await rondaNueva('Aviso-panel', 2);
   const ejecucion = (await api('/api/ejecuciones', { metodo: 'POST', token, cuerpo: { rondaId: ronda.id } })).datos;
-  const antes = store.db.notificaciones.length;
+  const antes = store.notificaciones.contar();
   await api(`/api/ejecuciones/${ejecucion.id}/cerrar`, { metodo: 'POST', token });
-  assert.equal(store.db.notificaciones.length, antes + 1);
-  assert.equal(store.db.notificaciones.at(-1).medio, 'registro');
-  assert.equal(store.db.notificaciones.at(-1).enviada, true);
+  assert.equal(store.notificaciones.contar(), antes + 1);
+  assert.equal(store.notificaciones.ultimas('aromos', 1)[0].medio, 'registro');
+  assert.equal(store.notificaciones.ultimas('aromos', 1)[0].enviada, true);
 });
 
 // ---------- La red de seguridad que faltaba ----------

@@ -6,6 +6,6 @@
 # Dependencias
 node_modules/
 
-# Datos de runtime (todo el estado vive en app/data/db.json — respaldar aparte)
+# Datos de runtime (la base app/data/rondas.sqlite, sus respaldos y cualquier db.json)
 app/data/
 .gstack/

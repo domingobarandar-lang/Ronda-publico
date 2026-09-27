@@ -13,6 +13,9 @@
 // Un correo puede llevar VARIOS condominios adjuntos: así el administrador
 // que tiene dos recibe un solo mensaje el lunes (ver destinatarios.js).
 //
+// enviarCorreo() es el envío genérico: lo usa también el respaldo diario de la
+// base (lib/respaldo.js), que manda el .sqlite.gz a RESPALDO_TO.
+//
 // Gated por env: si falta alguna credencial, queda inerte y NO rompe nada
 // (útil para desplegar antes de tener el refresh token listo).
 //   GMAIL_CLIENT_ID
@@ -27,6 +30,11 @@ const { normalizarCorreos } = require('./destinatarios');
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
+// Para mensajes grandes (el respaldo): el mensaje MIME va tal cual como cuerpo
+// (message/rfc822), sin envolverlo en JSON. Admite hasta 35 MB por request; el
+// tope práctico lo pone Gmail en 25 MB por mensaje.
+const UPLOAD_URL = 'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media';
+const TIPO_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function config() {
   return {
@@ -108,8 +116,7 @@ function construirMime({ from, to, subject, texto: cuerpo, adjuntos }) {
   for (const a of adjuntos) {
     partes.push(
       `--${boundary}`,
-      'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document; '
-        + `name="${a.filename}"`,
+      `Content-Type: ${a.contentType || TIPO_DOCX}; name="${a.filename}"`,
       'Content-Transfer-Encoding: base64',
       `Content-Disposition: attachment; filename="${a.filename}"`,
       '',
@@ -147,10 +154,52 @@ async function obtenerAccessToken(c) {
   return tokenCache.accessToken;
 }
 
+async function detalleError(resp) {
+  let detalle = `HTTP ${resp.status}`;
+  try { const j = await resp.json(); detalle = (j && j.error && (j.error.message || j.error.status)) || detalle; } catch (_) {}
+  return detalle;
+}
+
+// Envío genérico. `adjuntos`: [{ filename, content: Buffer, contentType? }].
+// `grande`: usa el endpoint de subida (para el respaldo de la base).
+// No lanza nunca: devuelve { enviada, to, error? }.
+async function enviarCorreo({ to, subject, texto: cuerpo, adjuntos = [], grande = false } = {}) {
+  const c = config();
+  const destinos = normalizarCorreos(to);
+  if (!configurado() || !destinos.length) {
+    return { enviada: false, to: destinos, error: `Correo no configurado (falta ${FALTA_CREDENCIALES} o destinatario).` };
+  }
+  try {
+    const accessToken = await obtenerAccessToken(c);
+    const raw = construirMime({
+      from: c.from,
+      to: destinos,
+      subject,
+      texto: cuerpo,
+      adjuntos: adjuntos.map(a => ({ filename: a.filename, contentType: a.contentType, content: a.content.toString('base64') }))
+    });
+    const resp = grande
+      ? await fetch(UPLOAD_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'message/rfc822' },
+        body: raw
+      })
+      : await fetch(SEND_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ raw: base64url(raw) })
+      });
+    if (!resp.ok) return { enviada: false, to: destinos, error: `Gmail: ${await detalleError(resp)}` };
+    return { enviada: true, to: destinos };
+  } catch (err) {
+    return { enviada: false, to: destinos, error: err.message };
+  }
+}
+
 // Un correo con el .docx de cada condominio de `condominioIds` adjunto.
 // `to` acepta uno o varios destinatarios; si va vacío, cae a INFORME_TO.
 // No lanza nunca: devuelve { enviada, to, condominios, fallidos, error?, datos? }.
-async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
+async function enviarInforme(store, { condominioIds, desde, hasta, to } = {}) {
   const c = config();
   const destinos = normalizarCorreos(to && to.length ? to : c.to);
   const ids = (condominioIds || []).filter(Boolean);
@@ -160,7 +209,7 @@ async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
   const fallidos = [];
   for (const condominioId of ids) {
     try {
-      informes.push(await generarInformeSemanal(db, { condominioId, desde, hasta }));
+      informes.push(await generarInformeSemanal(store, { condominioId, desde, hasta }));
     } catch (err) {
       fallidos.push(condominioId);
     }
@@ -171,41 +220,18 @@ async function enviarInforme(db, { condominioIds, desde, hasta, to } = {}) {
     return { ...base, enviada: false, error: ids.length ? 'No se pudo generar ningún informe.' : 'No hay condominios que informar.' };
   }
   const datos = informes[0].datos;
-  if (!configurado() || !destinos.length) {
-    return { ...base, enviada: false, datos, error: `Correo no configurado (falta ${FALTA_CREDENCIALES} o destinatario).` };
-  }
-
-  try {
-    const accessToken = await obtenerAccessToken(c);
-    const raw = construirMime({
-      from: c.from,
-      to: destinos,
-      subject: asunto(informes),
-      texto: texto(informes),
-      adjuntos: informes.map(i => ({
-        filename: nombreArchivo(i.datos),
-        content: i.buffer.toString('base64')
-      }))
-    });
-    const resp = await fetch(SEND_URL, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ raw: base64url(raw) })
-    });
-    if (!resp.ok) {
-      let detalle = `HTTP ${resp.status}`;
-      try { const j = await resp.json(); detalle = (j && j.error && (j.error.message || j.error.status)) || detalle; } catch (_) {}
-      return { ...base, enviada: false, datos, error: `Gmail: ${detalle}` };
-    }
-    return { ...base, enviada: true, datos };
-  } catch (err) {
-    return { ...base, enviada: false, datos, error: err.message };
-  }
+  const r = await enviarCorreo({
+    to: destinos,
+    subject: asunto(informes),
+    texto: texto(informes),
+    adjuntos: informes.map(i => ({ filename: nombreArchivo(i.datos), content: i.buffer }))
+  });
+  return r.enviada ? { ...base, enviada: true, datos } : { ...base, enviada: false, datos, error: r.error };
 }
 
 // Un condominio, un correo (lo que usa el botón "enviar ahora" del panel).
-async function enviarInformeSemanal(db, { condominioId, desde, hasta, to } = {}) {
-  return enviarInforme(db, { condominioIds: [condominioId], desde, hasta, to });
+async function enviarInformeSemanal(store, { condominioId, desde, hasta, to } = {}) {
+  return enviarInforme(store, { condominioIds: [condominioId], desde, hasta, to });
 }
 
-module.exports = { configurado, enviarInforme, enviarInformeSemanal, config, FALTA_CREDENCIALES };
+module.exports = { configurado, enviarCorreo, enviarInforme, enviarInformeSemanal, config, construirMime, FALTA_CREDENCIALES };

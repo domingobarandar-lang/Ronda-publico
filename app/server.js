@@ -14,7 +14,8 @@ const correo = require('./lib/correo');
 const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
 const fabrica = require('./lib/fabrica');
 const programador = require('./lib/programador');
-const { notificarAdmin } = require('./lib/notificar');
+const { registrarAviso } = require('./lib/notificar');
+const { esFecha, sumarDias, inicioDiaChile } = require('./lib/fechas-chile');
 const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
 
@@ -292,8 +293,14 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // el condominio de esa ejecución (miCondominio: el suyo, o el elegido si es la
   // cuenta de acceso total). Un guardia sigue sin poder tocar la ronda de otro,
   // y un admin de un condominio no puede escanear ni cerrar rondas de otro.
+  //
+  // Devuelve una COPIA leída de la base. Regla (invariante 1 del plan SQLite):
+  // quien la modifique la guarda con store.ejecuciones.guardar() ANTES de su
+  // primer `await`. Dos escaneos de la misma ronda llegan juntos cuando la cola
+  // offline sincroniza en ráfaga; con un `await` entre leer y guardar, el
+  // segundo pisaría al primero y se perdería una marca.
   function ejecucionAutorizada(req, res) {
-    const ejecucion = db.ejecuciones.find(e => e.id === req.params.id);
+    const ejecucion = store.ejecuciones.obtener(req.params.id);
     if (!ejecucion) {
       res.status(404).json({ error: 'La ejecución no existe.' });
       return null;
@@ -307,9 +314,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     return ejecucion;
   }
 
+  // El cierre y su aviso quedan en UNA transacción, y los dos antes del primer
+  // `await` (el push, que sale a un servicio externo).
   async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, fin } = {}) {
     const r = motor.cerrarEjecucion(db, ejecucion, { fin });
-    store.guardar();
     const informe = armarInforme(db, ejecucion);
     if (!r.repetida) {
       const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
@@ -317,7 +325,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       if (informe.estado === 'incompleta') alerta = '⚠️ ALERTA: ronda con puntos sin marcar\n\n';
       else if (informe.estado === 'sospechosa') alerta = '🔴 ALERTA: ronda con datos sospechosos\n\n';
       const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n' : '';
-      await notificarAdmin(store, condominio, alerta + nota + informeTexto(informe));
+      store.transaccion(() => {
+        store.ejecuciones.guardar(ejecucion);
+        registrarAviso(store, condominio, alerta + nota + informeTexto(informe));
+      });
       if (informe.estado === 'incompleta') {
         const faltantes = informe.detalle.filter(d => d.faltante).map(d => d.nombre);
         await push.avisar(condominio, {
@@ -341,9 +352,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   app.post('/api/ejecuciones', auth, (req, res) => {
     const { id: ejecucionId, rondaId, inicio } = req.body || {};
-    const r = motor.iniciarEjecucion(db, { ejecucionId, rondaId, guardia: req.usuario, inicio });
+    const r = motor.iniciarEjecucion(db, store.ejecuciones, { ejecucionId, rondaId, guardia: req.usuario, inicio });
     if (r.error) return res.status(r.codigo).json({ error: r.error });
-    store.guardar();
+    if (!r.repetida) store.ejecuciones.guardar(r.ejecucion);
     res.status(r.repetida ? 200 : 201).json(r.ejecucion);
   });
 
@@ -355,7 +366,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     // presencia: cuando el rechazo es por GPS viaja el detalle (distancia y tope)
     // para que la app pueda explicarle al guardia cuánto le falta acercarse.
     if (r.error) return res.status(r.codigo).json({ error: r.error, presencia: r.presencia || null });
-    store.guardar();
+    store.ejecuciones.guardar(ejecucion);
     res.json({
       duplicado: Boolean(r.duplicado),
       punto: { id: r.punto.id, nombre: r.punto.nombre },
@@ -378,8 +389,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs } = req.body || {};
     const punto = db.puntos.find(p => p.id === puntoId && p.condominioId === ejecucion.condominioId);
     if (!punto) return res.status(422).json({ error: 'Ese punto no es de esta ronda.' });
-    // Se acota como el motivo: el cuerpo puede traer hasta 1 MB y esto se
-    // escribe en db.json, que se reserializa entero en cada guardado. Un ts de
+    // Se acota como el motivo: el cuerpo puede traer hasta 1 MB y esto queda
+    // dentro de la ejecución, que se reescribe entera en cada marca. Un ts de
     // 300 KB no es un ataque sofisticado, es un campo sin cota.
     const cuando = String(ts || new Date().toISOString()).slice(0, 40);
     if (!ejecucion.rechazos) ejecucion.rechazos = [];
@@ -398,11 +409,11 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         edadMs: num(edadMs)
       });
       // Un teléfono con el GPS roto podría encolar cientos: el registro no puede
-      // hacer crecer db.json sin techo. Se conservan los últimos.
+      // hacer crecer la ejecución sin techo. Se conservan los últimos.
       if (ejecucion.rechazos.length > MAX_RECHAZOS) {
         ejecucion.rechazos.splice(0, ejecucion.rechazos.length - MAX_RECHAZOS);
       }
-      store.guardar();
+      store.ejecuciones.guardar(ejecucion);
     }
     res.status(repetido ? 200 : 201).json({ ok: true, repetido });
   });
@@ -709,10 +720,22 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Admin: ejecuciones e informes ----------
 
+  // Las últimas LIMITE_LISTADO del condominio, la más reciente primero. Con
+  // ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (días de Chile, ambos inclusive) se
+  // filtra por el inicio. Antes devolvía TODAS: con miles de rondas por
+  // condominio era un JSON de megas en cada carga de la pestaña.
+  const LIMITE_LISTADO = 200;
   app.get('/api/admin/ejecuciones', ...admin, (req, res) => {
-    const lista = db.ejecuciones
-      .filter(e => e.condominioId === miCondominio(req))
-      .sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))
+    const { desde, hasta } = req.query;
+    for (const f of [desde, hasta]) {
+      if (f && !esFecha(f)) return res.status(422).json({ error: 'Las fechas van como AAAA-MM-DD.' });
+    }
+    const lista = store.ejecuciones.listar({
+      condominioId: miCondominio(req),
+      desde: desde ? inicioDiaChile(desde) : undefined,
+      hasta: hasta ? inicioDiaChile(sumarDias(hasta, 1)) : undefined,
+      limite: LIMITE_LISTADO
+    })
       .map(e => {
         const ronda = db.rondas.find(r => r.id === e.rondaId) || {};
         const guardia = db.usuarios.find(u => u.id === e.guardiaId) || {};
@@ -728,11 +751,19 @@ function crearApp({ rutaDb, enviarPush } = {}) {
           faltantes: e.evaluacion ? e.evaluacion.faltantes.length : null
         };
       });
+    res.set('X-Limite', String(LIMITE_LISTADO));
     res.json(lista);
   });
 
+  // Una ejecución del condominio en el que está parado el admin (null si no
+  // existe o es de otro).
+  const ejecucionDelCondominio = req => {
+    const e = store.ejecuciones.obtener(req.params.id);
+    return e && e.condominioId === miCondominio(req) ? e : null;
+  };
+
   app.get('/api/admin/informes/:id', ...admin, (req, res) => {
-    const ejecucion = db.ejecuciones.find(e => e.id === req.params.id && e.condominioId === miCondominio(req));
+    const ejecucion = ejecucionDelCondominio(req);
     if (!ejecucion) return res.status(404).json({ error: 'El informe no existe.' });
     res.json(armarInforme(db, ejecucion));
   });
@@ -746,7 +777,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.get('/api/admin/informe-semanal.docx', ...admin, alerta(async (req, res) => {
     try {
       const { desde, hasta } = req.query;
-      const { buffer, datos } = await generarInformeSemanal(db, { condominioId: miCondominio(req), desde, hasta });
+      const { buffer, datos } = await generarInformeSemanal(store, { condominioId: miCondominio(req), desde, hasta });
       const nombre = `Informe-Semanal-${datos.desde}_a_${datos.hasta}.docx`;
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
@@ -798,14 +829,14 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     if (!destinos.length) {
       return res.status(422).json({ error: 'Todavía no hay correo del administrador: guárdalo acá arriba y vuelve a intentar.' });
     }
-    const r = await correo.enviarInforme(db, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
+    const r = await correo.enviarInforme(store, { condominioIds: [miCondominio(req)], desde, hasta, to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   }));
 
   // Cierre administrativo de una ronda que quedó abierta.
   app.post('/api/admin/ejecuciones/:id/cerrar', ...admin, alerta(async (req, res) => {
-    const ejecucion = db.ejecuciones.find(e => e.id === req.params.id && e.condominioId === miCondominio(req));
+    const ejecucion = ejecucionDelCondominio(req);
     if (!ejecucion) return res.status(404).json({ error: 'La ejecución no existe.' });
     res.json(await cerrarYNotificar(ejecucion, { cerradaPorAdmin: true }));
   }));
@@ -828,10 +859,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   }));
 
   app.get('/api/admin/notificaciones', ...admin, (req, res) => {
-    res.json(db.notificaciones
-      .filter(n => n.condominioId === miCondominio(req))
-      .slice(-50)
-      .reverse());
+    res.json(store.notificaciones.ultimas(miCondominio(req), 50));
   });
 
   // Avisos push de rondas incompletas en el teléfono del administrador.
@@ -950,8 +978,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         puntos: cuenta(db.puntos, c.id),
         rondas: cuenta(db.rondas, c.id),
         // Para ver de un vistazo si el condominio está andando o quedó a medias.
-        ultimaRonda: db.ejecuciones.filter(e => e.condominioId === c.id)
-          .map(e => e.inicio).sort().slice(-1)[0] || null
+        ultimaRonda: (store.ejecuciones.ultimaDe(c.id) || {}).inicio || null
       }))
     });
   });
@@ -1051,7 +1078,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
     const destinos = correosDelCondominio(condominio, process.env.INFORME_TO);
     if (!destinos.length) return res.status(422).json({ error: 'Ese condominio no tiene correos cargados.' });
-    const r = await correo.enviarInforme(db, { condominioIds: [condominio.id], to: destinos });
+    const r = await correo.enviarInforme(store, { condominioIds: [condominio.id], to: destinos });
     if (!r.enviada) return res.status(502).json({ error: r.error || 'No se pudo enviar el correo.' });
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   }));
@@ -1070,7 +1097,17 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
 if (require.main === module) {
   const puerto = Number(process.env.PORT || 3737);
-  const { app, store, push } = crearApp();
+  let creado;
+  try {
+    creado = crearApp();
+  } catch (err) {
+    // Típicamente, una importación de db.json que no cuadró: el store ya dejó
+    // todo como estaba. Se sale con error para que Railway lo muestre.
+    console.error(`[arranque] el servidor NO arranca: ${err.message}`);
+    if (err.cause) console.error(err.cause);
+    process.exit(1);
+  }
+  const { app, store, push } = creado;
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
@@ -1078,9 +1115,12 @@ if (require.main === module) {
     console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');
     console.log('  Alarma de ronda: se configura por condominio en el panel (pestaña Avisos)');
     console.log(`  Correo semanal: ${correo.configurado() ? 'activo' : `sin configurar (falta ${correo.FALTA_CREDENCIALES})`}`);
-    console.log(`  Base de datos: ${store.ruta}`);
+    const c = store.conteos();
+    console.log(`  Base de datos: ${store.ruta} (SQLite, Node ${process.version})`);
+    console.log(`    ${c.condominios} condominios, ${c.usuarios} usuarios, ${c.puntos} puntos, ${c.rondas} rondas configuradas, `
+              + `${c.ejecuciones} ejecuciones, ${c.notificaciones} avisos`);
   });
-  programador.iniciar(store); // envío semanal del informe por correo (si hay SMTP)
+  programador.iniciar(store); // respaldo diario de la base y envío semanal del informe por correo
   recordatorios.iniciar(store, push); // alarma de ronda a los teléfonos de cada condominio
 }
 

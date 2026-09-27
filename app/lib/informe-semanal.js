@@ -9,6 +9,7 @@ const {
   Footer, PageNumber, Tab
 } = require('docx');
 const { armarInforme } = require('./informes');
+const { TZ, isoChile, horaChile, esFecha, sumarDias } = require('./fechas-chile');
 
 // ---------- Paleta ----------
 const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B8B', ZEBRA = 'F5F3F8';
@@ -17,12 +18,9 @@ const GREEN = '4E7A5B', OCHRE = 'B07D2B', RED = 'B23A48';
 const FONT = 'Calibri';
 
 // ---------- Fechas (zona horaria de Chile) ----------
-const TZ = 'America/Santiago';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const WD = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
-const isoChile = ts => new Date(ts).toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
-const horaChile = ts => Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date(ts)));
 function fechaHoraChile(ts) {
   const p = new Intl.DateTimeFormat('es-CL', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ts));
   const g = t => (p.find(x => x.type === t) || {}).value || '';
@@ -51,7 +49,28 @@ function semanaAnterior() {
 }
 
 // ---------- Cálculo de estadísticas ----------
-function calcular(db, opciones = {}) {
+// Las ejecuciones cerradas del condominio cuyo inicio cae, en fecha de CHILE,
+// entre `desde` y `hasta` (inclusive), de la más antigua a la más nueva.
+// La consulta trae un día de holgura a cada lado (el inicio se guarda en UTC y
+// Chile está 3-4 horas atrás) y el corte fino lo hace isoChile(), la misma
+// función de siempre: si no, las rondas de 21:00-23:59 del domingo caían en la
+// semana siguiente.
+function ejecucionesDelRango(store, condominioId, desde, hasta) {
+  const conFechas = esFecha(desde) && esFecha(hasta);
+  return store.ejecuciones.listar({
+    condominioId,
+    estadoDistintoDe: 'en_curso',
+    desde: conFechas ? `${sumarDias(desde, -1)}T00:00:00.000Z` : undefined,
+    hasta: conFechas ? `${sumarDias(hasta, 2)}T00:00:00.000Z` : undefined
+  })
+    .filter(e => isoChile(e.inicio) >= desde && isoChile(e.inicio) <= hasta)
+    .reverse();
+}
+
+// `store`: el de lib/store.js (la configuración sale de store.db y las
+// ejecuciones del repositorio).
+function calcular(store, opciones = {}) {
+  const db = store.db;
   let { condominioId, desde, hasta } = opciones;
   if (!desde || !hasta) { const s = semanaAnterior(); desde = desde || s.desde; hasta = hasta || s.hasta; }
   if (desde > hasta) [desde, hasta] = [hasta, desde];
@@ -59,9 +78,7 @@ function calcular(db, opciones = {}) {
   const condominio = db.condominios.find(c => c.id === condominioId) || {};
   const usuarios = new Map(db.usuarios.map(u => [u.id, u]));
   const puntos = new Map(db.puntos.map(p => [p.id, p]));
-  const ejec = db.ejecuciones.filter(e =>
-    e.condominioId === condominioId && e.estado !== 'en_curso' &&
-    isoChile(e.inicio) >= desde && isoChile(e.inicio) <= hasta);
+  const ejec = ejecucionesDelRango(store, condominioId, desde, hasta);
 
   const diasList = diasEntre(desde, hasta);
   const porDia = new Map(diasList.map(d => [d, 0]));
@@ -307,10 +324,10 @@ function documento(d, hijos) {
   });
 }
 
-async function generarInformeSemanal(db, opciones) {
-  const d = calcular(db, opciones);
+async function generarInformeSemanal(store, opciones) {
+  const d = calcular(store, opciones);
   const buffer = await Packer.toBuffer(generarDocx(d));
   return { buffer, datos: d };
 }
 
-module.exports = { generarInformeSemanal, calcular };
+module.exports = { generarInformeSemanal, calcular, ejecucionesDelRango };

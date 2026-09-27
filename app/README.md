@@ -38,6 +38,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador en el panel (pestaña Avisos). Si una ronda queda incompleta o sospechosa, además sale un push al teléfono.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
+- **Base de datos SQLite** *(v1.17)*: el historial ya no se reescribe entero en cada marca. Configuración en memoria, ejecuciones y avisos en tablas propias; se importa sola desde el `db.json` anterior en el primer arranque, con respaldo diario por correo. Medido: 100 guardias a la vez sobre 100 mil rondas, ninguna marca perdida. El listado de informes del panel muestra las últimas 200.
 - **Alarma de ronda** *(v1.16)*: cada X tiempo suena una notificación en el teléfono designado del condominio (el de la garita) para que el guardia salga a hacer la ronda. El administrador elige el intervalo en la pestaña **Avisos** ("Enviar alarma cada": media hora, 1 hora, 2 horas…, o apagada) y puede hacerla sonar de prueba. El teléfono se activa desde la app del guardia con "Activar alarma de ronda en este teléfono"; la suscripción queda del condominio, así que sigue sonando aunque cambie el turno. Si el guardia ya empezó una ronda, el conteo parte de nuevo desde ese inicio, y mientras hay una ronda en curso no suena.
 - **Informe semanal por correo** *(v1.8, por destinatario desde v1.11)*: cada lunes a las 8 de la mañana (hora de Chile) sale por correo el informe de la semana anterior en Word, con estadísticas, ranking de guardias e incidencias. El administrador guarda su correo en el panel (pestaña **Avisos**); el que administra **varios condominios pone el mismo correo en cada uno y recibe un solo mensaje con un .docx por condominio adjunto**. Se puede poner más de un correo por condominio (el administrador y el comité, por ejemplo). El botón "Enviar uno de prueba ahora" manda el de esa semana sin esperar al lunes.
 - **Panel del administrador**: informes, puntos de control (con hoja de QR imprimible), guardias, rondas y registro de avisos.
@@ -57,7 +58,11 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 | Variable | Default | Qué hace |
 |---|---|---|
 | `PORT` | `3737` | Puerto del servidor |
-| `DB_PATH` | `data/db.json` | Ruta del archivo de datos (en Railway: `/data/db.json`, sobre el volumen persistente) |
+| `DB_PATH` | `data/rondas.sqlite` | Ruta de la base SQLite (en Railway, sobre el volumen persistente: `/data/rondas.sqlite`). Si apunta a un `.json` (como hasta la v1.16), se usa `rondas.sqlite` en la misma carpeta y ese `.json` se importa solo en el primer arranque |
+| `RESPALDO_TO` | — | Buzón (de la operación, con 2FA) que recibe cada día el respaldo comprimido de la base. Vacío = el respaldo queda solo en el volumen. Ver `entrega/OPERACION.md` |
+| `RESPALDO_HORA` | `10` | Hora de Chile desde la que se hace la foto diaria de la base |
+| `RESPALDO_CONSERVAR` | `14` | Fotos diarias que se guardan en `respaldos/`, junto a la base |
+| `RESPALDO_CORREO_CADA_DIAS` | `1` | Cada cuántos días sale el respaldo por correo |
 | `FABRICA_USUARIO` | — | Cuenta de la operación para dar de alta condominios en `/fabrica`. Se crea sola al arrancar |
 | `FABRICA_PIN` | — | Su PIN, de **8 dígitos**. Cambiarlo acá y reiniciar recupera el acceso. Vacío = pantalla de fábrica inaccesible |
 | `GPS_RADIO_M` | `20` | Metros máximos entre el teléfono y el punto para poder marcar |
@@ -94,7 +99,9 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 ```
 server.js        API + estáticos (Express)
 seed.js          datos de demo
-lib/store.js     persistencia JSON atómica (migrable a SQLite/Postgres)
+lib/store.js     persistencia SQLite (node:sqlite): configuración en memoria + tablas de ejecuciones y avisos; importa el db.json viejo solo
+lib/respaldo.js  foto diaria de la base (VACUUM INTO, se guardan 14) y copia comprimida por correo a RESPALDO_TO
+lib/fechas-chile.js  días y horas en zona horaria de Chile (rangos del panel y del informe semanal)
 lib/rondas.js    motor: iniciar / escanear / cerrar / evaluar
 lib/informes.js  informe en datos y en texto
 lib/fabrica.js          alta de condominios y de cuentas de administrador
@@ -102,7 +109,11 @@ lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
 lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
 lib/correo.js           envío por Gmail (OAuth2), con un .docx por condominio adjunto
 scripts/obtener-refresh-token.js  saca el GMAIL_REFRESH_TOKEN una sola vez (se corre local)
-lib/programador.js      reloj semanal: cada lunes revisa y manda lo que falte
+scripts/exportar-json.js          vuelta atrás: regenera el db.json que lee la v1.16
+scripts/restaurar-respaldo.js     valida un respaldo y lo deja listo para el próximo arranque
+scripts/respaldo-ahora.js         hace el respaldo del día ya (para probar el correo)
+scripts/prueba-carga.js           N guardias a la vez sobre una base de M rondas (por defecto 100 y 100 mil)
+lib/programador.js      reloj: cada hora revisa el respaldo del día y, los lunes, el informe semanal
 lib/notificar.js aviso al admin (panel + consola)
 lib/push.js      push al teléfono del admin cuando una ronda queda incompleta, y alarma de ronda a la garita
 lib/recordatorios.js  cada cuánto suena la alarma de ronda de cada condominio (revisa cada minuto)
@@ -116,5 +127,5 @@ test/            suite node --test (mock, $0)
 - Deploy: Railway/VPS con `npm start` (requiere HTTPS para que la cámara funcione fuera de localhost).
 - **El servicio de Railway tiene que apuntar su Root Directory a `app`**, no a `/`: la app vive en una subcarpeta del repo. Con el root en `/`, Railpack analiza la raíz, no encuentra `package.json` y el build muere con *"could not determine how to build the app"* — sin tocar nada del código. Ya pasó en v1.10 y en v1.11.
 - Ojo con "Redeploy": vuelve a desplegar el **mismo** commit que estaba arriba, no el último de `main`. Para subir lo nuevo va "Deploy latest commit" o un push.
-- La persistencia JSON es para pilotos; con más de ~3 condominios activos o meses de historial, migrar `lib/store.js` a SQLite/Postgres.
+- **Base de datos SQLite (v1.17)** en el volumen, con respaldo diario propio (Railway no respalda el volumen en este plan): ver la sección **Base de datos** de `entrega/OPERACION.md` para el respaldo, la restauración y la vuelta atrás. Requiere **Node 24** o superior.
 - Limitación conocida v1 (documentada): un QR fotografiado se puede escanear a distancia — la v2 contempla verificación de presencia (GPS/NFC).
