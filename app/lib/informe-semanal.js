@@ -6,8 +6,10 @@
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, VerticalAlign,
-  Footer, PageNumber, Tab
+  Footer, PageNumber, Tab, ImageRun
 } = require('docx');
+const fs = require('fs');
+const path = require('path');
 const { TZ, isoChile, horaChile, esFecha, sumarDias } = require('./fechas-chile');
 
 // ---------- Paleta ----------
@@ -15,6 +17,9 @@ const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B
 const INK = '242230', GRAY = '6B6875', LINE = 'D9D5E2', WHITE = 'FFFFFF';
 const GREEN = '4E7A5B', OCHRE = 'B07D2B', RED = 'B23A48';
 const FONT = 'Calibri';
+// Logo de Rondas QR (el mismo ícono de la app del guardia), arriba a la
+// izquierda. Se lee una vez; si faltara el archivo, el informe sale sin logo.
+const LOGO = (() => { try { return fs.readFileSync(path.join(__dirname, '..', 'public', 'icono-192.png')); } catch { return null; } })();
 // Un color por guardia en el gráfico de rondas por día (orden fijo, validado
 // para daltonismo; ninguno se confunde con verde/ocre/rojo de estado). Del
 // quinto guardia en adelante van juntos en gris como "Otros".
@@ -349,12 +354,22 @@ function barras(label, value, max, color = ACCENT) {
 
 // ---------- Construcción del documento ----------
 function generarDocx(d) {
-  const hijos = [
+  const titulo = [
     P(run('Rondas QR — Informe semanal', { color: GRAY, size: 15, caps: true, spacing: 40, bold: true }), { spacing: { after: 40 } }),
     P(run('Informe Semanal de Rondas', { bold: true, size: 40 }), { spacing: { after: 40 } }),
     P(run(d.condominio, { bold: true, size: 26, color: ACCENT }), { spacing: { after: 20 } }),
-    P(run(d.rango, { color: GRAY, size: 20 }), { spacing: { after: 120 }, border: { bottom: hairline(ACCENT) } })
+    P(run(d.rango, { color: GRAY, size: 20 }), { spacing: { after: 40 } })
   ];
+  // Encabezado: logo a la izquierda y el título a su lado, con la línea de
+  // acento debajo de los dos.
+  const hijos = [new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: LOGO ? [1500, 7860] : [9360],
+    borders: { ...NO_BORDER, bottom: { style: BorderStyle.SINGLE, size: 4, color: ACCENT } },
+    rows: [new TableRow({ cantSplit: true, children: [
+      ...(LOGO ? [cell(new Paragraph({ children: [new ImageRun({ type: 'png', data: LOGO, transformation: { width: 80, height: 80 }, altText: { name: 'Rondas QR', title: 'Rondas QR', description: 'Logo de Rondas QR' } })] }), { width: 1500, valign: VerticalAlign.CENTER, ml: 0, mr: 200, mt: 0, mb: 120 })] : []),
+      cell(titulo, { width: LOGO ? 7860 : 9360, ml: 0, mt: 0, mb: 80 })
+    ] })]
+  }), P(run(''), { spacing: { after: 60 } })];
 
   if (d.rondasTotal === 0) {
     hijos.push(P(run('No se registraron rondas cerradas en este periodo.', { color: GRAY, size: 22, italics: true }), { spacing: { before: 240 } }));
