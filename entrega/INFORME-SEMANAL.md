@@ -96,3 +96,12 @@ Es el caso real de una corredora: 4 administradores con 2 condominios cada uno. 
 La lógica vive en `app/lib/destinatarios.js` y está cubierta en `app/test/destinatarios.test.js`, incluido el caso 4×2. El correo cargado es el interruptor: **un condominio sin correo no se manda a nadie** (salvo que exista `INFORME_TO` de respaldo).
 
 > **Ojo con el remitente**: `GMAIL_FROM` tiene que ser la misma cuenta dueña del `GMAIL_REFRESH_TOKEN` — Gmail rechaza mandar "de" una cuenta distinta a la autenticada. No hay problema para escribirle a administradores externos: al ser la API de Gmail (no un dominio de prueba de un tercero) entrega normal a cualquier destinatario.
+
+## Reglas de redacción (2026-09-28)
+
+Las frases del informe (lectura de puntos y conclusión) se arman con reglas fijas en `app/lib/informe-semanal.js`, sin modelo de lenguaje ni API externa:
+
+1. **"Más" o "menos" solo con diferencia real.** Si todos los puntos tienen las mismas marcas, el informe lo dice ("no hay un punto más ni menos marcado"). A igualdad, la tabla va en orden alfabético: nunca decide el orden de carga.
+2. **Los puntos se juzgan por cobertura**, no por cantidad: marcas / veces que tocaba marcarlo (rondas realizadas que lo incluían, según lo evaluado al cerrar cada ronda). Primero los que requieren atención.
+3. **Porcentajes sin mentira en los bordes**: 100% solo si es todo, 0% solo si es nada, y las partes de un total suman 100 (reparto por resto mayor).
+4. **Todo cuadra**: `revisarCoherencia()` comprueba que días, turnos, guardias y puntos sumen el total de marcaciones, que los estados sumen el total de rondas y que las incidencias calcen. Los tests lo corren con datos al azar.
