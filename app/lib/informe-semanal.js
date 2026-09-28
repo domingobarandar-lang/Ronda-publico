@@ -15,6 +15,10 @@ const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B
 const INK = '242230', GRAY = '6B6875', LINE = 'D9D5E2', WHITE = 'FFFFFF';
 const GREEN = '4E7A5B', OCHRE = 'B07D2B', RED = 'B23A48';
 const FONT = 'Calibri';
+// Un color por guardia en el gráfico de rondas por día (orden fijo, validado
+// para daltonismo; ninguno se confunde con verde/ocre/rojo de estado). Del
+// quinto guardia en adelante van juntos en gris como "Otros".
+const SERIES = ['5E4B8B', '1BAF7A', '2A78D6', 'E87BA4'], OTROS = 'A3A1AD';
 
 // ---------- Fechas (zona horaria de Chile) ----------
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -127,6 +131,7 @@ function calcular(store, opciones = {}) {
 
   const diasList = diasEntre(desde, hasta);
   const porDia = new Map(diasList.map(d => [d, 0]));
+  const rondasDia = new Map(diasList.map(d => [d, new Map()]));   // día -> guardia -> rondas
   const cobertura = new Map();   // puntoId -> { marcadas, esperadas }
   const cob = pid => { if (!cobertura.has(pid)) cobertura.set(pid, { marcadas: 0, esperadas: 0 }); return cobertura.get(pid); };
   const porGuardia = new Map();
@@ -149,10 +154,11 @@ function calcular(store, opciones = {}) {
     const u = usuarios.get(e.guardiaId);
     if (!u) sinIdentificar += nMarc;
     const clave = u ? e.guardiaId : '(eliminado)';
-    if (!porGuardia.has(clave)) porGuardia.set(clave, { nombre: u ? (u.nombre || u.usuario) : '(guardia eliminado)', marc: 0, rondas: 0, completas: 0, incompletas: 0, sospechosas: 0, dia: 0, noche: 0 });
+    if (!porGuardia.has(clave)) porGuardia.set(clave, { clave, nombre: u ? (u.nombre || u.usuario) : '(guardia eliminado)', marc: 0, rondas: 0, completas: 0, incompletas: 0, sospechosas: 0, dia: 0, noche: 0 });
     const g = porGuardia.get(clave);
     g.marc += nMarc; g.rondas++; g[estado === 'completa' ? 'completas' : estado + 's']++;
     if (esDia) g.dia++; else g.noche++;
+    if (rondasDia.has(dEj)) { const m = rondasDia.get(dEj); m.set(clave, (m.get(clave) || 0) + 1); }
 
     // Cobertura con lo que se evaluó AL CERRAR (evaluacion.faltantes), no con
     // la ronda de hoy: si el administrador la editó después, la historia no cambia.
@@ -172,7 +178,7 @@ function calcular(store, opciones = {}) {
       if (g.sospechosas) partes.push(plural(g.sospechosas, 'sospechosa'));
       // Empate de rondas de día y de noche: no se inventa un turno.
       const turno = g.noche > g.dia ? 'Noche' : g.dia > g.noche ? 'Día' : 'Día y noche';
-      return { nombre: g.nombre, turno, rondasDia: g.dia, rondasNoche: g.noche, marcaciones: g.marc, rondas: g.rondas, completas: g.completas, incidencias: partes.length ? partes.join(' · ') : '—', color: g.sospechosas ? RED : (g.incompletas ? OCHRE : GRAY) };
+      return { clave: g.clave, nombre: g.nombre, turno, rondasDia: g.dia, rondasNoche: g.noche, marcaciones: g.marc, rondas: g.rondas, completas: g.completas, incidencias: partes.length ? partes.join(' · ') : '—', color: g.sospechosas ? RED : (g.incompletas ? OCHRE : GRAY) };
     });
 
   const incidencias = ejec.filter(e => e.estado === 'incompleta' || e.estado === 'sospechosa')
@@ -192,6 +198,15 @@ function calcular(store, opciones = {}) {
       }
       return { fecha: fechaHoraChile(e.inicio), guardia: u ? (u.nombre || u.usuario) : '(guardia eliminado)', tipo, tipoColor, detalle };
     });
+
+  // Resumen de incidencias: cuántas de cada tipo y de qué guardia (el detalle
+  // ronda a ronda queda en el panel, no en el informe).
+  const quienes = tipo => {
+    const m = new Map();
+    for (const x of incidencias) if (x.tipo === tipo) m.set(x.guardia, (m.get(x.guardia) || 0) + 1);
+    return [...m].map(([nombre, n]) => ({ nombre, n })).sort((a, b) => b.n - a.n || porNombre(a.nombre, b.nombre));
+  };
+  const resumenIncidencias = { incompletas: quienes('Incompleta'), sospechosas: quienes('Sospechosa') };
 
   // Puntos: TODOS los del condominio (también los que nadie marcó, que antes no
   // aparecían) más los ya eliminados que tuvieron actividad, sumados en una fila.
@@ -217,7 +232,12 @@ function calcular(store, opciones = {}) {
     cumplimiento: pCompletas, sinIdentificar,
     dias: diasList.map(d => [weekdayDe(d), porDia.get(d) || 0]),
     turno: { dia: { marc: marcDia, pct: pDia }, noche: { marc: marcNoche, pct: pNoche } },
-    guardias, puntos, puntosSinRonda, incidencias,
+    guardias, puntos, puntosSinRonda, incidencias, resumenIncidencias,
+    // Rondas de cada día repartidas por guardia, en el orden de `guardias`.
+    rondasPorDia: diasList.map(dd => {
+      const m = rondasDia.get(dd);
+      return { dia: weekdayDe(dd), total: [...m.values()].reduce((a, b) => a + b, 0), porGuardia: guardias.map(g => m.get(g.clave) || 0) };
+    }),
     generado: new Intl.DateTimeFormat('es-CL', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())
   };
   d.lecturaPuntos = lecturaPuntos(d);
@@ -261,7 +281,7 @@ function conclusion(d) {
     const partes = [];
     if (d.incompletas) partes.push(plural(d.incompletas, 'incompleta'));
     if (d.sospechosas) partes.push(plural(d.sospechosas, 'sospechosa'));
-    t += `Hubo ${partes.join(' y ')} que conviene revisar (detalle en la sección 5). `;
+    t += `Hubo ${partes.join(' y ')} que conviene revisar (resumen en la sección 5). `;
   }
   // Los puntos, en corto: el detalle y la tabla ya están en la sección 4.
   const conFalta = d.puntos.filter(p => p.omitidas > 0).length;
@@ -288,6 +308,13 @@ function revisarCoherencia(d) {
   if (suma(d.guardias.map(g => g.rondas)) !== d.rondasTotal) p.push('rondas por guardia no suman el total');
   if (suma(d.puntos.map(x => x.marcadas)) !== d.total) p.push('puntos no suman el total');
   if (d.incidencias.length !== d.incompletas + d.sospechosas) p.push('incidencias no calzan con los estados');
+  if (suma(d.resumenIncidencias.incompletas.map(x => x.n)) !== d.incompletas) p.push('resumen de incompletas no calza');
+  if (suma(d.resumenIncidencias.sospechosas.map(x => x.n)) !== d.sospechosas) p.push('resumen de sospechosas no calza');
+  if (d.rondasPorDia.length < 60) {
+    if (suma(d.rondasPorDia.map(x => x.total)) !== d.rondasTotal) p.push('rondas por día no suman el total');
+    d.guardias.forEach((g, i) => { if (suma(d.rondasPorDia.map(x => x.porGuardia[i])) !== g.rondas) p.push(`${g.nombre}: rondas por día no suman sus rondas`); });
+  }
+  for (const x of d.rondasPorDia) if (suma(x.porGuardia) !== x.total) p.push(`${x.dia}: guardias no suman las rondas del día`);
   for (const x of d.puntos) {
     if (x.omitidas < 0) p.push(`${x.nombre}: más marcas que esperadas`);
     if ((x.pct === 100) !== (x.omitidas === 0)) p.push(`${x.nombre}: porcentaje incoherente`);
@@ -394,6 +421,7 @@ function generarDocx(d) {
   // 3 · Por guardia
   hijos.push(seccion('3', 'Rondas por guardia'));
   hijos.push(tablaGuardias(d.guardias));
+  hijos.push(...graficoRondasPorDia(d));
 
   // 4 · Puntos
   hijos.push(seccion('4', 'Cobertura por punto de control'));
@@ -402,8 +430,8 @@ function generarDocx(d) {
   hijos.push(P(run(d.lecturaPuntos, { size: 19 }), { spacing: { before: 120 } }));
 
   // 5 · Incidencias
-  hijos.push(seccion('5', 'Rondas con incidencias'));
-  hijos.push(d.incidencias.length ? tablaIncidencias(d.incidencias) : P(run('No hubo rondas incompletas ni sospechosas en el periodo.', { color: GREEN, size: 19 })));
+  hijos.push(seccion('5', 'Incidencias'));
+  hijos.push(...resumenIncidencias(d));
 
   // 6 · Conclusión
   hijos.push(seccion('6', 'Conclusión'));
@@ -445,18 +473,76 @@ function tablaPuntos(puntos) {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [4360, 1800, 1400, 1800], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
 }
 
-function tablaIncidencias(incs) {
-  const th = t => cell(P(run(t, { bold: true, color: WHITE, size: 18, caps: true, spacing: 20 }), { keepNext: true }), { fill: HEADFILL });
-  const td = (t, o = {}) => cell(P(run(t, { size: 19, color: o.color, bold: o.bold }), { keepNext: o.keepNext }), { fill: o.fill });
-  const rows = [new TableRow({ tableHeader: true, cantSplit: true, children: [th('Fecha y hora'), th('Guardia'), th('Tipo'), th('Detalle')] })];
-  incs.forEach((x, i) => {
-    const f = i % 2 ? ZEBRA : undefined; const keep = i < incs.length - 1;
+// Gráfico de barras apiladas: una barra por día, un tramo por guardia, largo
+// proporcional a las rondas del día. Debajo, la misma información en números
+// (guardia × día), para leerla sin depender del color.
+function graficoRondasPorDia(d) {
+  const out = [];
+  if (!d.rondasTotal) return out;
+  const nSeries = Math.min(d.guardias.length, SERIES.length + (d.guardias.length > SERIES.length ? 1 : 0));
+  const color = i => (i < SERIES.length ? SERIES[i] : OTROS);
+  // Guardias 5 en adelante se suman en "Otros".
+  const agrupar = xs => (xs.length > SERIES.length ? [...xs.slice(0, SERIES.length), xs.slice(SERIES.length).reduce((a, b) => a + b, 0)] : xs);
+  const nombres = agrupar(d.guardias.map(g => g.nombre.split(' ')[0])).map((n, i) => (i === SERIES.length ? 'Otros' : n));
+  const maxDia = Math.max(1, ...d.rondasPorDia.map(x => x.total));
+  const ANCHO = 24;
+
+  out.push(P(run('Rondas por día y guardia', { bold: true, size: 22 }), { spacing: { before: 280, after: 60 }, keepNext: true }));
+  out.push(P(run('Cada barra es un día; cada color, un guardia. Según el día en que empezó la ronda.', { color: GRAY, size: 18 }), { spacing: { after: 80 }, keepNext: true }));
+  const filas = d.rondasPorDia.map(x => {
+    const vals = agrupar(x.porGuardia);
+    let largo = x.total ? Math.max(1, Math.round(x.total / maxDia * ANCHO)) : 0;
+    if (x.total < maxDia && largo === ANCHO) largo = ANCHO - 1;
+    largo = Math.max(largo, vals.filter(v => v > 0).length);
+    const bloques = repartir(vals, largo);
+    const tramos = bloques.map((b, i) => run('█'.repeat(b), { color: color(i) })).filter((_, i) => bloques[i] > 0);
+    return new TableRow({ cantSplit: true, children: [
+      cell(P(run(x.dia, { size: 20 })), { width: 1200, borders: NO_BORDER, mt: 30, mb: 30 }),
+      cell(P([...tramos, run('█'.repeat(ANCHO - largo), { color: TRACK })]), { width: 7400, borders: NO_BORDER, mt: 30, mb: 30 }),
+      cell(P(run(String(x.total), { bold: true, size: 20 }), { align: AlignmentType.RIGHT }), { width: 760, borders: NO_BORDER, mt: 30, mb: 30 })
+    ] });
+  });
+  out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [1200, 7400, 760], borders: NO_BORDER, rows: filas }));
+  const totales = agrupar(d.guardias.map(g => g.rondas));
+  out.push(P(nombres.slice(0, nSeries).flatMap((n, i) => [run('■ ', { color: color(i) }), run(`${n} · ${plural(totales[i], 'ronda')}${i < nSeries - 1 ? '     ' : ''}`, { size: 18, color: GRAY })]), { spacing: { before: 80, after: 120 } }));
+
+  // La misma información en números.
+  const th = (t, r) => cell(P(run(t, { bold: true, color: WHITE, size: 17, caps: true }), { align: r ? AlignmentType.RIGHT : undefined, keepNext: true }), { fill: HEADFILL, ml: 80, mr: 80 });
+  const td = (t, o = {}) => cell(P(run(t, { size: 18, color: o.color, bold: o.bold }), { align: o.r ? AlignmentType.RIGHT : undefined, keepNext: o.keepNext }), { fill: o.fill, ml: 80, mr: 80 });
+  const nd = d.rondasPorDia.length;
+  const anchoDia = Math.floor(6160 / (nd + 1));
+  const rows = [new TableRow({ tableHeader: true, cantSplit: true, children: [th('Guardia'), ...d.rondasPorDia.map(x => th(x.dia, true)), th('Total', true)] })];
+  d.guardias.forEach((g, i) => {
+    const f = i % 2 ? ZEBRA : undefined; const keep = i < d.guardias.length - 1;
     rows.push(new TableRow({ cantSplit: true, children: [
-      td(x.fecha, { fill: f, color: GRAY, keepNext: keep }), td(x.guardia, { fill: f, bold: true, keepNext: keep }),
-      td(x.tipo, { fill: f, color: x.tipoColor, bold: true, keepNext: keep }), td(x.detalle, { fill: f, keepNext: keep })
+      td(g.nombre, { bold: true, fill: f, keepNext: keep }),
+      ...d.rondasPorDia.map(x => td(x.porGuardia[i] ? String(x.porGuardia[i]) : '—', { r: true, fill: f, color: x.porGuardia[i] ? INK : GRAY, keepNext: keep })),
+      td(String(g.rondas), { r: true, bold: true, fill: f, keepNext: keep })
     ] }));
   });
-  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [2320, 1820, 1420, 3800], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
+  out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [3200, ...Array(nd + 1).fill(anchoDia)], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows }));
+  return out;
+}
+
+// Incidencias en corto: cuántas de cada tipo y de quién. El detalle de cada
+// ronda (hora, puntos faltantes, motivo) está en el panel.
+function resumenIncidencias(d) {
+  const inc = d.incompletas + d.sospechosas;
+  if (!inc) return [P(run('No hubo rondas incompletas ni sospechosas en el periodo.', { color: GREEN, size: 19 }))];
+  const out = [P(run(`${plural(inc, 'ronda', 'rondas')} con incidencias de ${d.rondasTotal} (${100 - d.cumplimiento}%).`, { size: 20 }), { spacing: { after: 100 }, keepNext: true })];
+  const quien = xs => xs.map(x => `${x.nombre} ${x.n}`).join(' · ') || '—';
+  const fila = (color, tipo, n, qs, keep) => new TableRow({ cantSplit: true, children: [
+    cell(P(run('■', { color })), { width: 500, borders: NO_BORDER }),
+    cell(P(run(tipo, { size: 20, bold: true }), { keepNext: keep }), { width: 2200, borders: NO_BORDER }),
+    cell(P(run(String(n), { bold: true, size: 20 }), { align: AlignmentType.RIGHT, keepNext: keep }), { width: 900, borders: NO_BORDER }),
+    cell(P(run(n ? quien(qs) : '—', { size: 18, color: GRAY }), { keepNext: keep }), { width: 5760, borders: NO_BORDER })
+  ] });
+  out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [500, 2200, 900, 5760], borders: NO_BORDER, rows: [
+    fila(OCHRE, 'Incompletas', d.incompletas, d.resumenIncidencias.incompletas, true),
+    fila(RED, 'Sospechosas', d.sospechosas, d.resumenIncidencias.sospechosas, false)
+  ] }));
+  out.push(P(run('Incompleta: quedaron puntos sin marcar (cuáles, en la sección 4). Sospechosa: datos que no se pudieron verificar. El detalle de cada ronda está en el panel, pestaña Informes.', { color: GRAY, size: 17, italics: true }), { spacing: { before: 100 } }));
+  return out;
 }
 
 function documento(d, hijos) {

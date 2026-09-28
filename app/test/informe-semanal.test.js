@@ -129,3 +129,20 @@ test('con datos al azar, las cifras del informe siempre cuadran entre sí', asyn
     store.cerrar();
   }
 });
+
+test('incidencias en resumen y rondas por día y guardia cuadran', () => {
+  const { store, ronda } = armar(2);
+  ronda({ marcados: ['p1', 'p2'], guardiaId: 'g1', inicio: '2026-09-14T10:00:00-03:00' });
+  ronda({ marcados: ['p1'], faltantes: ['p2'], guardiaId: 'g1', inicio: '2026-09-14T12:00:00-03:00' });
+  ronda({ marcados: ['p1'], faltantes: ['p2'], guardiaId: 'g2', inicio: '2026-09-16T23:00:00-03:00' });
+  ronda({ marcados: ['p1', 'p2'], estado: 'sospechosa', guardiaId: 'g2', inicio: '2026-09-16T23:30:00-03:00' });
+  const d = calcular(store, RANGO);
+  assert.deepEqual(revisarCoherencia(d), []);
+  assert.deepEqual(d.resumenIncidencias.incompletas, [{ nombre: 'Ana Rojas', n: 1 }, { nombre: 'Pedro Soto', n: 1 }]);
+  assert.deepEqual(d.resumenIncidencias.sospechosas, [{ nombre: 'Ana Rojas', n: 1 }]);
+  assert.deepEqual(d.guardias.map(g => g.nombre), ['Ana Rojas', 'Pedro Soto'], '3 marcaciones cada uno: alfabético');
+  assert.deepEqual(d.rondasPorDia.map(x => [x.dia, x.total, x.porGuardia]), [
+    ['Lun', 2, [0, 2]], ['Mar', 0, [0, 0]], ['Mié', 2, [2, 0]], ['Jue', 0, [0, 0]],
+    ['Vie', 0, [0, 0]], ['Sáb', 0, [0, 0]], ['Dom', 0, [0, 0]]]);
+  store.cerrar();
+});
