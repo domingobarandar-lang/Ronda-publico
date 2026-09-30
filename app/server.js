@@ -316,20 +316,26 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // El cierre y su aviso quedan en UNA transacción, y los dos antes del primer
   // `await` (el push, que sale a un servicio externo).
-  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, fin } = {}) {
-    const r = motor.cerrarEjecucion(db, ejecucion, { fin });
+  // `sinPush`: el aviso queda en el panel pero no suena en el teléfono del
+  // administrador (rondas abandonadas hace días que se cierran de una vez).
+  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, automatico = false, sinPush = false, fin } = {}) {
+    const r = motor.cerrarEjecucion(db, ejecucion, { fin, automatico });
     const informe = armarInforme(db, ejecucion);
     if (!r.repetida) {
       const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
       let alerta = '';
       if (informe.estado === 'incompleta') alerta = '⚠️ ALERTA: ronda con puntos sin marcar\n\n';
       else if (informe.estado === 'sospechosa') alerta = '🔴 ALERTA: ronda con datos sospechosos\n\n';
-      const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n' : '';
+      const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n'
+        : automatico ? '(cerrada automáticamente: el teléfono no terminó la ronda)\n'
+        : '';
       store.transaccion(() => {
         store.ejecuciones.guardar(ejecucion);
         registrarAviso(store, condominio, alerta + nota + informeTexto(informe));
       });
-      if (informe.estado === 'incompleta') {
+      if (sinPush) {
+        // queda solo en el panel
+      } else if (informe.estado === 'incompleta') {
         const faltantes = informe.detalle.filter(d => d.faltante).map(d => d.nombre);
         await push.avisar(condominio, {
           titulo: `⚠️ Ronda incompleta — ${informe.guardia}`,
@@ -362,11 +368,15 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     const { codigo, ts, offline, gps } = req.body || {};
+    // Una ronda sin señal que el sistema dio por abandonada: el teléfono del
+    // guardia aparece con sus marcas y la ronda se reabre para recibirlas. La
+    // reapertura se guarda solo si la marca entra (y no era repetida).
+    const reabierta = ejecucion.guardiaId === req.usuario.id && motor.reabrirSiAutomatica(ejecucion);
     const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps });
     // presencia: cuando el rechazo es por GPS viaja el detalle (distancia y tope)
     // para que la app pueda explicarle al guardia cuánto le falta acercarse.
     if (r.error) return res.status(r.codigo).json({ error: r.error, presencia: r.presencia || null });
-    store.ejecuciones.guardar(ejecucion);
+    if (!(reabierta && r.duplicado)) store.ejecuciones.guardar(ejecucion);
     res.json({
       duplicado: Boolean(r.duplicado),
       punto: { id: r.punto.id, nombre: r.punto.nombre },
@@ -421,8 +431,31 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.post('/api/ejecuciones/:id/cerrar', auth, alerta(async (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
+    // El cierre de verdad, del teléfono, reemplaza al automático: trae la hora
+    // real de término y el informe se rehace con todo lo que llegó.
+    if (ejecucion.guardiaId === req.usuario.id) motor.reabrirSiAutomatica(ejecucion);
     res.json(await cerrarYNotificar(ejecucion, { fin: (req.body || {}).fin }));
   }));
+
+  // Cierra las rondas que quedaron "en curso" sin que el teléfono vuelva a dar
+  // señales (ver estaAbandonada en lib/rondas.js). Corre cada pocos minutos
+  // desde el arranque. Las abandonadas hace más de un día —las que ya estaban
+  // colgadas antes de esta versión— se cierran sin push: el primer arranque no
+  // puede despertar al administrador con veinte avisos viejos.
+  async function cerrarAbandonadas(ahora = Date.now()) {
+    const cerradas = [];
+    for (const ejecucion of store.ejecuciones.listar({ estado: 'en_curso' })) {
+      if (!motor.estaAbandonada(db, ejecucion, ahora)) continue;
+      const ultima = motor.ultimaActividad(ejecucion);
+      await cerrarYNotificar(ejecucion, {
+        automatico: true,
+        sinPush: ahora - ultima > 24 * 3600 * 1000,
+        fin: new Date(ultima || ahora).toISOString()
+      });
+      cerradas.push(ejecucion.id);
+    }
+    return cerradas;
+  }
 
   // ---------- Admin: en qué condominio se está parado ----------
 
@@ -1092,7 +1125,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
-  return { app, store, push };
+  return { app, store, push, cerrarAbandonadas };
 }
 
 if (require.main === module) {
@@ -1107,7 +1140,7 @@ if (require.main === module) {
     if (err.cause) console.error(err.cause);
     process.exit(1);
   }
-  const { app, store, push } = creado;
+  const { app, store, push, cerrarAbandonadas } = creado;
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
@@ -1122,6 +1155,12 @@ if (require.main === module) {
   });
   programador.iniciar(store); // respaldo diario de la base y envío semanal del informe por correo
   recordatorios.iniciar(store, push); // alarma de ronda a los teléfonos de cada condominio
+  // Rondas abandonadas: al arrancar y cada 5 min (lib/rondas.js, estaAbandonada).
+  const abandonadas = () => cerrarAbandonadas()
+    .then(ids => { if (ids.length) console.log(`[abandonadas] ${ids.length} ronda(s) cerrada(s) automáticamente`); })
+    .catch(e => console.warn('[abandonadas] error:', e.message));
+  abandonadas();
+  setInterval(abandonadas, 5 * 60000);
 }
 
 module.exports = { crearApp };

@@ -19,10 +19,11 @@ const publico = path.join(__dirname, '..', 'public');
 
 // Navegador de mentira: lo justo para que corran los dos <script>. Los elementos
 // del DOM no existen, y eso está bien: todo lo que pinta hace `if (!el) return`.
-function cargarApp() {
-  const almacen = {};
+function cargarApp({ almacen = {}, indexedDB, extras = {} } = {}) {
   let alFix = null;
   const ctx = {
+    ...(indexedDB ? { indexedDB } : {}),
+    ...extras,
     localStorage: {
       getItem: k => (k in almacen ? almacen[k] : null),
       setItem: (k, v) => { almacen[k] = v; },
@@ -102,7 +103,110 @@ test('el buffer de fixes NO se serializa a localStorage', () => {
   const guardado = app.ctx.localStorage.getItem('rondasqr');
   assert.ok(guardado, 'guardarEstado() no escribió nada');
   assert.deepEqual(Object.keys(JSON.parse(guardado)).sort(),
-    ['cola', 'ejecucion', 'paquete', 'sesion', 'ultimoInforme'],
+    // `rev` es el contador de guardados que decide entre localStorage y el
+    // respaldo en IndexedDB al arrancar (ver recuperarRespaldo en app.js).
+    ['cola', 'ejecucion', 'paquete', 'rev', 'sesion', 'ultimoInforme'],
     'apareció una clave nueva en el estado persistido: ¿se coló el buffer?');
   assert.ok(app.correr('bufferFixes.length') > 0, 'el buffer sí tiene lecturas — la prueba no es vacía');
+});
+
+// ---------- Respaldo en IndexedDB (la ronda sobrevive al apagón) ----------
+
+// IndexedDB de mentira: un Map, con los callbacks asíncronos como el real.
+function idbFalso(inicial = {}) {
+  const datos = new Map(Object.entries(inicial));
+  const durabilidades = [];
+  const db = {
+    transaction(_, modo, opciones) {
+      if (modo === 'readwrite') durabilidades.push(opciones && opciones.durability);
+      const tx = {
+        objectStore: () => ({
+          put(valor, clave) { datos.set(clave, valor); setTimeout(() => tx.oncomplete && tx.oncomplete()); },
+          get(clave) {
+            const pedido = {};
+            setTimeout(() => { pedido.result = datos.get(clave); pedido.onsuccess && pedido.onsuccess(); });
+            return pedido;
+          }
+        })
+      };
+      return tx;
+    },
+    objectStoreNames: { contains: () => true },
+    createObjectStore() {}
+  };
+  return {
+    datos,
+    durabilidades,
+    open() {
+      const pedido = { result: db };
+      setTimeout(() => pedido.onsuccess && pedido.onsuccess());
+      return pedido;
+    }
+  };
+}
+
+const esperar = () => new Promise(r => setTimeout(r, 5));
+const EJECUCION = '{"id":"e1","rondaId":"r1","inicio":"2026-09-30T02:00:00.000Z","escaneos":[{"puntoId":"p1"}],"cerrada":false}';
+
+test('respaldo: si localStorage quedó atrás (apagón), la ronda se recupera de IndexedDB', async () => {
+  const viejo = '{"sesion":{"token":"t"},"paquete":null,"ejecucion":null,"cola":[],"ultimoInforme":null,"rev":3}';
+  const nuevo = `{"sesion":{"token":"t"},"paquete":null,"ejecucion":${EJECUCION},"cola":[{"tipo":"escaneo"}],"ultimoInforme":null,"rev":9}`;
+  const idb = idbFalso({ actual: nuevo });
+  const app = cargarApp({ almacen: { rondasqr: viejo }, indexedDB: idb });
+  assert.equal(app.correr('estado.ejecucion'), null, 'arrancó con lo de localStorage');
+
+  const recuperada = await app.correr('recuperarRespaldo()');
+  assert.equal(recuperada, true, 'avisa que recuperó una ronda');
+  assert.equal(app.correr('estado.ejecucion.id'), 'e1');
+  assert.equal(app.correr('estado.cola.length'), 1, 'la cola sin enviar también vuelve');
+  assert.equal(JSON.parse(app.ctx.localStorage.getItem('rondasqr')).rev, 9, 'localStorage queda al día');
+});
+
+test('respaldo: si localStorage es igual o más nuevo, manda localStorage', async () => {
+  const local = `{"sesion":{"token":"t"},"paquete":null,"ejecucion":${EJECUCION},"cola":[],"ultimoInforme":null,"rev":12}`;
+  const idb = idbFalso({ actual: '{"sesion":{"token":"t"},"ejecucion":null,"cola":[],"rev":11}' });
+  const app = cargarApp({ almacen: { rondasqr: local }, indexedDB: idb });
+  assert.equal(await app.correr('recuperarRespaldo()'), false);
+  assert.equal(app.correr('estado.ejecucion.id'), 'e1');
+  await esperar();
+  assert.equal(JSON.parse(idb.datos.get('actual')).rev, 12, 'y se respalda lo de localStorage');
+});
+
+test('respaldo: cada guardado llega a IndexedDB con durabilidad estricta', async () => {
+  const idb = idbFalso();
+  const app = cargarApp({ indexedDB: idb });
+  app.correr(`estado.ejecucion = ${EJECUCION}; guardarEstado(); guardarEstado(); guardarEstado();`);
+  await esperar();
+  await esperar();
+  const guardado = JSON.parse(idb.datos.get('actual'));
+  assert.equal(guardado.rev, 3, 'queda el último guardado');
+  assert.equal(guardado.ejecucion.id, 'e1');
+  assert.ok(idb.durabilidades.length >= 1 && idb.durabilidades.every(d => d === 'strict'));
+});
+
+test('respaldo: salir no reinicia el contador (si no, el respaldo resucitaría la sesión)', async () => {
+  const idb = idbFalso();
+  const app = cargarApp({
+    indexedDB: idb,
+    extras: { fetch: () => Promise.reject(new Error('sin red')), confirm: () => true, clearInterval() {}, clearTimeout() {} }
+  });
+  app.correr(`estado.sesion = { token: 't' }; estado.ejecucion = ${EJECUCION}; estado.rev = 40;`);
+  try { app.correr('salir()'); } catch { /* el render sin DOM puede fallar: lo que importa es el estado */ }
+  await esperar();
+  await esperar();
+  const guardado = JSON.parse(idb.datos.get('actual'));
+  assert.equal(guardado.sesion, null);
+  assert.ok(guardado.rev > 40, `rev ${guardado.rev}: un rev menor perdería contra el respaldo viejo`);
+
+  // Y al volver a abrir, el respaldo no le gana a localStorage.
+  const otra = cargarApp({ almacen: { rondasqr: app.ctx.localStorage.getItem('rondasqr') }, indexedDB: idb });
+  assert.equal(await otra.correr('recuperarRespaldo()'), false);
+  assert.equal(otra.correr('estado.sesion'), null);
+});
+
+test('respaldo: sin IndexedDB (navegador viejo) la app sigue funcionando con localStorage', async () => {
+  const app = cargarApp();
+  app.correr('guardarEstado()');
+  assert.equal(await app.correr('recuperarRespaldo()'), false);
+  assert.ok(app.ctx.localStorage.getItem('rondasqr'));
 });
