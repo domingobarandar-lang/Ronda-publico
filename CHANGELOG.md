@@ -2,7 +2,9 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
-## 1.17.1 — 2026-09-30 · La ronda sobrevive al apagón
+## 1.17.1 — 2026-09-30 · La ronda sobrevive al apagón · Informe semanal sin incoherencias
+
+### La ronda sobrevive al apagón
 
 Con la app instalada como PWA, si el teléfono se apagaba a mitad de ronda, al volver a abrirla la ronda ya no estaba: el guardia empezaba otra y la primera quedaba **"en curso" para siempre**. Pasaba sobre todo con la ronda hecha sin señal: al servidor solo le había llegado el inicio. (En Kiosk Browser no pasaba: la app nunca sale de primer plano.)
 
@@ -15,6 +17,19 @@ Con la app instalada como PWA, si el teléfono se apagaba a mitad de ronda, al v
 - Las rondas abandonadas se cierran solas: sin actividad por `RONDA_ABANDONO_MIN` (120 por defecto) o el doble de la duración máxima de la ronda, si es más. Quedan como incompletas, con la observación "Cerrada automáticamente" y el aviso al administrador. Antes, una sola ronda colgada **callaba la alarma de ronda de todo el condominio**.
 - Si el teléfono aparece después con las marcas que traía sin señal, la ronda se reabre, las recibe y el cierre del teléfono reemplaza al automático. Un cierre del administrador no se reabre nunca.
 - Las colgadas de hace más de un día (las que ya existían antes de esta versión) se cierran en el primer arranque sin push, solo con el aviso en el panel.
+
+### Informe semanal sin incoherencias
+
+El informe decía "los puntos más cubiertos fueron X e Y; Z quedó al final del ranking" aunque todos los puntos tuvieran las mismas marcas: con empate, mandaba el orden en que se cargaron los puntos. Revisado entero; todas las frases salen de reglas fijas sobre los números (sin API).
+
+- **Puntos → cobertura**: la sección 4 pasa a "Cobertura por punto de control" (marcado / lo que tocaba marcar según las rondas realizadas, y cuántas veces faltó). Aparecen **todos** los puntos, también los que nadie marcó (antes se cortaba en 10 y un punto con 0 marcas no salía). Con empate se dice que es empate; un punto que está en menos rondas no sale "menos cubierto".
+- **Porcentajes honestos**: 100% de cumplimiento solo si no hubo incidencias (antes 299 de 300 redondeaba a 100%), 0% solo si es nada, y las partes suman 100. Las barras reparten los bloques igual.
+- Faltantes de una ronda incompleta: los que se evaluaron al cerrarla, no los de la ronda editada después.
+- Turno de un guardia con tantas rondas de día como de noche: "Día y noche" (antes, "Noche"). Plurales ("1 marcación"), "Semana del…" solo para un rango lunes-domingo.
+- **Incidencias en resumen**: la sección 5 ya no lista ronda por ronda; muestra cuántas incompletas y sospechosas hubo, el % sobre el total y de qué guardia. El detalle sigue en el panel (pestaña Informes).
+- **Gráfico de rondas por día y guardia** (sección 3): una barra apilada por día, un color por guardia (paleta validada para daltonismo; del 5.º guardia en adelante, "Otros" en gris), y debajo la misma información en una tabla guardia × día.
+- **Logo de Rondas QR** arriba a la izquierda del informe, junto al título.
+- `revisarCoherencia()` verifica que las secciones cuadren entre sí (y deja aviso en el log si no); `test/informe-semanal.test.js` lo prueba con el caso del empate y con 40 semanas de datos al azar.
 
 ## 1.17.0 — 2026-09-27 · Base de datos SQLite
 
