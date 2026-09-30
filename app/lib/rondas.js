@@ -418,17 +418,77 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
   return { punto, avance: avance(ejecucion, ronda) };
 }
 
-function cerrarEjecucion(db, ejecucion, { fin } = {}) {
+// `automatico`: la cerró el servidor porque el teléfono dejó de reportar
+// (ver cerrarAbandonadas en server.js). Queda marcada para poder reabrirla si
+// el teléfono aparece después con marcas que traía sin señal.
+function cerrarEjecucion(db, ejecucion, { fin, automatico = false } = {}) {
   if (ejecucion.estado !== 'en_curso') return { ejecucion, repetida: true };
   const ronda = rondaDe(db, ejecucion);
   ejecucion.fin = limpiarTs(fin);
   ejecucion.evaluacion = evaluar(db, ejecucion, ronda);
   const ev = ejecucion.evaluacion;
+  if (automatico) {
+    ejecucion.cierreAutomatico = true;
+    ev.observaciones.unshift('Cerrada automáticamente por el sistema: el teléfono no terminó la ronda '
+      + '(se apagó, se cerró la app o nunca volvió a tener señal). Muestra solo lo que alcanzó a llegar.');
+  } else {
+    delete ejecucion.cierreAutomatico;
+  }
   ejecucion.estado = ev.faltantes.length ? 'incompleta'
     : ev.sospechas.length ? 'sospechosa'
     : ev.observaciones.length ? 'completa_obs'
     : 'completa';
   return { ejecucion };
+}
+
+// ---------- Rondas abandonadas ----------
+//
+// Una ronda que el teléfono inició y nunca cerró quedaba "en curso" para
+// siempre: el informe no salía y, peor, la alarma de ronda de TODO el
+// condominio se callaba (lib/recordatorios.js no suena mientras haya una en
+// curso). Pasaba sobre todo con la ronda hecha sin señal: al servidor solo le
+// llegaba el inicio, y si el teléfono se apagaba y perdía la ronda, nadie la
+// cerraba nunca.
+//
+// Se da por abandonada cuando pasó el umbral desde la ÚLTIMA actividad que
+// llegó (inicio o última marca): RONDA_ABANDONO_MIN (120 por defecto), o el
+// doble de la duración máxima de la ronda si es más. Es generoso a propósito:
+// una ronda sin señal no manda nada hasta el final y no hay que confundirla
+// con una abandonada. Y si igual se confunde, se reabre (reabrirSiAutomatica).
+function umbralAbandonoMs(ronda) {
+  // 0 no es un umbral: cerraría toda ronda apenas empieza.
+  const base = numEnv('RONDA_ABANDONO_MIN', 120) || 120;
+  const porDuracion = ronda && ronda.duracionMaxMin ? 2 * Number(ronda.duracionMaxMin) : 0;
+  return Math.max(base, porDuracion || 0) * 60000;
+}
+
+// Lo último que el servidor supo de esta ronda. Las horas vienen del teléfono:
+// una que no se entienda no cuenta.
+function ultimaActividad(ejecucion) {
+  let ultima = Date.parse(ejecucion.inicio) || 0;
+  for (const e of ejecucion.escaneos || []) {
+    const t = Date.parse(e.ts);
+    if (t > ultima) ultima = t;
+  }
+  return ultima;
+}
+
+function estaAbandonada(db, ejecucion, ahora = Date.now()) {
+  if (ejecucion.estado !== 'en_curso') return false;
+  return ahora - ultimaActividad(ejecucion) >= umbralAbandonoMs(rondaDe(db, ejecucion));
+}
+
+// El teléfono apareció con datos de una ronda que el sistema cerró solo: era
+// una ronda sin señal, no una abandonada. Se vuelve a abrir para que entren
+// sus marcas y su cierre de verdad. Solo las que cerró el sistema: un cierre
+// del administrador es una decisión y no se deshace desde el teléfono.
+function reabrirSiAutomatica(ejecucion) {
+  if (ejecucion.estado === 'en_curso' || !ejecucion.cierreAutomatico) return false;
+  ejecucion.estado = 'en_curso';
+  ejecucion.fin = null;
+  ejecucion.evaluacion = null;
+  delete ejecucion.cierreAutomatico;
+  return true;
 }
 
 // `ronda` puede venir null: la eliminaron mientras la ejecución estaba abierta.
@@ -575,6 +635,7 @@ function nombres(db, puntoIds) {
 
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
+  estaAbandonada, ultimaActividad, umbralAbandonoMs, reabrirSiAutomatica,
   distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM,
   OCULTAR_SIN_CONEXION
 };

@@ -436,20 +436,133 @@ function evaluarPendiente(pendiente, fixNuevo, ahora) {
 }
 
 // ---------- Estado persistente ----------
+//
+// El estado vive en DOS lugares del teléfono:
+//   · localStorage: síncrono, es el que lee el arranque de un tirón.
+//   · IndexedDB (respaldo): con durabilidad ESTRICTA, o sea escrito al disco
+//     antes de darse por guardado.
+// ¿Por qué dos? Chrome no escribe localStorage al disco en el momento: junta
+// los cambios y los baja cada tanto. Con la app instalada (PWA), si el teléfono
+// se apagaba a mitad de ronda lo último guardado no alcanzaba a llegar al disco
+// y al volver a abrir la ronda ya no existía. Con la ronda hecha sin señal era
+// la ronda ENTERA: el servidor solo había recibido el inicio, así que quedaba
+// "en curso" para siempre y el guardia empezaba otra. (En Kiosk Browser no
+// pasaba porque la app nunca sale de primer plano.)
+//
+// Cada guardado sube `rev`; al arrancar gana la copia con el rev más alto. La
+// ronda terminada se va sola del respaldo: cuando el servidor confirma el
+// cierre, `ejecucion` queda en null y ese es el estado que se respalda.
+
+function estadoVacio() {
+  return { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null };
+}
 
 function cargarEstado() {
   try {
-    return Object.assign(
-      { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null },
-      JSON.parse(localStorage.getItem(CLAVE) || '{}')
-    );
+    return Object.assign(estadoVacio(), JSON.parse(localStorage.getItem(CLAVE) || '{}'));
   } catch {
-    return { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null };
+    return estadoVacio();
   }
 }
 
 function guardarEstado() {
-  localStorage.setItem(CLAVE, JSON.stringify(estado));
+  estado.rev = (estado.rev || 0) + 1;
+  const texto = JSON.stringify(estado);
+  // Si localStorage falla (sin espacio, bloqueado) igual queda el respaldo: no
+  // puede reventar una marca a mitad de camino.
+  try { localStorage.setItem(CLAVE, texto); } catch (err) { console.warn('localStorage:', err.message); }
+  respaldar(texto);
+}
+
+let respaldoDb = null;         // Promise<IDBDatabase|null>
+let respaldoPendiente = null;  // último texto por escribir (los intermedios sobran)
+let respaldoEscribiendo = false;
+
+function abrirRespaldo() {
+  if (!respaldoDb) {
+    respaldoDb = new Promise(resolve => {
+      try {
+        if (typeof indexedDB === 'undefined') return resolve(null);
+        const pedido = indexedDB.open(CLAVE, 1);
+        pedido.onupgradeneeded = () => pedido.result.createObjectStore('estado');
+        pedido.onsuccess = () => resolve(pedido.result);
+        pedido.onerror = () => resolve(null);
+        pedido.onblocked = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+  return respaldoDb;
+}
+
+// Escribe el último estado al respaldo. Si llegan varios guardados mientras se
+// escribe uno, solo se escribe el más nuevo: cada escritura estricta espera al
+// disco y no hay que encolarlas.
+async function respaldar(texto) {
+  respaldoPendiente = texto;
+  if (respaldoEscribiendo) return;
+  respaldoEscribiendo = true;
+  try {
+    const db = await abrirRespaldo();
+    while (db && respaldoPendiente !== null) {
+      const t = respaldoPendiente;
+      respaldoPendiente = null;
+      await new Promise(resolve => {
+        try {
+          const tx = db.transaction('estado', 'readwrite', { durability: 'strict' });
+          tx.objectStore('estado').put(t, 'actual');
+          tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+    respaldoPendiente = null;
+  } finally {
+    respaldoEscribiendo = false;
+  }
+}
+
+function leerRespaldo(db) {
+  return new Promise(resolve => {
+    try {
+      const pedido = db.transaction('estado', 'readonly').objectStore('estado').get('actual');
+      pedido.onsuccess = () => resolve(pedido.result || null);
+      pedido.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Al arrancar, antes del primer render: si el respaldo es más nuevo que
+// localStorage (el teléfono se apagó antes de que Chrome bajara localStorage
+// al disco), manda el respaldo. Devuelve true si recuperó una ronda en curso.
+async function recuperarRespaldo() {
+  const db = await abrirRespaldo();
+  if (!db) return false;
+  const texto = await leerRespaldo(db);
+  let copia = null;
+  try { copia = texto ? JSON.parse(texto) : null; } catch { copia = null; }
+  if (!copia || (copia.rev || 0) <= (estado.rev || 0)) {
+    // localStorage es igual o más nuevo: se respalda tal cual (también cubre el
+    // primer arranque de esta versión, que todavía no tiene respaldo).
+    if (estado.sesion || estado.ejecucion || estado.cola.length) respaldar(JSON.stringify(estado));
+    return false;
+  }
+  const teniaRonda = Boolean(estado.ejecucion && !estado.ejecucion.cerrada);
+  estado = Object.assign(estadoVacio(), copia);
+  try { localStorage.setItem(CLAVE, texto); } catch {}
+  return !teniaRonda && Boolean(estado.ejecucion && !estado.ejecucion.cerrada);
+}
+
+// Pide que el navegador no borre los datos de la app para hacer espacio. En
+// una PWA instalada Chrome suele concederlo solo; si no, no cambia nada.
+function pedirAlmacenamientoPersistente() {
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  } catch {}
 }
 
 // ---------- Utilidades ----------
@@ -537,6 +650,7 @@ async function iniciarSesionGuardia(usuario, pin) {
   }
   estado.sesion = r;
   guardarEstado();
+  pedirAlmacenamientoPersistente();
   await bajarPaquete(true);
   render();
 }
@@ -611,7 +725,9 @@ function salir() {
   olvidarPendiente();
   detenerGps();
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
-  estado = { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null };
+  // El rev sigue subiendo: si volviera a 0, al próximo arranque el respaldo
+  // (con la sesión vieja) le ganaría a este estado vacío.
+  estado = Object.assign(estadoVacio(), { rev: estado.rev });
   guardarEstado();
   render();
 }
@@ -1382,22 +1498,34 @@ document.addEventListener('DOMContentLoaded', () => {
   // con el GPS técnicamente encendido. También se re-pide el Wake Lock, que el
   // sistema libera solo al ocultarse la página.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !estado.sesion) return;
+    // Al ir a segundo plano (pantalla apagada, otra app) se vuelve a guardar:
+    // es el último momento seguro antes de que Android mate la app o se apague.
+    if (document.visibilityState === 'hidden') {
+      if (estado.ejecucion || estado.cola.length) guardarEstado();
+      return;
+    }
+    if (!estado.sesion) return;
     if (gpsWatchId === null || !gpsFresco()) reiniciarGps();
     if (estado.ejecucion && !estado.ejecucion.cerrada) pedirWakeLock();
     pintarGps();
     pintarGpsInicio();
   });
 
-  window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
-  window.addEventListener('offline', pintarConexion);
-  setInterval(sincronizar, 4000);
-  // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
-  // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
-  setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
-
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-  render();
-  sincronizar();
+  // Primero se recupera el respaldo y recién ahí arranca todo lo que lee o
+  // escribe `estado`: sincronizar con el estado viejo podría mandar dos veces
+  // o perder la cola que traía el respaldo.
+  recuperarRespaldo().catch(() => false).then(recuperada => {
+    if (estado.sesion) pedirAlmacenamientoPersistente();
+    window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
+    window.addEventListener('offline', pintarConexion);
+    setInterval(sincronizar, 4000);
+    // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
+    // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
+    setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
+    render();
+    if (recuperada) aviso('Se recuperó tu ronda en curso: sigue donde quedaste.', 'ok', 6000);
+    sincronizar();
+  });
 });
