@@ -609,6 +609,9 @@ async function cargarGuardias() {
       <td><code>${esc(g.usuario)}</code></td>
       <td>
         <button class="btn btn-borde btn-chico" data-pin="${g.id}">Nuevo PIN</button>
+        ${g.usuario === 'domingo_baranda'
+          ? `<button class="btn btn-peligro btn-chico" data-borrar-rondas="${g.id}" data-nombre="${esc(g.nombre || g.usuario)}">Borrar rondas</button>`
+          : ''}
         <button class="btn btn-peligro btn-chico" data-eliminar="${g.id}">Eliminar</button>
       </td>
     </tr>`).join('');
@@ -624,6 +627,15 @@ async function cargarGuardias() {
       try {
         await api(`/api/admin/guardias/${btn.dataset.pin}`, { metodo: 'PUT', cuerpo: { pin } });
         aviso('PIN actualizado.');
+      } catch (err) { aviso(err.message, 'error'); }
+    });
+  }
+  for (const btn of $('tabla-guardias').querySelectorAll('[data-borrar-rondas]')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`¿Borrar TODAS las rondas e informes hechos por "${btn.dataset.nombre}"?\n\nNo se puede deshacer. El guardia sigue pudiendo entrar.`)) return;
+      try {
+        const r = await api(`/api/admin/guardias/${btn.dataset.borrarRondas}/ejecuciones`, { metodo: 'DELETE' });
+        aviso(`${r.eliminadas} ronda(s) borrada(s).`);
       } catch (err) { aviso(err.message, 'error'); }
     });
   }
