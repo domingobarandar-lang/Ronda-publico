@@ -676,6 +676,24 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ ok: true });
   });
 
+  // Borra TODAS las rondas hechas (ejecuciones e informes) por el usuario de
+  // pruebas. Solo ese: las rondas de los guardias reales no se pueden borrar
+  // por acá. El usuario sigue existiendo. No se puede deshacer.
+  const USUARIO_DE_PRUEBAS = 'domingo_baranda';
+  app.delete('/api/admin/guardias/:id/ejecuciones', ...admin, (req, res) => {
+    const guardia = db.usuarios.find(u => u.id === req.params.id && u.condominioId === miCondominio(req) && u.rol === 'guardia');
+    if (!guardia) return res.status(404).json({ error: 'El guardia no existe.' });
+    if (guardia.usuario !== USUARIO_DE_PRUEBAS) {
+      return res.status(403).json({ error: 'Solo se pueden borrar las rondas del usuario de pruebas.' });
+    }
+    const propias = store.ejecuciones.listar({ condominioId: miCondominio(req) })
+      .filter(e => e.guardiaId === guardia.id);
+    if (propias.length) {
+      store.transaccion(() => { for (const e of propias) store.ejecuciones.eliminar(e.id); });
+    }
+    res.json({ ok: true, eliminadas: propias.length });
+  });
+
   // ---------- Admin: rondas ----------
 
   app.get('/api/admin/rondas', ...admin, (req, res) => {
