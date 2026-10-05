@@ -11,7 +11,7 @@ Requisito de Google Play: si la cuenta se crea dentro de la app, tiene que poder
 - No deja borrar con una ronda en curso o marcas sin enviar (se perderían).
 
 **Página pública** `/eliminar-cuenta.html`
-- Sin login. Explica cómo hacerlo desde la app y trae un formulario usuario + PIN. Muestra el correo de contacto `CONTACTO_PRIVACIDAD` (nueva variable de entorno) y enlaza `/privacidad.html`.
+- Sin login. Explica cómo hacerlo desde la app y trae un formulario usuario + PIN. Muestra el contacto `CONTACTO_PRIVACIDAD` (nueva variable de entorno: teléfono con WhatsApp y llamada, o correo) y enlaza `/privacidad.html`.
 
 **Servidor**
 - `DELETE /api/mi/cuenta` (con sesión + PIN) y `POST /api/cuenta/eliminar` (usuario + PIN). Comparten el tope de intentos con el login. Solo cuentas de guardia: admin, fábrica y acceso total reciben 403.
@@ -19,7 +19,7 @@ Requisito de Google Play: si la cuenta se crea dentro de la app, tiene que poder
 - Eliminar un guardia desde el panel hace lo mismo (antes dejaba su nombre en los avisos ya escritos).
 - Los respaldos no se reescriben: lo borrado sale de ellos al rotar (14 días). Las copias por correo de `RESPALDO_TO` hay que borrarlas en el buzón con el mismo plazo — ver `entrega/OPERACION.md`.
 
-**Al desplegar**: definir `CONTACTO_PRIVACIDAD` en Railway.
+**Al desplegar**: definir `CONTACTO_PRIVACIDAD=+56911112222` en Railway.
 
 ## 1.17.1 — 2026-09-30 · La ronda sobrevive al apagón · Informe semanal sin incoherencias
 

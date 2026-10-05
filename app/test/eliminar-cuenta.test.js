@@ -255,14 +255,18 @@ test('página pública: se sirve sin login, enlaza la política y muestra el con
   assert.match(html, /\/api\/cuenta\/eliminar/);
   assert.match(html, /href="\/privacidad.html"/);
   assert.match(html, /\/api\/cuenta\/contacto/);
-  assert.ok(!html.includes('@rondas-qr.app'), 'el correo no va escrito en la página');
+  assert.ok(!html.includes('975202366'), 'el contacto no va escrito en la página');
 
   const antes = process.env.CONTACTO_PRIVACIDAD;
   try {
+    process.env.CONTACTO_PRIVACIDAD = '+56911112222';
+    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: null, telefono: '+56911112222' });
+    process.env.CONTACTO_PRIVACIDAD = '+56 9 1111 2222';
+    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: null, telefono: '+56911112222' });
     process.env.CONTACTO_PRIVACIDAD = 'privacidad@ejemplo.cl';
-    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: 'privacidad@ejemplo.cl' });
-    process.env.CONTACTO_PRIVACIDAD = 'no es un correo';
-    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: null });
+    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: 'privacidad@ejemplo.cl', telefono: null });
+    process.env.CONTACTO_PRIVACIDAD = 'no es un contacto';
+    assert.deepEqual((await api('/api/cuenta/contacto')).datos, { correo: null, telefono: null });
   } finally {
     if (antes === undefined) delete process.env.CONTACTO_PRIVACIDAD;
     else process.env.CONTACTO_PRIVACIDAD = antes;

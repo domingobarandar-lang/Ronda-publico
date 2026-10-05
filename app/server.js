@@ -308,11 +308,16 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json(await borrarCuentaGuardia(u));
   }));
 
-  // Correo de contacto para pedir la eliminación sin usuario o sin PIN. Viene
-  // del entorno (CONTACTO_PRIVACIDAD) para no dejarlo escrito en la página.
+  // Contacto para pedir la eliminación sin usuario o sin PIN: un correo o un
+  // teléfono (+56…). Viene del entorno (CONTACTO_PRIVACIDAD) para no dejarlo
+  // escrito en la página. Lo que no sea ninguno de los dos no se muestra.
   app.get('/api/cuenta/contacto', (req, res) => {
-    const correoContacto = String(process.env.CONTACTO_PRIVACIDAD || '').trim();
-    res.json({ correo: esCorreo(correoContacto) ? correoContacto : null });
+    const contacto = String(process.env.CONTACTO_PRIVACIDAD || '').trim();
+    const digitos = contacto.replace(/[\s().-]/g, '');
+    res.json({
+      correo: esCorreo(contacto) ? contacto : null,
+      telefono: /^\+?\d{8,15}$/.test(digitos) ? digitos : null
+    });
   });
 
   // ---------- Guardia: paquete de rondas descargable ----------

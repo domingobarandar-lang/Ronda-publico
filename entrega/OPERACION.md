@@ -82,7 +82,7 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 Google Play exige que quien crea su cuenta dentro de la app pueda eliminarla. El guardia puede hacerlo de dos formas:
 
 - **Desde la app**: pantalla de rondas → abajo, "Eliminar mi cuenta" → escribe su PIN. La app **no lo deja** si tiene una ronda en curso o marcas sin enviar (esas marcas solo están en su teléfono).
-- **Sin la app**: `https://<servidor>/eliminar-cuenta.html`, con usuario + PIN. Es la dirección que se declara en Google Play y la que enlaza la política de privacidad. Tiene el mismo tope de intentos que el login (5 PIN malos por usuario e IP bloquean 15 min, y el bloqueo vale también para el login). Si no recuerda usuario o PIN, la página muestra el correo `CONTACTO_PRIVACIDAD` (variable de entorno; sin ella le dice que se lo pida a su administrador).
+- **Sin la app**: `https://<servidor>/eliminar-cuenta.html`, con usuario + PIN. Es la dirección que se declara en Google Play y la que enlaza la política de privacidad. Tiene el mismo tope de intentos que el login (5 PIN malos por usuario e IP bloquean 15 min, y el bloqueo vale también para el login). Si no recuerda usuario o PIN, la página muestra el contacto `CONTACTO_PRIVACIDAD` (variable de entorno, hoy `+56911112222`: la página ofrece WhatsApp y llamada; también acepta un correo. Sin ella le dice que se lo pida a su administrador).
 
 Las cuentas de administrador, fábrica y acceso total **no** se borran por ahí (responde que solo las de guardia).
 
