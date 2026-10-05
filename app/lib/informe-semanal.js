@@ -11,6 +11,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { TZ, isoChile, horaChile, esFecha, sumarDias } = require('./fechas-chile');
+const { nombreGuardia } = require('./cuenta');
 
 // ---------- Paleta ----------
 const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B8B', ZEBRA = 'F5F3F8';
@@ -159,7 +160,7 @@ function calcular(store, opciones = {}) {
     const u = usuarios.get(e.guardiaId);
     if (!u) sinIdentificar += nMarc;
     const clave = u ? e.guardiaId : '(eliminado)';
-    if (!porGuardia.has(clave)) porGuardia.set(clave, { clave, nombre: u ? (u.nombre || u.usuario) : '(guardia eliminado)', marc: 0, rondas: 0, completas: 0, incompletas: 0, sospechosas: 0, dia: 0, noche: 0 });
+    if (!porGuardia.has(clave)) porGuardia.set(clave, { clave, nombre: nombreGuardia(u), marc: 0, rondas: 0, completas: 0, incompletas: 0, sospechosas: 0, dia: 0, noche: 0 });
     const g = porGuardia.get(clave);
     g.marc += nMarc; g.rondas++; g[estado === 'completa' ? 'completas' : estado + 's']++;
     if (esDia) g.dia++; else g.noche++;
@@ -201,7 +202,7 @@ function calcular(store, opciones = {}) {
         const falt = (ev.faltantes || []).map(nombrePunto);
         detalle = falt.length ? `Faltó marcar: ${falt.join(', ')}.` : 'Quedaron puntos sin marcar.';
       }
-      return { fecha: fechaHoraChile(e.inicio), guardia: u ? (u.nombre || u.usuario) : '(guardia eliminado)', tipo, tipoColor, detalle };
+      return { fecha: fechaHoraChile(e.inicio), guardia: nombreGuardia(u), tipo, tipoColor, detalle };
     });
 
   // Resumen de incidencias: cuántas de cada tipo y de qué guardia (el detalle

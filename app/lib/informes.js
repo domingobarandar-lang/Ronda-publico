@@ -2,6 +2,7 @@
 // (para el registro de avisos y la consola). El HTML imprimible lo arma el navegador en
 // public/informe.html a partir del JSON.
 const { OCULTAR_SIN_CONEXION } = require('./rondas'); // TEMPORAL, ver lib/rondas.js
+const { nombreGuardia } = require('./cuenta');
 
 const ETIQUETAS = {
   completa: 'Completa',
@@ -14,7 +15,8 @@ const ETIQUETAS = {
 function armarInforme(db, ejecucion) {
   const ronda = db.rondas.find(r => r.id === ejecucion.rondaId) || { puntoIds: [] };
   const condominio = db.condominios.find(c => c.id === ejecucion.condominioId) || {};
-  const guardia = db.usuarios.find(u => u.id === ejecucion.guardiaId) || {};
+  // Sin usuario (la cuenta se eliminó): "Guardia eliminado", nunca undefined.
+  const guardia = db.usuarios.find(u => u.id === ejecucion.guardiaId);
   const escaneosPorPunto = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
 
   const lejosIds = new Set(((ejecucion.evaluacion || {}).gpsLejos || []).map(l => l.puntoId));
@@ -43,7 +45,7 @@ function armarInforme(db, ejecucion) {
     id: ejecucion.id,
     condominio: condominio.nombre,
     ronda: ronda.nombre,
-    guardia: guardia.nombre || guardia.usuario,
+    guardia: nombreGuardia(guardia),
     inicio: ejecucion.inicio,
     fin: ejecucion.fin,
     estado: ejecucion.estado,

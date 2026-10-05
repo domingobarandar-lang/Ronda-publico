@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0e13">
+  <title>Eliminar tu cuenta — Rondas QR</title>
+  <meta name="description" content="Cómo eliminar tu cuenta de guardia de Rondas QR, desde la app o desde esta página.">
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="estilos.css">
+  <style>
+    h2 { margin-top: var(--esp-6); }
+    ol { padding-left: 22px; line-height: 1.7; }
+    .marca { display: flex; gap: 10px; align-items: flex-start; color: var(--texto); }
+    .marca input { width: auto; margin-top: 4px; }
+    .listo { text-align: center; }
+  </style>
+</head>
+<body>
+  <!-- Página pública, sin login (CU-25). Google Play exige que quien creó su
+       cuenta dentro de la app pueda pedir su eliminación sin tenerla instalada.
+       La política de privacidad enlaza acá: no mover esta ruta. -->
+  <header class="cabecera">
+    <div class="cabecera-titulo">🛡️ Rondas QR</div>
+  </header>
+
+  <main>
+    <h1>Eliminar tu cuenta</h1>
+    <p class="nota">Esta página es para los guardias que crearon su usuario en la app Rondas QR. Las cuentas de administrador no se eliminan desde acá: escribe al correo de contacto de más abajo.</p>
+
+    <h2>Desde la app</h2>
+    <ol>
+      <li>Abre Rondas QR y entra con tu usuario y PIN.</li>
+      <li>En la pantalla de rondas, baja hasta el final y toca <strong>Eliminar mi cuenta</strong>.</li>
+      <li>Escribe tu PIN y confirma.</li>
+    </ol>
+    <p class="nota">Si tienes una ronda en curso o marcas sin enviar, la app te pide terminarla primero para no perder esas marcas.</p>
+
+    <h2>Sin la app</h2>
+    <section id="formulario">
+      <p class="nota">Si ya no tienes la app o el teléfono, puedes eliminarla acá con tu usuario y PIN.</p>
+      <label>Usuario
+        <input id="usuario" autocomplete="username" autocapitalize="none" placeholder="ej: pedro">
+      </label>
+      <label>PIN
+        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
+      </label>
+      <label class="marca">
+        <input id="entiendo" type="checkbox">
+        <span>Entiendo que la eliminación es definitiva y no se puede deshacer.</span>
+      </label>
+      <button id="btn-eliminar" class="btn btn-peligro">Eliminar mi cuenta</button>
+      <p id="error" class="error oculta" role="alert"></p>
+    </section>
+    <section id="listo" class="oculta listo">
+      <div class="caja">✅ <strong>Tu cuenta fue eliminada.</strong><br>Ya no puedes entrar con ese usuario. Si tenías la app instalada, puedes desinstalarla.</div>
+    </section>
+
+    <h2>Qué se borra y qué se conserva</h2>
+    <div class="caja caja-peligro">
+      <strong>Se borra de inmediato:</strong> tu usuario, tu nombre y tu PIN (guardado cifrado), todas tus sesiones abiertas y las notificaciones registradas a tu nombre.
+    </div>
+    <div class="caja">
+      <strong>Se conserva, sin tu nombre:</strong> las rondas que ya hiciste. Son registros de control del condominio donde trabajaste, así que quedan en sus informes como «Guardia eliminado», con la hora y la ubicación de cada punto marcado, pero sin ningún dato que te identifique. Si tenías una ronda en curso, se cierra y queda en el informe igual que una ronda terminada.
+    </div>
+    <p class="nota">Las copias de respaldo del sistema se renuevan solas cada día y se conservan 14 días: tus datos borrados desaparecen de ellas en ese plazo.</p>
+
+    <h2>¿No recuerdas tu usuario o tu PIN?</h2>
+    <p id="contacto" class="nota">Pídele a tu administrador que elimine tu usuario desde el panel.</p>
+
+    <p class="nota centrado"><a href="/privacidad.html">Política de privacidad</a> · <a href="/">Abrir la app</a></p>
+  </main>
+
+  <div id="aviso" class="aviso oculta"></div>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+
+    function error(texto) {
+      $('error').textContent = texto;
+      $('error').classList.remove('oculta');
+    }
+
+    async function eliminar() {
+      $('error').classList.add('oculta');
+      const usuario = $('usuario').value.trim().toLowerCase();
+      const pin = $('pin').value.trim();
+      if (!usuario || !pin) return error('Escribe tu usuario y tu PIN.');
+      if (!$('entiendo').checked) return error('Marca la casilla para confirmar que entiendes que no se puede deshacer.');
+      const btn = $('btn-eliminar');
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/api/cuenta/eliminar', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ usuario, pin })
+        });
+        const datos = await resp.json().catch(() => ({}));
+        if (!resp.ok) return error(datos.error || `Error ${resp.status}. Vuelve a intentar.`);
+        $('formulario').classList.add('oculta');
+        $('listo').classList.remove('oculta');
+      } catch {
+        error('No se pudo conectar al servidor. Revisa tu conexión y vuelve a intentar.');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // El correo de contacto viene del servidor (CONTACTO_PRIVACIDAD): no queda
+    // escrito en la página.
+    async function cargarContacto() {
+      try {
+        const { correo } = await (await fetch('/api/cuenta/contacto')).json();
+        if (!correo) return;
+        const p = $('contacto');
+        p.textContent = 'Escríbenos a ';
+        const a = document.createElement('a');
+        a.href = `mailto:${correo}?subject=${encodeURIComponent('Eliminar mi cuenta de Rondas QR')}`;
+        a.textContent = correo;
+        p.append(a, ' indicando tu nombre y el condominio donde trabajabas. También puedes pedirle a tu administrador que elimine tu usuario desde el panel.');
+      } catch { /* queda el texto por defecto */ }
+    }
+
+    $('btn-eliminar').addEventListener('click', eliminar);
+    $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminar(); });
+    cargarContacto();
+  </script>
+</body>
+</html>

@@ -210,3 +210,49 @@ test('respaldo: sin IndexedDB (navegador viejo) la app sigue funcionando con loc
   assert.equal(await app.correr('recuperarRespaldo()'), false);
   assert.ok(app.ctx.localStorage.getItem('rondasqr'));
 });
+
+// ---------- Eliminar mi cuenta (CU-25) ----------
+
+test('eliminar cuenta: el teléfono queda sin sesión, sin paquete, sin respaldo y sin alarma', async () => {
+  const conSesion = `{"sesion":{"token":"t","usuario":"pedro"},"paquete":{"rondas":[{"id":"r1","puntos":[{"payload":"RQR:aromos:p1:PRT234"}]}]},"ejecucion":null,"cola":[],"ultimoInforme":null,"rev":20}`;
+  const idb = idbFalso({ actual: conSesion });
+  let borrada = null;
+  idb.deleteDatabase = nombre => {
+    borrada = nombre;
+    const pedido = {};
+    setTimeout(() => pedido.onsuccess && pedido.onsuccess());
+    return pedido;
+  };
+  const app = cargarApp({ almacen: { rondasqr: conSesion }, indexedDB: idb, extras: { clearInterval() {}, clearTimeout() {} } });
+  // Push disponible y con la alarma activada en este teléfono.
+  let desuscrito = false;
+  app.ctx.PushManager = function () {};
+  app.ctx.Notification = { permission: 'granted' };
+  app.ctx.navigator.serviceWorker = {
+    ready: Promise.resolve({ pushManager: { getSubscription: async () => ({ unsubscribe: async () => { desuscrito = true; } }) } })
+  };
+
+  await app.correr('borrarDatosLocales()');
+  assert.equal(app.ctx.localStorage.getItem('rondasqr'), null, 'localStorage quedó con datos');
+  assert.equal(borrada, 'rondasqr', 'no se borró la base de IndexedDB');
+  assert.equal(desuscrito, true, 'la alarma sigue suscrita en el teléfono');
+  assert.equal(app.correr('estado.sesion'), null);
+  assert.equal(app.correr('estado.paquete'), null, 'el paquete trae los códigos de los QR: no puede quedar');
+  // Aunque la base no se hubiera podido borrar, lo que quedó en el respaldo es
+  // un estado vacío más nuevo: al abrir de nuevo no resucita la sesión.
+  const guardado = JSON.parse(idb.datos.get('actual'));
+  assert.equal(guardado.sesion, null);
+  assert.ok(guardado.rev > 20);
+  const otra = cargarApp({ indexedDB: idb });
+  assert.equal(await otra.correr('recuperarRespaldo()'), false);
+  assert.equal(otra.correr('estado.sesion'), null);
+});
+
+test('eliminar cuenta: con ronda abierta o marcas sin enviar, la app no deja borrar', () => {
+  const app = cargarApp();
+  assert.equal(app.correr('motivoParaNoEliminar()'), null);
+  app.correr(`estado.ejecucion = ${EJECUCION};`);
+  assert.match(app.correr('motivoParaNoEliminar()'), /ronda en curso/);
+  app.correr('estado.ejecucion.cerrada = true; estado.cola = [{ tipo: "escaneo" }];');
+  assert.match(app.correr('motivoParaNoEliminar()'), /marcas sin enviar/);
+});

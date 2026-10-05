@@ -67,6 +67,16 @@ Tres piezas, una sola app Node:
   5. **Los rechazos se registran** (`POST /api/ejecuciones/:id/rechazos`). Hasta ahora morían en el teléfono, y por eso los umbrales de v1.13 se ajustaron a ciegas.
   - Como `acc` pasa a ser un número que **calcula la app** y no uno que declara el navegador, el servidor le aplica un piso (`GPS_PRECISION_MIN_M`, 3 m) antes de creerle: un error en la fórmula que devolviera ±1 m aflojaría el margen de cada marca del sistema, y el test de paridad no lo vería —los dos lados coincidirían en el número equivocado—.
 
+- **CU-25 El guardia elimina su cuenta** *(v1.18)*: requisito de Google Play para cuentas creadas dentro de la app (`POST /api/registro`).
+  1. **En la app**: "Eliminar mi cuenta" (abajo en la pantalla de rondas) → pantalla que explica qué se borra y qué no → PIN → `DELETE /api/mi/cuenta`. Al terminar, el teléfono borra su estado (localStorage, respaldo en IndexedDB, cola), se desuscribe de la alarma y vuelve al login con un aviso. La app no deja borrar con una ronda abierta o marcas sin enviar: solo existen en el teléfono.
+  2. **Sin la app**: página pública `/eliminar-cuenta.html` (sin login) con usuario + PIN → `POST /api/cuenta/eliminar`; muestra el correo `CONTACTO_PRIVACIDAD` (vía `GET /api/cuenta/contacto`) para quien no recuerda sus datos y enlaza `/privacidad.html`.
+  - Las dos vías piden el PIN y comparten el contador de fallos con el login (5 fallos por usuario + IP → 15 min de bloqueo para las tres). Usuario inexistente y PIN malo dan el mismo error. Solo rol `guardia`: admin, fábrica y acceso total reciben 403.
+  - **Se borra**: el usuario (usuario, nombre, hash del PIN), todas sus sesiones (sus tokens dejan de servir de inmediato) y sus suscripciones push.
+  - **Se conserva anonimizado**: sus ejecuciones, que son del condominio (control laboral del empleador). `guardiaId` pasa a `null` con `guardiaEliminado: true`; informes, panel, avisos e informe semanal muestran **"Guardia eliminado"**, sin nombre ni usuario. Los avisos ya escritos se reescriben (línea "Guardia: …" y título del push). Las ubicaciones GPS de las marcas se quedan: son evidencia del punto, sin vínculo a una persona.
+  - **Ronda en curso**: se cierra con el cierre normal (evaluación, informe, aviso y push al administrador) con la nota "(cerrada al eliminar el guardia su cuenta)". Se eligió cerrar y no rechazar porque la página pública es para quien ya no tiene el teléfono y no tendría cómo cerrarla.
+  - El borrado de un guardia desde el panel del administrador hace lo mismo.
+  - **Respaldos**: no se reescriben; lo borrado sale de ellos cuando rotan (`RESPALDO_CONSERVAR`, 14 días en el volumen). Las copias por correo dependen de que el buzón `RESPALDO_TO` borre las de más de 14 días (ver `entrega/OPERACION.md`).
+
 ## Reglas de negocio
 
 - **QR = punto**: payload `RQR:<condominioId>:<puntoId>:<codigoCorto>`. El código corto (6 caracteres, sin ambiguos 0/O/1/I) va impreso bajo el QR y sirve para la entrada manual.
@@ -83,7 +93,7 @@ Tres piezas, una sola app Node:
 - `usuarios`: id, condominioId, usuario, pinHash, rol (`guardia`|`admin`), nombre.
 - `puntos`: id, condominioId, nombre, codigoCorto; `lat`/`lon` si tiene verificación de presencia; `verificacion` (`'anclaje'`, o ausente = ubicación exacta); `radioM`/`ventanaMin` opcionales por punto. El modo se **deduce**: sin lat/lon no se verifica, con lat/lon y sin `verificacion` es exacto. Así los puntos que ya existían siguen funcionando sin migración.
 - `rondas` (plantillas): id, condominioId, nombre, puntoIds (ordenados), ordenEstricto, duracionMaxMin.
-- `ejecuciones`: id, rondaId, condominioId, guardiaId, inicio, fin, estado, escaneos [{puntoId, ts, offline, gps {lat, lon, acc, edadMs}, distanciaM, anclado, edadGpsMs}], evaluacion {faltantes, fueraDeOrden, gpsLejos, sinGps, rafaga, duracionMin, observaciones, sospechas}.
+- `ejecuciones`: id, rondaId, condominioId, guardiaId (`null` si el guardia eliminó su cuenta, con `guardiaEliminado: true`), inicio, fin, estado, escaneos [{puntoId, ts, offline, gps {lat, lon, acc, edadMs}, distanciaM, anclado, edadGpsMs}], evaluacion {faltantes, fueraDeOrden, gpsLejos, sinGps, rafaga, duracionMin, observaciones, sospechas}.
 - `notificaciones`: ts, condominioId, texto, medio (`registro`|`push`), enviada, dispositivos {ok, total}, error. El panel muestra las últimas 50 del condominio.
 - **Persistencia (v1.17)**: SQLite con `node:sqlite` (viene con Node 24: cero dependencias nativas), un solo archivo en el volumen, modo WAL. Híbrido por tamaño de colección:
   - Lo chico y acotado (condominios, usuarios, puntos, rondas, sesiones, suscripciones push, claves VAPID, estado del informe y del respaldo) vive **en memoria** y se persiste en la tabla `estado` (una fila por colección, con su JSON). Guardar escribe solo las colecciones que cambiaron.

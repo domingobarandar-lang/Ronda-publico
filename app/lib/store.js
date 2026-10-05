@@ -159,6 +159,7 @@ function crearStore(rutaArchivo, opciones = {}) {
         estado = excluded.estado, datos = excluded.datos`),
     ejecQuitar: sql.prepare('DELETE FROM ejecuciones WHERE id = ?'),
     ejecQuitarCondo: sql.prepare('DELETE FROM ejecuciones WHERE condominio_id = ?'),
+    ejecDeGuardia: sql.prepare('SELECT datos FROM ejecuciones WHERE guardia_id = ? ORDER BY rowid'),
     ejecUltima: sql.prepare('SELECT datos FROM ejecuciones WHERE condominio_id = ? ORDER BY inicio DESC LIMIT 1'),
     ejecContar: sql.prepare('SELECT COUNT(*) AS n FROM ejecuciones'),
     ejecContarCondo: sql.prepare('SELECT COUNT(*) AS n FROM ejecuciones WHERE condominio_id = ?'),
@@ -168,7 +169,9 @@ function crearStore(rutaArchivo, opciones = {}) {
     notifQuitarCondo: sql.prepare('DELETE FROM notificaciones WHERE condominio_id = ?'),
     notifContar: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones'),
     notifContarCondo: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones WHERE condominio_id = ?'),
-    notifTodas: sql.prepare('SELECT datos FROM notificaciones ORDER BY id')
+    notifTodas: sql.prepare('SELECT datos FROM notificaciones ORDER BY id'),
+    notifDeCondo: sql.prepare('SELECT id, datos FROM notificaciones WHERE condominio_id = ? ORDER BY id'),
+    notifReemplazar: sql.prepare('UPDATE notificaciones SET datos = ? WHERE id = ?')
   };
 
   // ---------- Repositorio de ejecuciones ----------
@@ -228,6 +231,11 @@ function crearStore(rutaArchivo, opciones = {}) {
     // Para las purgas de un condominio completo. Devuelve cuántas borró.
     eliminarDeCondominio(condominioId) {
       return Number(st.ejecQuitarCondo.run(String(condominioId)).changes);
+    },
+    // Todas las de un guardia (para anonimizarlas cuando borra su cuenta). Sin
+    // índice por guardia a propósito: pasa una vez por cuenta borrada.
+    deGuardia(guardiaId) {
+      return st.ejecDeGuardia.all(String(guardiaId)).map(f => JSON.parse(f.datos));
     }
   };
 
@@ -247,6 +255,20 @@ function crearStore(rutaArchivo, opciones = {}) {
     },
     eliminarDeCondominio(condominioId) {
       return Number(st.notifQuitarCondo.run(String(condominioId)).changes);
+    },
+    // Reescribe el texto de los avisos del condominio con `fn(texto)`; guarda
+    // solo los que cambiaron y devuelve cuántos fueron.
+    reescribirTextos(condominioId, fn) {
+      let cambiados = 0;
+      for (const fila of st.notifDeCondo.all(String(condominioId))) {
+        const n = JSON.parse(fila.datos);
+        const nuevo = fn(String(n.texto || ''));
+        if (nuevo === n.texto) continue;
+        n.texto = nuevo;
+        st.notifReemplazar.run(JSON.stringify(n), fila.id);
+        cambiados++;
+      }
+      return cambiados;
     }
   };
 

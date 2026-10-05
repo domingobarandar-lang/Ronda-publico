@@ -93,6 +93,32 @@
            Avisos); acá el teléfono de la garita se anota para recibirla. -->
       <button id="btn-alarma" class="btn btn-borde">⏰ Activar alarma de ronda en este teléfono</button>
       <p id="estado-alarma" class="nota centrado"></p>
+      <!-- Discreto a propósito: es un requisito de Google Play, no una acción
+           del día a día. Lleva a la confirmación con PIN (vista-eliminar). -->
+      <button id="btn-eliminar-cuenta" class="btn-discreto">Eliminar mi cuenta</button>
+    </section>
+
+    <!-- Eliminar la cuenta del guardia (CU-25). También se puede sin la app,
+         desde /eliminar-cuenta.html. -->
+    <section id="vista-eliminar" class="vista oculta">
+      <h1>Eliminar mi cuenta</h1>
+      <p class="nota">Esto no se puede deshacer. Si después vuelves a trabajar en un condominio, tendrás que crear un usuario nuevo.</p>
+      <div class="caja caja-peligro">
+        <strong>Se borra:</strong><br>
+        tu usuario, tu nombre y tu PIN, tus sesiones abiertas y las notificaciones de este teléfono.
+      </div>
+      <div class="caja">
+        <strong>Se conserva, sin tu nombre:</strong><br>
+        las rondas que ya hiciste. Son registros del condominio: quedan en sus informes como «Guardia eliminado», con la hora y la ubicación de cada punto marcado.
+      </div>
+      <p class="nota">Las copias de respaldo del sistema se renuevan solas: lo borrado desaparece de ellas en un máximo de 14 días.</p>
+      <label>Tu PIN, para confirmar
+        <input id="eliminar-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
+      </label>
+      <button id="btn-confirmar-eliminar" class="btn btn-peligro">Eliminar mi cuenta definitivamente</button>
+      <p id="error-eliminar" class="error oculta"></p>
+      <button id="btn-cancelar-eliminar" class="btn btn-borde">Cancelar</button>
+      <p class="nota centrado"><a href="/privacidad.html" target="_blank" rel="noopener">Política de privacidad</a></p>
     </section>
 
     <!-- Ronda en curso -->
