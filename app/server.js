@@ -18,6 +18,7 @@ const { registrarAviso } = require('./lib/notificar');
 const { esFecha, sumarDias, inicioDiaChile } = require('./lib/fechas-chile');
 const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
+const cuenta = require('./lib/cuenta');
 
 cargarEnv(__dirname);
 
@@ -167,15 +168,23 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
   }
 
+  // Si la clave está bloqueada, responde el 429 y devuelve true.
+  function rechazarSiBloqueado(res, clave) {
+    const bloqueo = estadoIntentos(clave);
+    if (!bloqueo || !bloqueo.hasta) return false;
+    const minutos = Math.max(1, Math.ceil((bloqueo.hasta - Date.now()) / 60000));
+    res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${minutos} minuto(s) y vuelve a probar.` });
+    return true;
+  }
+  // Login y eliminación de cuenta comparten la clave: si no, borrar la cuenta
+  // sería otra puerta para probar PIN sin pasar por el tope del login.
+  const claveIntentos = (req, usuario) => `${req.ip}|${String(usuario || '').toLowerCase().trim()}`;
+
   app.post('/api/login', (req, res) => {
     const { usuario, pin } = req.body || {};
     const nombreUsuario = String(usuario || '').toLowerCase().trim();
-    const clave = `${req.ip}|${nombreUsuario}`;
-    const bloqueo = estadoIntentos(clave);
-    if (bloqueo && bloqueo.hasta) {
-      const minutos = Math.max(1, Math.ceil((bloqueo.hasta - Date.now()) / 60000));
-      return res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${minutos} minuto(s) y vuelve a probar.` });
-    }
+    const clave = claveIntentos(req, nombreUsuario);
+    if (rechazarSiBloqueado(res, clave)) return;
     const u = db.usuarios.find(x => x.usuario === nombreUsuario);
     if (!u || !verificarPin(pin, u.pinHash)) {
       anotarFallo(clave);
@@ -239,6 +248,76 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     if (r.error) return res.status(r.codigo).json({ error: r.error });
     store.guardar();
     res.status(201).json({ id: r.guardia.id, usuario: r.guardia.usuario, nombre: r.guardia.nombre });
+  });
+
+  // ---------- Eliminación de la cuenta del guardia (CU-25) ----------
+  // Requisito de Google Play para cuentas creadas dentro de la app: borrarla
+  // desde la app (DELETE /api/mi/cuenta) y desde una página web pública sin la
+  // app (POST /api/cuenta/eliminar, la usa public/eliminar-cuenta.html). Las
+  // dos piden el PIN y cuentan los fallos con la MISMA clave que el login.
+  // Qué se borra y qué se conserva: ver lib/cuenta.js.
+  //
+  // Ronda en curso: se cierra con el cierre normal (queda en el informe y
+  // avisa al administrador) en vez de rechazar el borrado. La página pública
+  // es justamente para quien ya no tiene el teléfono, y no podría cerrarla de
+  // otra forma. La app del guardia, además, no deja borrar con una ronda
+  // abierta o marcas sin enviar: esas marcas solo existen en el teléfono.
+  //
+  // El administrador que borra un guardia desde el panel pasa por lo mismo: la
+  // página pública le dice al guardia sin usuario ni PIN que se lo pida a él.
+  async function borrarCuentaGuardia(guardia, { porAdmin = false } = {}) {
+    const r = cuenta.eliminarGuardia(store, guardia);
+    for (const ejecucion of r.enCurso) {
+      await cerrarYNotificar(ejecucion, {
+        nota: porAdmin ? '(cerrada al eliminar el administrador al guardia)' : '(cerrada al eliminar el guardia su cuenta)'
+      });
+    }
+    console.log(`[cuenta] guardia eliminado ${porAdmin ? 'por el administrador' : 'a pedido propio'} (condominio "${guardia.condominioId}"): `
+      + `${r.anonimizadas} ronda(s) anonimizada(s), ${r.enCurso.length} cerrada(s), ${r.avisos} aviso(s) reescrito(s)`);
+    return { ok: true, rondasAnonimizadas: r.anonimizadas, rondasCerradas: r.enCurso.length };
+  }
+
+  const SOLO_GUARDIAS = 'Solo las cuentas de guardia se eliminan por acá. Las cuentas de administrador las maneja la operación: escribe al contacto de privacidad.';
+
+  app.delete('/api/mi/cuenta', auth, alerta(async (req, res) => {
+    if (req.usuario.rol !== 'guardia') return res.status(403).json({ error: SOLO_GUARDIAS });
+    const clave = claveIntentos(req, req.usuario.usuario);
+    if (rechazarSiBloqueado(res, clave)) return;
+    if (!verificarPin((req.body || {}).pin, req.usuario.pinHash)) {
+      anotarFallo(clave);
+      return res.status(401).json({ error: 'El PIN no es correcto.' });
+    }
+    intentos.delete(clave);
+    res.json(await borrarCuentaGuardia(req.usuario));
+  }));
+
+  app.post('/api/cuenta/eliminar', alerta(async (req, res) => {
+    const { usuario, pin } = req.body || {};
+    const clave = claveIntentos(req, usuario);
+    if (rechazarSiBloqueado(res, clave)) return;
+    const nombreUsuario = String(usuario || '').toLowerCase().trim();
+    const u = db.usuarios.find(x => x.usuario === nombreUsuario);
+    // Mismo mensaje que el login para usuario inexistente o PIN malo: la página
+    // es pública y no puede servir para averiguar qué usuarios existen.
+    if (!u || !verificarPin(pin, u.pinHash)) {
+      anotarFallo(clave);
+      return res.status(401).json({ error: 'Usuario o PIN incorrectos.' });
+    }
+    intentos.delete(clave);
+    if (u.rol !== 'guardia') return res.status(403).json({ error: SOLO_GUARDIAS });
+    res.json(await borrarCuentaGuardia(u));
+  }));
+
+  // Contacto para pedir la eliminación sin usuario o sin PIN: un correo o un
+  // teléfono (+56…). Viene del entorno (CONTACTO_PRIVACIDAD) para no dejarlo
+  // escrito en la página. Lo que no sea ninguno de los dos no se muestra.
+  app.get('/api/cuenta/contacto', (req, res) => {
+    const contacto = String(process.env.CONTACTO_PRIVACIDAD || '').trim();
+    const digitos = contacto.replace(/[\s().-]/g, '');
+    res.json({
+      correo: esCorreo(contacto) ? contacto : null,
+      telefono: /^\+?\d{8,15}$/.test(digitos) ? digitos : null
+    });
   });
 
   // ---------- Guardia: paquete de rondas descargable ----------
@@ -318,7 +397,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // `await` (el push, que sale a un servicio externo).
   // `sinPush`: el aviso queda en el panel pero no suena en el teléfono del
   // administrador (rondas abandonadas hace días que se cierran de una vez).
-  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, automatico = false, sinPush = false, fin } = {}) {
+  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, automatico = false, sinPush = false, fin, nota: notaExtra } = {}) {
     const r = motor.cerrarEjecucion(db, ejecucion, { fin, automatico });
     const informe = armarInforme(db, ejecucion);
     if (!r.repetida) {
@@ -326,7 +405,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       let alerta = '';
       if (informe.estado === 'incompleta') alerta = '⚠️ ALERTA: ronda con puntos sin marcar\n\n';
       else if (informe.estado === 'sospechosa') alerta = '🔴 ALERTA: ronda con datos sospechosos\n\n';
-      const nota = cerradaPorAdmin ? '(cerrada por el administrador)\n'
+      const nota = notaExtra ? `${notaExtra}\n`
+        : cerradaPorAdmin ? '(cerrada por el administrador)\n'
         : automatico ? '(cerrada automáticamente: el teléfono no terminó la ronda)\n'
         : '';
       store.transaccion(() => {
@@ -665,16 +745,13 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ id: guardia.id, usuario: guardia.usuario, nombre: guardia.nombre });
   });
 
-  app.delete('/api/admin/guardias/:id', ...admin, (req, res) => {
-    const i = db.usuarios.findIndex(u => u.id === req.params.id && u.condominioId === miCondominio(req) && u.rol === 'guardia');
-    if (i === -1) return res.status(404).json({ error: 'El guardia no existe.' });
-    const [guardia] = db.usuarios.splice(i, 1);
-    for (const [token, sesion] of Object.entries(db.sesiones)) {
-      if (sesion.usuarioId === guardia.id) delete db.sesiones[token];
-    }
-    store.guardar();
-    res.json({ ok: true });
-  });
+  // Mismo borrado que el del propio guardia (CU-25): sesiones, push, y sus
+  // rondas quedan anonimizadas como "Guardia eliminado".
+  app.delete('/api/admin/guardias/:id', ...admin, alerta(async (req, res) => {
+    const guardia = db.usuarios.find(u => u.id === req.params.id && u.condominioId === miCondominio(req) && u.rol === 'guardia');
+    if (!guardia) return res.status(404).json({ error: 'El guardia no existe.' });
+    res.json(await borrarCuentaGuardia(guardia, { porAdmin: true }));
+  }));
 
   // Borra TODAS las rondas hechas (ejecuciones e informes) por el usuario de
   // pruebas. Solo ese: las rondas de los guardias reales no se pueden borrar
@@ -789,11 +866,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     })
       .map(e => {
         const ronda = db.rondas.find(r => r.id === e.rondaId) || {};
-        const guardia = db.usuarios.find(u => u.id === e.guardiaId) || {};
         return {
           id: e.id,
           ronda: ronda.nombre || '(ronda eliminada)',
-          guardia: guardia.nombre || guardia.usuario || '(guardia eliminado)',
+          guardia: cuenta.nombreGuardia(db.usuarios.find(u => u.id === e.guardiaId)),
           inicio: e.inicio,
           fin: e.fin,
           estado: e.estado,

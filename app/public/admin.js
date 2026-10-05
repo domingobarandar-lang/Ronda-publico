@@ -641,7 +641,7 @@ async function cargarGuardias() {
   }
   for (const btn of $('tabla-guardias').querySelectorAll('[data-eliminar]')) {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar este guardia? No podrá volver a entrar.')) return;
+      if (!confirm('¿Eliminar este guardia? No podrá volver a entrar.\n\nSus rondas quedan en los informes como «Guardia eliminado», sin su nombre. Si tiene una ronda en curso, se cierra con lo que alcanzó a marcar.')) return;
       try {
         await api(`/api/admin/guardias/${btn.dataset.eliminar}`, { metodo: 'DELETE' });
         cargarGuardias();

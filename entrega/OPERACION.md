@@ -77,6 +77,27 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 - **Escala**: medido en la v1.17, 100 guardias haciendo su ronda a la vez sobre una base de 100 mil rondas: ninguna marca perdida y ~0,1 ms de base por marca. El límite de este diseño es **un solo servidor** (una réplica): si algún día hacen falta varias, toca Postgres.
 - **Node 24 o superior** (`engines` en `package.json`): la base usa `node:sqlite`, que viene con Node. Verificar en el log de build de Railway qué versión usa.
 
+## Cuando un guardia elimina su cuenta *(v1.18, CU-25)*
+
+Google Play exige que quien crea su cuenta dentro de la app pueda eliminarla. El guardia puede hacerlo de dos formas:
+
+- **Desde la app**: pantalla de rondas → abajo, "Eliminar mi cuenta" → escribe su PIN. La app **no lo deja** si tiene una ronda en curso o marcas sin enviar (esas marcas solo están en su teléfono).
+- **Sin la app**: `https://<servidor>/eliminar-cuenta.html`, con usuario + PIN. Es la dirección que se declara en Google Play y la que enlaza la política de privacidad. Tiene el mismo tope de intentos que el login (5 PIN malos por usuario e IP bloquean 15 min, y el bloqueo vale también para el login). Si no recuerda usuario o PIN, la página muestra el contacto `CONTACTO_PRIVACIDAD` (variable de entorno, hoy `+56911112222`: la página ofrece WhatsApp y llamada; también acepta un correo. Sin ella le dice que se lo pida a su administrador).
+
+Las cuentas de administrador, fábrica y acceso total **no** se borran por ahí (responde que solo las de guardia).
+
+**Qué ve el administrador:**
+
+- El guardia **desaparece de la pestaña Guardias** y ya no puede entrar: sus sesiones abiertas se cortan en el acto.
+- **Sus rondas siguen en Informes**, con hora, marcas y ubicaciones, pero el guardia aparece como **"Guardia eliminado"**. Lo mismo en el detalle de cada informe, en la pestaña Avisos (los avisos ya escritos se reescriben sin su nombre) y en el informe semanal (.docx), donde todos los guardias eliminados van juntos en una fila "Guardia eliminado" y sus marcas cuentan como "sin identificar".
+- **Si tenía una ronda en curso**, se cierra en ese momento con lo que alcanzó a marcar, igual que el botón "Cerrar" del panel: queda en Informes y llega el aviso de siempre (si quedó incompleta, también el push), con la nota "(cerrada al eliminar el guardia su cuenta)".
+- Si el teléfono de la garita tenía la **alarma de ronda** activada desde la sesión de ese guardia, esa suscripción se borra: hay que volver a activarla desde la app con otro guardia.
+- **Eliminar un guardia desde el panel** (Guardias → Eliminar) hace exactamente lo mismo desde la v1.18: antes solo cortaba el acceso y dejaba su nombre en los avisos.
+
+**Respaldos**: no se reescriben. Las fotos diarias del volumen rotan solas (`RESPALDO_CONSERVAR`, 14 días): lo borrado desaparece de ellas en ese plazo, y es el plazo que declara la política de privacidad. **Las copias que llegan por correo a `RESPALDO_TO` no rotan solas**: para que el plazo de 14 días se cumpla, ese buzón tiene que borrar los respaldos más viejos (en Gmail, un filtro + borrado periódico, o borrarlos a mano). Si se restaura un respaldo de antes del borrado, el guardia vuelve a aparecer: después de restaurar, hay que volver a eliminarlo desde el panel.
+
+> Las rondas de un guardia eliminado ya no se pueden atribuir a una persona desde el sistema. Si el condominio necesita saber quién hizo una ronda antigua (por ejemplo, ante un incidente), tiene que resolverlo con sus propios registros de turno.
+
 ## Base de datos: respaldo, restauración y vuelta atrás *(v1.17)*
 
 Desde la v1.17 todo el estado vive en **una base SQLite** (`rondas.sqlite`) en el volumen de Railway (`/data`). Junto a ella aparecen `rondas.sqlite-wal` y `rondas.sqlite-shm`: son parte de la base, **no se borran ni se copian por separado**.

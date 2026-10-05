@@ -287,6 +287,25 @@ a.btn { display: block; text-align: center; text-decoration: none; }
   color: var(--alerta-texto);
   background: var(--alerta-suave);
 }
+.caja-peligro {
+  border-color: rgba(244, 67, 95, 0.45);
+  background: var(--peligro-suave);
+}
+
+/* Enlace de acción poco frecuente (eliminar cuenta): sin peso de botón. */
+.btn-discreto {
+  display: block;
+  margin: var(--esp-6) auto 0;
+  padding: var(--esp-2) var(--esp-3);
+  background: none;
+  border: 0;
+  color: var(--texto-suave);
+  font: inherit;
+  font-size: var(--texto-s);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.nota a { color: var(--marca); }
 
 /* Escáner */
 .modal {

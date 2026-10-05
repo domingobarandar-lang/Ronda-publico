@@ -732,6 +732,97 @@ function salir() {
   render();
 }
 
+// ---------- Eliminar mi cuenta (CU-25) ----------
+// Requisito de Google Play. El servidor borra el usuario y anonimiza sus
+// rondas (lib/cuenta.js); acá además se borra todo lo que el teléfono guarda.
+
+function errorEliminar(texto) {
+  const el = $('error-eliminar');
+  el.textContent = texto;
+  el.classList.remove('oculta');
+}
+
+// Una ronda abierta o marcas en cola solo existen en este teléfono: borrar la
+// cuenta antes de enviarlas las perdería. El servidor cerraría la ronda igual,
+// pero sin esas marcas el informe saldría incompleto sin culpa del guardia.
+function motivoParaNoEliminar() {
+  if (estado.ejecucion && !estado.ejecucion.cerrada) return 'Termina tu ronda en curso antes de eliminar tu cuenta.';
+  if (estado.cola.length) return 'Hay marcas sin enviar. Conéctate y espera a que se envíen antes de eliminar tu cuenta.';
+  return null;
+}
+
+function irAEliminarCuenta() {
+  const motivo = motivoParaNoEliminar();
+  if (motivo) return aviso(motivo, 'error', 6000);
+  $('eliminar-pin').value = '';
+  $('error-eliminar').classList.add('oculta');
+  mostrarVista('vista-eliminar');
+}
+
+async function eliminarCuenta() {
+  $('error-eliminar').classList.add('oculta');
+  const pin = $('eliminar-pin').value.trim();
+  if (!pin) return errorEliminar('Escribe tu PIN para confirmar.');
+  const motivo = motivoParaNoEliminar();
+  if (motivo) return errorEliminar(motivo);
+  const btn = $('btn-confirmar-eliminar');
+  btn.disabled = true;
+  try {
+    await api('/api/mi/cuenta', { metodo: 'DELETE', cuerpo: { pin } });
+  } catch (err) {
+    btn.disabled = false;
+    return errorEliminar(err.status ? err.message : 'Necesitas conexión para eliminar tu cuenta.');
+  }
+  await borrarDatosLocales();
+  btn.disabled = false;
+  $('eliminar-pin').value = '';
+  $('campo-usuario').value = '';
+  $('campo-pin').value = '';
+  render();
+  aviso('Tu cuenta fue eliminada. Los datos de este teléfono también se borraron.', 'ok', 8000);
+}
+
+// No espera para siempre a algo que puede no llegar (serviceWorker.ready sin
+// service worker registrado, por ejemplo).
+const conTope = (promesa, ms) => Promise.race([promesa, new Promise(r => setTimeout(() => r(null), ms))]);
+
+// Deja el teléfono como recién instalado: sin sesión, sin paquete de rondas
+// (trae los códigos de los QR), sin respaldo en IndexedDB y sin suscripción a
+// la alarma. La suscripción del servidor ya la borró el DELETE.
+async function borrarDatosLocales() {
+  olvidarPendiente();
+  detenerGps();
+  liberarWakeLock();
+  try {
+    if (pushSoportado()) {
+      const reg = await conTope(navigator.serviceWorker.ready, 3000);
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    }
+  } catch { /* sin push no hay nada que desuscribir */ }
+  // Primero se pisa el respaldo con un estado vacío (rev más alto): si después
+  // no se puede borrar la base de IndexedDB, igual no resucita nada al abrir.
+  estado = Object.assign(estadoVacio(), { rev: estado.rev });
+  estado.rev = (estado.rev || 0) + 1;
+  await respaldar(JSON.stringify(estado)).catch(() => {});
+  try { localStorage.removeItem(CLAVE); } catch {}
+  try {
+    const db = await respaldoDb;
+    if (db) db.close();
+  } catch {}
+  respaldoDb = null;
+  await conTope(new Promise(resolve => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve();
+      const pedido = indexedDB.deleteDatabase(CLAVE);
+      pedido.onsuccess = pedido.onerror = pedido.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  }), 3000);
+  estado = estadoVacio();
+}
+
 async function bajarPaquete(silencioso = false) {
   try {
     estado.paquete = await api('/api/mi/paquete');
@@ -1469,6 +1560,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-salir').addEventListener('click', salir);
   $('btn-actualizar').addEventListener('click', () => bajarPaquete().then(render));
   $('btn-alarma').addEventListener('click', alternarAlarma);
+  $('btn-eliminar-cuenta').addEventListener('click', irAEliminarCuenta);
+  $('btn-cancelar-eliminar').addEventListener('click', render);
+  $('btn-confirmar-eliminar').addEventListener('click', eliminarCuenta);
+  $('eliminar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminarCuenta(); });
   $('btn-escanear').addEventListener('click', abrirEscaner);
   $('btn-cancelar-escaner').addEventListener('click', cerrarEscaner);
   $('btn-manual').addEventListener('click', () => {

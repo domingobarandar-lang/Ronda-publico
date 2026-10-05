@@ -18,6 +18,7 @@ const path = require('path');
 const { cargarEnv } = require('../lib/env');
 const { crearStore, resolverRutas } = require('../lib/store');
 const { TZ, isoChile, sumarDias, inicioDiaChile } = require('../lib/fechas-chile');
+const { nombreGuardia } = require('../lib/cuenta');
 
 cargarEnv(path.join(__dirname, '..'));
 
@@ -28,12 +29,12 @@ const horaLocal = ts => ts
 function describir(store, e) {
   const { db } = store;
   const ronda = db.rondas.find(r => r.id === e.rondaId) || {};
-  const guardia = db.usuarios.find(u => u.id === e.guardiaId) || {};
+  const guardia = db.usuarios.find(u => u.id === e.guardiaId);
   const condo = (db.condominios || []).find(c => c.id === e.condominioId) || {};
   const minutos = Math.round((Date.now() - Date.parse(e.inicio)) / 60000);
   const aviso = e.estado === 'en_curso' && minutos < 120 ? '  ⚠️ empezó hace menos de 2 h, puede estar activa' : '';
   return `  ${e.id}  ${e.estado.padEnd(10)} ${horaLocal(e.inicio).padEnd(18)} `
-    + `${guardia.nombre || guardia.usuario || '(guardia eliminado)'} · ${ronda.nombre || '(ronda eliminada)'} · `
+    + `${nombreGuardia(guardia)} · ${ronda.nombre || '(ronda eliminada)'} · `
     + `${condo.nombre || e.condominioId} · ${(e.escaneos || []).length}/${(ronda.puntoIds || []).length} puntos${aviso}`;
 }
 

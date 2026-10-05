@@ -2,6 +2,25 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.18.0 — 2026-10-05 · El guardia puede eliminar su cuenta
+
+Requisito de Google Play: si la cuenta se crea dentro de la app, tiene que poder borrarse dentro de la app y desde una página web pública (CU-25 en `SPEC.md`).
+
+**Teléfono del guardia**
+- "Eliminar mi cuenta", discreto al final de la pantalla de rondas. Explica qué se borra y qué se conserva y pide el PIN. Al terminar borra todo lo que guarda el teléfono (localStorage, respaldo en IndexedDB, cola), desuscribe la alarma de ronda y vuelve al login con un aviso.
+- No deja borrar con una ronda en curso o marcas sin enviar (se perderían).
+
+**Página pública** `/eliminar-cuenta.html`
+- Sin login. Explica cómo hacerlo desde la app y trae un formulario usuario + PIN. Muestra el contacto `CONTACTO_PRIVACIDAD` (nueva variable de entorno: teléfono con WhatsApp y llamada, o correo) y enlaza `/privacidad.html`.
+
+**Servidor**
+- `DELETE /api/mi/cuenta` (con sesión + PIN) y `POST /api/cuenta/eliminar` (usuario + PIN). Comparten el tope de intentos con el login. Solo cuentas de guardia: admin, fábrica y acceso total reciben 403.
+- Se borran el usuario, sus sesiones y sus suscripciones push. Sus rondas se conservan **anonimizadas**: "Guardia eliminado" en informes, panel, avisos e informe semanal, sin nombre ni usuario. Una ronda en curso se cierra con el cierre normal.
+- Eliminar un guardia desde el panel hace lo mismo (antes dejaba su nombre en los avisos ya escritos).
+- Los respaldos no se reescriben: lo borrado sale de ellos al rotar (14 días). Las copias por correo de `RESPALDO_TO` hay que borrarlas en el buzón con el mismo plazo — ver `entrega/OPERACION.md`.
+
+**Al desplegar**: definir `CONTACTO_PRIVACIDAD=+56911112222` en Railway.
+
 ## 1.17.1 — 2026-09-30 · La ronda sobrevive al apagón · Informe semanal sin incoherencias
 
 ### La ronda sobrevive al apagón
