@@ -22,6 +22,10 @@ const cuenta = require('./lib/cuenta');
 
 cargarEnv(__dirname);
 
+// La versión que sirve este servidor. La app del guardia la compara con la
+// suya (VERSION_APP en public/app.js) y se recarga sola si no coinciden.
+const VERSION_SERVIDOR = 'v' + require('./package.json').version;
+
 function crearApp({ rutaDb, enviarPush } = {}) {
   // DB_PATH: en producción (Railway/VPS) apunta al volumen persistente.
   const store = crearStore(rutaDb || process.env.DB_PATH);
@@ -320,6 +324,28 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
+  // ---------- Versión: actualización remota de la app del guardia ----------
+  // El teléfono de la garita corre en modo kiosco y nadie lo recarga a mano:
+  // la app pregunta cada minuto qué versión sirve el servidor y, si no es la
+  // suya, se recarga cuando no hay ronda en curso. Sin sesión (pantalla de
+  // login) pregunta por GET; con sesión, además avisa qué versión corre, y eso
+  // es lo que el panel muestra por guardia: la constancia de que el deploy llegó.
+  app.get('/api/version', (req, res) => res.json({ version: VERSION_SERVIDOR }));
+
+  app.post('/api/mi/version', auth, (req, res) => {
+    const version = String((req.body || {}).version || '').slice(0, 20);
+    const u = req.usuario;
+    const ahora = Date.now();
+    // Llega una vez por minuto por teléfono: solo se escribe si cambió la
+    // versión o si la última vez que se vio tiene más de 10 minutos.
+    if (version && (u.appVersion !== version || !u.appVista || ahora - Date.parse(u.appVista) > 10 * 60 * 1000)) {
+      u.appVersion = version;
+      u.appVista = new Date(ahora).toISOString();
+      store.guardar();
+    }
+    res.json({ version: VERSION_SERVIDOR });
+  });
+
   // ---------- Guardia: paquete de rondas descargable ----------
 
   app.get('/api/mi/paquete', auth, (req, res) => {
@@ -397,8 +423,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // `await` (el push, que sale a un servicio externo).
   // `sinPush`: el aviso queda en el panel pero no suena en el teléfono del
   // administrador (rondas abandonadas hace días que se cierran de una vez).
-  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, automatico = false, sinPush = false, fin, nota: notaExtra } = {}) {
-    const r = motor.cerrarEjecucion(db, ejecucion, { fin, automatico });
+  async function cerrarYNotificar(ejecucion, { cerradaPorAdmin = false, automatico = false, sinPush = false, fin, comentario, nota: notaExtra } = {}) {
+    const r = motor.cerrarEjecucion(db, ejecucion, { fin, automatico, comentario });
     const informe = armarInforme(db, ejecucion);
     if (!r.repetida) {
       const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
@@ -514,7 +540,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     // El cierre de verdad, del teléfono, reemplaza al automático: trae la hora
     // real de término y el informe se rehace con todo lo que llegó.
     if (ejecucion.guardiaId === req.usuario.id) motor.reabrirSiAutomatica(ejecucion);
-    res.json(await cerrarYNotificar(ejecucion, { fin: (req.body || {}).fin }));
+    const { fin, comentario } = req.body || {};
+    res.json(await cerrarYNotificar(ejecucion, { fin, comentario }));
   }));
 
   // Cierra las rondas que quedaron "en curso" sin que el teléfono vuelva a dar
@@ -716,7 +743,12 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.get('/api/admin/guardias', ...admin, (req, res) => {
     res.json(db.usuarios
       .filter(u => u.condominioId === miCondominio(req) && u.rol === 'guardia')
-      .map(u => ({ id: u.id, usuario: u.usuario, nombre: u.nombre })));
+      .map(u => ({
+        id: u.id, usuario: u.usuario, nombre: u.nombre,
+        // Versión de la app con que este guardia se conectó por última vez.
+        appVersion: u.appVersion || null, appVista: u.appVista || null,
+        appAlDia: u.appVersion === VERSION_SERVIDOR
+      })));
   });
 
   app.post('/api/admin/guardias', ...admin, (req, res) => {

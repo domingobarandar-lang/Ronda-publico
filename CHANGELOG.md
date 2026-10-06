@@ -2,6 +2,30 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.19.0 — 2026-10-06 · Comentario del guardia en la ronda · La app se actualiza sola
+
+### Comentario del guardia
+
+**Teléfono del guardia**
+- Campo "Comentario (opcional)" en la ronda en curso, sobre "Terminar ronda". Hasta 280 caracteres, uno por ronda. Se guarda mientras se escribe (sobrevive a una recarga o a un apagón) y viaja con el cierre: sin señal, espera en la cola.
+
+**Servidor y panel**
+- El comentario queda en la ejecución (`comentario`, dentro de la columna `datos` de la tabla `ejecuciones`: sin migración). Sale en el informe de la ronda del panel y en el aviso al administrador.
+- Reenviar el cierre no lo cambia, y un cierre automático no borra el que hubiera.
+
+**Informe semanal**
+- Nueva sección 6, "Comentarios de los guardias": una fila por ronda con comentario (fecha, guardia, estado de la ronda, texto). La Conclusión pasa a ser la sección 7 y cuenta los comentarios. Ejemplo: `entrega/ejemplos/Informe-semanal-ejemplo-v3.docx`.
+
+### La app del guardia se actualiza sola
+
+El teléfono de la garita corre en modo kiosco y nadie lo recarga: un deploy podía no llegar sin ir al condominio.
+
+- La app pregunta cada minuto qué versión sirve el servidor (`GET /api/version`, o `POST /api/mi/version` con sesión) y, si no es la suya, se recarga sola. Nunca con una ronda en curso, con marcas por enviar o con alguien escribiendo.
+- Freno: si la recarga no trae la versión nueva, tres intentos y después uno por hora.
+- Panel → Guardias: columna "Versión de la app" con la versión con que se conectó cada guardia, si está al día y cuándo se vio por última vez. Es por guardia, no por teléfono.
+- **En cada release** hay que subir la versión en tres lugares: `package.json`, `VERSION` en `sw.js` y `VERSION_APP` en `app.js` (hay un test que lo exige). Ese cambio es el que dispara la recarga en los teléfonos.
+- El teléfono recibe este mecanismo la próxima vez que cargue la app; desde ahí, las versiones siguientes llegan solas.
+
 ## 1.18.0 — 2026-10-05 · El guardia puede eliminar su cuenta
 
 Requisito de Google Play: si la cuenta se crea dentro de la app, tiene que poder borrarse dentro de la app y desde una página web pública (CU-25 en `SPEC.md`).

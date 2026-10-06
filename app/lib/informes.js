@@ -51,6 +51,8 @@ function armarInforme(db, ejecucion) {
     estado: ejecucion.estado,
     etiqueta: ETIQUETAS[ejecucion.estado] || ejecucion.estado,
     evaluacion: ejecucion.evaluacion,
+    // Texto opcional que el guardia escribió al cerrar la ronda.
+    comentario: ejecucion.comentario || null,
     detalle
   };
 }
@@ -85,6 +87,10 @@ function informeTexto(inf) {
     lineas.push('');
     lineas.push('Observaciones:');
     for (const o of inf.evaluacion.observaciones) lineas.push(`• ${o}`);
+  }
+  if (inf.comentario) {
+    lineas.push('');
+    lineas.push(`Comentario del guardia: ${inf.comentario}`);
   }
   return lineas.join('\n');
 }

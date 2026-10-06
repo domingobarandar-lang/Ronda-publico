@@ -12,7 +12,7 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.18.0';
+const VERSION = 'v1.19.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.

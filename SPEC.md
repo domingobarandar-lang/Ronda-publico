@@ -76,6 +76,8 @@ Tres piezas, una sola app Node:
   - **Ronda en curso**: se cierra con el cierre normal (evaluación, informe, aviso y push al administrador) con la nota "(cerrada al eliminar el guardia su cuenta)". Se eligió cerrar y no rechazar porque la página pública es para quien ya no tiene el teléfono y no tendría cómo cerrarla.
   - El borrado de un guardia desde el panel del administrador hace lo mismo.
   - **Respaldos**: no se reescriben; lo borrado sale de ellos cuando rotan (`RESPALDO_CONSERVAR`, 14 días en el volumen). Las copias por correo dependen de que el buzón `RESPALDO_TO` borre las de más de 14 días (ver `entrega/OPERACION.md`).
+- **CU-26 Comentario del guardia en la ronda** *(v1.19)*: campo de texto opcional en la ronda en curso (hasta 280 caracteres, uno por ronda). Se guarda mientras se escribe y viaja con el cierre (`POST /api/ejecuciones/:id/cerrar`, campo `comentario`), también sin señal. Queda en la ejecución y sale en el informe de la ronda, en el aviso al administrador y en la sección 6 del informe semanal (solo las rondas que lo tienen). Reenviar el cierre no lo cambia.
+- **CU-27 La app del guardia se actualiza sola** *(v1.19)*: el teléfono de la garita corre en modo kiosco y nadie lo recarga. La app pregunta cada minuto la versión del servidor (`GET /api/version`; con sesión, `POST /api/mi/version`, que además anota la versión que corre ese guardia) y se recarga si no es la suya — nunca con una ronda en curso, marcas por enviar o alguien escribiendo. Si la recarga no trae la versión nueva: tres intentos y después uno por hora. El panel (Guardias) muestra la versión de cada guardia, si está al día y cuándo se vio. Cada release sube la versión en `package.json`, `sw.js` (`VERSION`) y `app.js` (`VERSION_APP`).
 
 ## Reglas de negocio
 

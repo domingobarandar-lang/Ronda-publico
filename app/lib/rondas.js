@@ -363,6 +363,13 @@ function avance(ejecucion, ronda) {
 // administrador. La hora del servidor es peor dato que la del teléfono (por eso
 // se prefiere la del teléfono cuando sirve), pero es infinitamente mejor que
 // una fecha rota en el único documento que el administrador va a leer.
+// Comentario libre del guardia al cerrar la ronda: espacios compactados y con
+// tope (el mismo maxlength del campo en la app).
+const MAX_COMENTARIO = 280;
+function limpiarComentario(texto) {
+  return String(texto == null ? '' : texto).replace(/\s+/g, ' ').trim().slice(0, MAX_COMENTARIO);
+}
+
 function limpiarTs(ts) {
   const texto = String(ts == null ? '' : ts).slice(0, 40);
   if (!texto || Number.isNaN(Date.parse(texto))) return new Date().toISOString();
@@ -421,10 +428,14 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
 // `automatico`: la cerró el servidor porque el teléfono dejó de reportar
 // (ver cerrarAbandonadas en server.js). Queda marcada para poder reabrirla si
 // el teléfono aparece después con marcas que traía sin señal.
-function cerrarEjecucion(db, ejecucion, { fin, automatico = false } = {}) {
+function cerrarEjecucion(db, ejecucion, { fin, automatico = false, comentario } = {}) {
   if (ejecucion.estado !== 'en_curso') return { ejecucion, repetida: true };
   const ronda = rondaDe(db, ejecucion);
   ejecucion.fin = limpiarTs(fin);
+  // Comentario opcional del guardia. Solo se escribe si viene texto: un cierre
+  // automático (sin comentario) no borra el que ya hubiera.
+  const texto = limpiarComentario(comentario);
+  if (texto) ejecucion.comentario = texto;
   ejecucion.evaluacion = evaluar(db, ejecucion, ronda);
   const ev = ejecucion.evaluacion;
   if (automatico) {
@@ -637,5 +648,5 @@ module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
   estaAbandonada, ultimaActividad, umbralAbandonoMs, reabrirSiAutomatica,
   distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM,
-  OCULTAR_SIN_CONEXION
+  OCULTAR_SIN_CONEXION, MAX_COMENTARIO
 };

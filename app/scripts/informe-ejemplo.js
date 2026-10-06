@@ -1,13 +1,23 @@
 // Genera un informe semanal de ejemplo (.docx) con datos inventados, para ver
 // el formato sin tocar la base real: 3 guardias, 6 puntos, una semana con dos
-// rondas incompletas, una sospechosa y un día con una ronda menos.
+// rondas incompletas, una sospechosa, un día con una ronda menos y cinco
+// rondas con comentario del guardia.
 //   node scripts/informe-ejemplo.js [salida.docx]
-// Por defecto escribe entrega/ejemplos/Informe-semanal-ejemplo-v2.docx.
+// Por defecto escribe entrega/ejemplos/Informe-semanal-ejemplo-v3.docx.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { crearStore } = require('../lib/store');
 const { generarInformeSemanal, revisarCoherencia } = require('../lib/informe-semanal');
+
+// Comentarios opcionales del guardia, por número de ronda (k): cinco de las 27.
+const COMENTARIOS = {
+  3: 'Luminaria del estacionamiento de visitas apagada.',
+  5: 'No pude marcar el Quincho: estaba cerrado con llave por un evento privado.',
+  17: 'Quincho en mantención, acceso bloqueado.',
+  24: 'Portón de Bodega norte estaba mal cerrado. Lo dejé asegurado y avisé a conserjería.',
+  26: 'Fuga de agua menor en Sala de bombas.'
+};
 
 async function main(salida) {
   const store = crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-ejemplo-')), 'rondas.sqlite'));
@@ -30,6 +40,7 @@ async function main(salida) {
       if (k === 22) { estado = 'sospechosa'; sospechas = ['Marcas con 2 s de diferencia']; }
       store.ejecuciones.guardar({
         id: 'e' + k, rondaId: 'r1', condominioId: 'c1', guardiaId, inicio, fin: inicio, estado,
+        ...(COMENTARIOS[k] ? { comentario: COMENTARIOS[k] } : {}),
         escaneos: ids.filter(p => !faltantes.includes(p)).map(puntoId => ({ puntoId, ts: inicio })),
         evaluacion: { faltantes, sospechas, observaciones: [] }
       });
@@ -46,7 +57,7 @@ async function main(salida) {
 }
 
 if (require.main === module) {
-  main(process.argv[2] || path.join(__dirname, '..', '..', 'entrega', 'ejemplos', 'Informe-semanal-ejemplo-v2.docx'))
+  main(process.argv[2] || path.join(__dirname, '..', '..', 'entrega', 'ejemplos', 'Informe-semanal-ejemplo-v3.docx'))
     .catch(err => { console.error(err.message); process.exit(1); });
 }
 
