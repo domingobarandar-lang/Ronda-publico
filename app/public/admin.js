@@ -607,6 +607,9 @@ async function cargarGuardias() {
     <tr>
       <td>${esc(g.nombre)}</td>
       <td><code>${esc(g.usuario)}</code></td>
+      <td>${g.appVersion
+        ? `${esc(g.appVersion)} ${g.appAlDia ? '✓' : '· desactualizada'}<br><span class="nota">visto ${esc(new Date(g.appVista).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}</span>`
+        : '<span class="nota">sin datos</span>'}</td>
       <td>
         <button class="btn btn-borde btn-chico" data-pin="${g.id}">Nuevo PIN</button>
         ${g.usuario === 'domingo_baranda'
@@ -617,7 +620,7 @@ async function cargarGuardias() {
     </tr>`).join('');
   $('tabla-guardias').innerHTML = `
     <table>
-      <thead><tr><th>Nombre</th><th>Usuario</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Usuario</th><th>Versión de la app</th><th></th></tr></thead>
       <tbody>${filas}</tbody>
     </table>`;
   for (const btn of $('tabla-guardias').querySelectorAll('[data-pin]')) {

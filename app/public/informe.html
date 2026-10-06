@@ -62,6 +62,9 @@
         ${inf.evaluacion && inf.evaluacion.observaciones.length
           ? `<div class="observaciones"><strong>Observaciones</strong><br>${inf.evaluacion.observaciones.map(o => '• ' + esc(o)).join('<br>')}</div>`
           : ''}
+        ${inf.comentario
+          ? `<div class="observaciones"><strong>Comentario del guardia</strong><br>${esc(inf.comentario)}</div>`
+          : ''}
         <h3 style="margin-top:18px">Detalle por punto</h3>
         ${inf.detalle.map(d => `
           <div class="detalle-punto">

@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { TZ, isoChile, horaChile, esFecha, sumarDias } = require('./fechas-chile');
 const { nombreGuardia } = require('./cuenta');
+const { MAX_COMENTARIO } = require('./rondas');
 
 // ---------- Paleta ----------
 const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B8B', ZEBRA = 'F5F3F8';
@@ -214,6 +215,18 @@ function calcular(store, opciones = {}) {
   };
   const resumenIncidencias = { incompletas: quienes('Incompleta'), sospechosas: quienes('Sospechosa') };
 
+  // Comentarios: el texto opcional que el guardia deja al cerrar la ronda, tal
+  // como lo escribió (solo se compactan los espacios), de la más antigua a la
+  // más nueva. Las rondas sin comentario no aparecen.
+  const comentarios = ejec
+    .map(e => ({ e, texto: String(e.comentario || '').replace(/\s+/g, ' ').trim().slice(0, MAX_COMENTARIO) }))
+    .filter(x => x.texto)
+    .sort((a, b) => String(a.e.inicio).localeCompare(String(b.e.inicio)))
+    .map(({ e, texto }) => {
+      const [estado, estadoColor] = e.estado === 'sospechosa' ? ['Sospechosa', RED] : e.estado === 'incompleta' ? ['Incompleta', OCHRE] : ['Completa', GREEN];
+      return { fecha: fechaHoraChile(e.inicio), guardia: nombreGuardia(usuarios.get(e.guardiaId)), estado, estadoColor, texto };
+    });
+
   // Puntos: TODOS los del condominio (también los que nadie marcó, que antes no
   // aparecían) más los ya eliminados que tuvieron actividad, sumados en una fila.
   const filas = new Map();
@@ -238,7 +251,7 @@ function calcular(store, opciones = {}) {
     cumplimiento: pCompletas, sinIdentificar,
     dias: diasList.map(d => [weekdayDe(d), porDia.get(d) || 0]),
     turno: { dia: { marc: marcDia, pct: pDia }, noche: { marc: marcNoche, pct: pNoche } },
-    guardias, puntos, puntosSinRonda, incidencias, resumenIncidencias,
+    guardias, puntos, puntosSinRonda, incidencias, resumenIncidencias, comentarios,
     // Rondas de cada día repartidas por guardia, en el orden de `guardias`.
     rondasPorDia: diasList.map(dd => {
       const m = rondasDia.get(dd);
@@ -291,10 +304,12 @@ function conclusion(d) {
   }
   // Los puntos, en corto: el detalle y la tabla ya están en la sección 4.
   const conFalta = d.puntos.filter(p => p.omitidas > 0).length;
-  if (!d.puntos.length) return t;
-  return t + (conFalta
+  if (d.puntos.length) t += conFalta
     ? `${conFalta === 1 ? 'Un punto quedó' : `${conFalta} puntos quedaron`} sin marcar alguna vez (detalle en la sección 4).`
-    : 'Todos los puntos recorridos tuvieron cobertura completa.');
+    : 'Todos los puntos recorridos tuvieron cobertura completa.';
+  const nCom = (d.comentarios || []).length;
+  if (nCom) t += `${d.puntos.length ? ' ' : ''}Los guardias dejaron ${plural(nCom, 'comentario')} (sección 6).`;
+  return t;
 }
 
 // Chequeo de coherencia: los números de cada sección tienen que cuadrar entre
@@ -449,8 +464,17 @@ function generarDocx(d) {
   hijos.push(seccion('5', 'Incidencias'));
   hijos.push(...resumenIncidencias(d));
 
-  // 6 · Conclusión
-  hijos.push(seccion('6', 'Conclusión'));
+  // 6 · Comentarios de los guardias
+  hijos.push(seccion('6', 'Comentarios de los guardias'));
+  if (d.comentarios.length) {
+    hijos.push(P(run(`${d.comentarios.length} de ${plural(d.rondasTotal, 'ronda')} ${d.comentarios.length === 1 ? 'tiene' : 'tienen'} comentario. Texto escrito por el guardia al cerrar la ronda, tal como lo ingresó.`, { color: GRAY, size: 18 }), { spacing: { after: 80 }, keepNext: true }));
+    hijos.push(tablaComentarios(d.comentarios));
+  } else {
+    hijos.push(P(run('Los guardias no dejaron comentarios en el periodo.', { color: GRAY, size: 19 })));
+  }
+
+  // 7 · Conclusión
+  hijos.push(seccion('7', 'Conclusión'));
   hijos.push(P(run(d.conclusion, { size: 22 }), { spacing: { after: 120, line: 300 } }));
   hijos.push(P(run(`Informe generado por Rondas QR el ${d.generado}. Todas las cifras y frases salen directamente de los registros de la app, con reglas fijas.`, { color: GRAY, size: 17, italics: true }), { spacing: { before: 200 } }));
 
@@ -487,6 +511,23 @@ function tablaPuntos(puntos) {
     ] }));
   });
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [4360, 1800, 1400, 1800], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
+}
+
+// Una fila por ronda con comentario. Las filas pueden ser altas (hasta 280
+// caracteres), así que no se encadenan con keepNext: la tabla puede cortar
+// entre filas, nunca dentro de una.
+function tablaComentarios(comentarios) {
+  const th = t => cell(P(run(t, { bold: true, color: WHITE, size: 18, caps: true, spacing: 20 }), { keepNext: true }), { fill: HEADFILL });
+  const td = (t, o = {}) => cell(P(run(t, { size: 19, color: o.color, bold: o.bold })), { fill: o.fill, valign: VerticalAlign.TOP });
+  const rows = [new TableRow({ tableHeader: true, cantSplit: true, children: [th('Fecha'), th('Guardia'), th('Ronda'), th('Comentario')] })];
+  comentarios.forEach((c, i) => {
+    const f = i % 2 ? ZEBRA : undefined;
+    rows.push(new TableRow({ cantSplit: true, children: [
+      td(c.fecha, { fill: f, color: GRAY }), td(c.guardia, { bold: true, fill: f }),
+      td(c.estado, { fill: f, color: c.estadoColor }), td(c.texto, { fill: f })
+    ] }));
+  });
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [1900, 1700, 1350, 4410], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
 }
 
 // Gráfico de barras apiladas: una barra por día, un tramo por guardia, largo

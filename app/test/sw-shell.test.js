@@ -53,3 +53,12 @@ test('la VERSION del service worker acompaña a la de package.json', () => {
   assert.match(leer('sw.js'), new RegExp(`const VERSION = 'v${version.replace(/\./g, '\\.')}'`),
     `sw.js debe declarar VERSION = 'v${version}'`);
 });
+
+test('la VERSION_APP de la app del guardia acompaña a la de package.json', () => {
+  // La app se recarga sola cuando su versión no es la del servidor: si
+  // VERSION_APP no sube con el release, el teléfono de la garita se recarga
+  // contra el freno en vez de quedar al día, y el panel lo muestra desactualizado.
+  const version = require('../package.json').version;
+  assert.match(leer('app.js'), new RegExp(`const VERSION_APP = 'v${version.replace(/\./g, '\\.')}'`),
+    `app.js debe declarar VERSION_APP = 'v${version}'`);
+});

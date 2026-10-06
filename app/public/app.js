@@ -8,6 +8,9 @@
 'use strict';
 
 const CLAVE = 'rondasqr';
+// VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
+// que la app compara con el servidor para recargarse sola (revisarVersion).
+const VERSION_APP = 'v1.19.0';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -1024,6 +1027,12 @@ function registrarRechazo(punto, presencia) {
   pintarGps();
 }
 
+// El comentario opcional de la ronda en curso. Se guarda mientras se escribe
+// (queda en `estado`), así sobrevive a una recarga o a que se apague el teléfono.
+function comentarioRonda() {
+  return String((estado.ejecucion && estado.ejecucion.comentario) || '').replace(/\s+/g, ' ').trim().slice(0, 280);
+}
+
 function cerrarRonda() {
   const ejecucion = estado.ejecucion;
   const ronda = rondaActual();
@@ -1047,7 +1056,9 @@ function cerrarRonda() {
   }
   ejecucion.cerrada = true;
   ejecucion.fin = new Date().toISOString();
-  estado.cola.push({ tipo: 'cerrar', ejecucionId: ejecucion.id, fin: ejecucion.fin });
+  // El comentario viaja en el mismo evento del cierre: si no hay señal, espera
+  // en la cola con él y sube cuando vuelve.
+  estado.cola.push({ tipo: 'cerrar', ejecucionId: ejecucion.id, fin: ejecucion.fin, comentario: comentarioRonda() });
   guardarEstado();
   detenerGps();
   render();
@@ -1089,7 +1100,7 @@ async function sincronizar() {
         } else if (evento.tipo === 'cerrar') {
           const informe = await api(`/api/ejecuciones/${evento.ejecucionId}/cerrar`, {
             metodo: 'POST',
-            cuerpo: { fin: evento.fin }
+            cuerpo: { fin: evento.fin, comentario: evento.comentario || '' }
           });
           estado.ultimoInforme = informe;
           if (estado.ejecucion && estado.ejecucion.id === evento.ejecucionId) estado.ejecucion = null;
@@ -1258,6 +1269,51 @@ function renderInicio() {
   $('texto-paquete').textContent = estado.paquete
     ? `Rondas descargadas: ${new Date(estado.paquete.generado).toLocaleString('es-CL')}`
     : '';
+}
+
+// ---------- Actualización remota ----------
+// El teléfono de la garita corre en modo kiosco: la página no se cierra nunca
+// y nadie la recarga, así que un deploy no llega solo. Cada minuto se le
+// pregunta al servidor qué versión sirve; si no es esta, la app se recarga
+// cuando es seguro (sin ronda en curso, sin nada por enviar, sin nadie
+// escribiendo). De paso el servidor anota qué versión corre este guardia y el
+// panel la muestra: es la constancia de que el deploy llegó.
+
+const CLAVE_RECARGA = 'rondasqr-recarga';
+
+function seguroRecargar() {
+  const foco = document.activeElement;
+  const escribiendo = foco && /^(INPUT|TEXTAREA|SELECT)$/.test(foco.tagName);
+  return !estado.ejecucion && !estado.cola.length && !sincronizando && !escribiendo;
+}
+
+async function revisarVersion() {
+  if (!navigator.onLine) return;
+  let version;
+  try {
+    const anonimo = () => api('/api/version');
+    const r = estado.sesion
+      ? await api('/api/mi/version', { metodo: 'POST', cuerpo: { version: VERSION_APP } }).catch(anonimo)
+      : await anonimo();
+    version = r.version;
+  } catch {
+    return; // sin red o servidor caído: se reintenta en el próximo ciclo
+  }
+  if (!version || version === VERSION_APP || !seguroRecargar()) return;
+  // Freno por si la recarga no trae la versión nueva (un caché intermedio):
+  // tres intentos seguidos y después uno por hora, nunca un bucle de recargas.
+  let intento = {};
+  try { intento = JSON.parse(localStorage.getItem(CLAVE_RECARGA)) || {}; } catch { /* sin respaldo: se parte de cero */ }
+  if (intento.version !== version) intento = { version, veces: 0, ts: 0 };
+  if (intento.veces >= 3 && Date.now() - intento.ts < 60 * 60 * 1000) return;
+  intento.veces++;
+  intento.ts = Date.now();
+  try { localStorage.setItem(CLAVE_RECARGA, JSON.stringify(intento)); } catch { /* sin freno, pero se recarga igual */ }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.update();
+  } catch { /* sin service worker: la recarga igual trae lo nuevo */ }
+  location.reload();
 }
 
 // ---------- Alarma de ronda en este teléfono ----------
@@ -1452,6 +1508,9 @@ function renderRonda() {
   const hechos = ejecucion.escaneos.length;
   $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}`;
   $('ronda-progreso').textContent = `${hechos}/${ronda.puntos.length}`;
+  // Sin pisar lo que el guardia está escribiendo: renderRonda corre con cada marca.
+  const comentario = $('ronda-comentario');
+  if (document.activeElement !== comentario) comentario.value = ejecucion.comentario || '';
   pintarGps();
 
   const lista = $('lista-puntos');
@@ -1579,6 +1638,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('campo-codigo').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-confirmar-manual').click(); });
   $('btn-cerrar-ronda').addEventListener('click', cerrarRonda);
+  $('ronda-comentario').addEventListener('input', e => {
+    if (!estado.ejecucion || estado.ejecucion.cerrada) return;
+    estado.ejecucion.comentario = e.target.value;
+    guardarEstado();
+  });
   $('btn-volver').addEventListener('click', volverAlInicio);
 
   document.addEventListener('keydown', e => {
@@ -1616,6 +1680,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
     window.addEventListener('offline', pintarConexion);
     setInterval(sincronizar, 4000);
+    setInterval(revisarVersion, 60000);
+    revisarVersion();
     // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
     setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
