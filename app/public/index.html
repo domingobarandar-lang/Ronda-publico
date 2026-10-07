@@ -41,6 +41,7 @@
            su usuario y PIN. target=_blank: si la app del guardia está instalada,
            el panel abre en su propia ventana en vez de quedar dentro de esta. -->
       <a id="enlace-panel" class="btn btn-borde btn-chico btn-centrado" href="/panel" target="_blank" rel="noopener">🗂️ Soy administrador</a>
+      <p id="version-app" class="nota centrado"></p>
     </section>
 
     <!-- Registro del guardia (autoservicio) -->
@@ -179,6 +180,7 @@
 
   <script src="vendor/jsqr.js"></script>
   <!-- geo.js antes que app.js: app.js lo usa para consolidar los fixes del GPS. -->
+  <script src="vigia.js"></script>
   <script src="geo.js"></script>
   <script src="app.js"></script>
 </body>

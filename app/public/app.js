@@ -10,7 +10,7 @@
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
 // que la app compara con el servidor para recargarse sola (revisarVersion).
-const VERSION_APP = 'v1.19.0';
+const VERSION_APP = 'v1.19.1';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -656,6 +656,9 @@ async function iniciarSesionGuardia(usuario, pin) {
   pedirAlmacenamientoPersistente();
   await bajarPaquete(true);
   render();
+  // Los guardias entran, hacen la ronda y salen: sin esto la versión solo
+  // quedaba anotada si el minuto del reloj caía dentro de la sesión.
+  revisarVersion();
 }
 
 async function entrar() {
@@ -1300,6 +1303,20 @@ async function revisarVersion() {
     return; // sin red o servidor caído: se reintenta en el próximo ciclo
   }
   if (!version || version === VERSION_APP || !seguroRecargar()) return;
+  // Antes de soltar la página que funciona se comprueba que la nueva está
+  // completa en el servidor: la página responde y app.js ya es el de esa
+  // versión. Si no (deploy a medias, sin señal, copia vieja), no se recarga.
+  try {
+    const [pagina, codigo] = await Promise.all([
+      fetch('./', { cache: 'no-store' }),
+      fetch('app.js', { cache: 'no-store' })
+    ]);
+    if (!pagina.ok || !codigo.ok) return;
+    if (!(await codigo.text()).includes(`VERSION_APP = '${version}'`)) return;
+  } catch {
+    return;
+  }
+  if (!seguroRecargar()) return; // pudo empezar una ronda mientras se comprobaba
   // Freno por si la recarga no trae la versión nueva (un caché intermedio):
   // tres intentos seguidos y después uno por hora, nunca un bucle de recargas.
   let intento = {};
@@ -1310,8 +1327,8 @@ async function revisarVersion() {
   intento.ts = Date.now();
   try { localStorage.setItem(CLAVE_RECARGA, JSON.stringify(intento)); } catch { /* sin freno, pero se recarga igual */ }
   try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) await reg.update();
+    const reg = await conTope(navigator.serviceWorker.getRegistration(), 3000);
+    if (reg) await conTope(reg.update(), 5000);
   } catch { /* sin service worker: la recarga igual trae lo nuevo */ }
   location.reload();
 }
@@ -1663,6 +1680,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (estado.ejecucion || estado.cola.length) guardarEstado();
       return;
     }
+    // Con la pantalla apagada el reloj de un minuto no corre: al encenderla
+    // (lo primero que hace el guardia antes de entrar) se revisa la versión.
+    revisarVersion();
     if (!estado.sesion) return;
     if (gpsWatchId === null || !gpsFresco()) reiniciarGps();
     if (estado.ejecucion && !estado.ejecucion.cerrada) pedirWakeLock();
@@ -1680,12 +1700,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
     window.addEventListener('offline', pintarConexion);
     setInterval(sincronizar, 4000);
+    $('version-app').textContent = `Versión ${VERSION_APP.slice(1)}`;
     setInterval(revisarVersion, 60000);
     revisarVersion();
     // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
     setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
     render();
+    // La app arrancó: el vigía (vigia.js) ya no tiene que rescatar nada.
+    window.__appLista = true;
     if (recuperada) aviso('Se recuperó tu ronda en curso: sigue donde quedaste.', 'ok', 6000);
     sincronizar();
   });
