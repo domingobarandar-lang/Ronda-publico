@@ -9,6 +9,12 @@ Los registros de producción del 7 de octubre mostraron que el teléfono de la g
 - La app revisa (y avisa) su versión **al entrar el guardia** y **al encenderse la pantalla**, además de cada minuto. Con la pantalla apagada el reloj de un minuto no corre.
 - La pantalla de entrada muestra la versión instalada ("Versión 1.19.1"): se puede confirmar con una foto del guardia, sin sesión.
 
+**Blindaje para el modo kiosco** (el teléfono se actualiza solo y nadie puede ir a destrabarlo):
+- La actualización nunca navega a otra dirección: recarga la misma. La app del guardia no tiene enlaces fuera del dominio.
+- Antes de recargarse, la app comprueba que la versión nueva está completa en el servidor (la página responde y `app.js` ya es el de esa versión). Si no, sigue con la que funciona.
+- Service worker: una respuesta de error del servidor (502 a mitad de deploy) ya no se guarda en el caché ni reemplaza la app; se sirve la copia buena.
+- `vigia.js`, independiente de `app.js`: si la app no arranca en 30 s (versión con un error, o `app.js` no bajó por mala señal), muestra "La app se está actualizando…" y recarga cada minuto, solo si el servidor responde, hasta que arranque. Una versión rota se arregla publicando otra, sin ir al condominio.
+
 ## 1.19.0 — 2026-10-06 · Comentario del guardia en la ronda · La app se actualiza sola
 
 ### Comentario del guardia

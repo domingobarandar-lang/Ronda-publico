@@ -124,9 +124,36 @@ test('con red se sirve la versión fresca y se reguarda en caché', async () => 
   // network-first: los despliegues llegan solos al teléfono, sin reinstalar.
   const { ctx, handlers } = montarSw();
   await instalar(handlers);
-  ctx.fetch = () => Promise.resolve({ cuerpo: 'app.js recién salido', clone: () => ({ cuerpo: 'copia' }) });
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200, cuerpo: 'app.js recién salido', clone: () => ({ cuerpo: 'copia' }) });
   const resp = await pedir(handlers, ORIGEN + 'app.js');
   assert.equal(resp.cuerpo, 'app.js recién salido', 'sirvió el caché habiendo red');
+  await new Promise(r => setImmediate(r));
+  assert.equal((await ctx.caches.match(ORIGEN + 'app.js')).cuerpo, 'copia', 'no reguardó la versión fresca');
+});
+
+test('CRÍTICO un error del servidor a mitad de deploy no reemplaza la app ni ensucia el caché', async () => {
+  // El teléfono de la garita se recarga solo y corre en kiosco. Si justo ahí el
+  // proxy contesta 502, esa página de error no puede quedar como "la app": no
+  // hay nadie para sacarlo. Se sirve la copia buena y el caché no se toca.
+  const { ctx, handlers } = montarSw();
+  await instalar(handlers);
+  ctx.fetch = () => Promise.resolve({ ok: false, status: 502, cuerpo: 'Application failed to respond', clone: () => ({ cuerpo: 'copia del 502' }) });
+  for (const archivo of ['', 'app.js', 'vigia.js']) {
+    const resp = await pedir(handlers, ORIGEN + archivo);
+    assert.equal(resp.desde, 'precache', `"${archivo || '/'}" sirvió el error del servidor en vez de la copia`);
+  }
+  await new Promise(r => setImmediate(r));
+  assert.equal((await ctx.caches.match(ORIGEN + 'app.js')).desde, 'precache', 'el 502 pisó la copia buena');
+});
+
+test('un 404 se entrega tal cual y no se guarda', async () => {
+  const { ctx, handlers } = montarSw();
+  await instalar(handlers);
+  ctx.fetch = () => Promise.resolve({ ok: false, status: 404, cuerpo: 'no existe', clone: () => ({ cuerpo: 'copia' }) });
+  const resp = await pedir(handlers, ORIGEN + 'no-existe.js');
+  assert.equal(resp.status, 404);
+  await new Promise(r => setImmediate(r));
+  assert.equal(await ctx.caches.match(ORIGEN + 'no-existe.js'), undefined);
 });
 
 test('el API nunca pasa por el caché', async () => {

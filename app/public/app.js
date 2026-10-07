@@ -1303,6 +1303,20 @@ async function revisarVersion() {
     return; // sin red o servidor caído: se reintenta en el próximo ciclo
   }
   if (!version || version === VERSION_APP || !seguroRecargar()) return;
+  // Antes de soltar la página que funciona se comprueba que la nueva está
+  // completa en el servidor: la página responde y app.js ya es el de esa
+  // versión. Si no (deploy a medias, sin señal, copia vieja), no se recarga.
+  try {
+    const [pagina, codigo] = await Promise.all([
+      fetch('./', { cache: 'no-store' }),
+      fetch('app.js', { cache: 'no-store' })
+    ]);
+    if (!pagina.ok || !codigo.ok) return;
+    if (!(await codigo.text()).includes(`VERSION_APP = '${version}'`)) return;
+  } catch {
+    return;
+  }
+  if (!seguroRecargar()) return; // pudo empezar una ronda mientras se comprobaba
   // Freno por si la recarga no trae la versión nueva (un caché intermedio):
   // tres intentos seguidos y después uno por hora, nunca un bucle de recargas.
   let intento = {};
@@ -1313,8 +1327,8 @@ async function revisarVersion() {
   intento.ts = Date.now();
   try { localStorage.setItem(CLAVE_RECARGA, JSON.stringify(intento)); } catch { /* sin freno, pero se recarga igual */ }
   try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) await reg.update();
+    const reg = await conTope(navigator.serviceWorker.getRegistration(), 3000);
+    if (reg) await conTope(reg.update(), 5000);
   } catch { /* sin service worker: la recarga igual trae lo nuevo */ }
   location.reload();
 }
@@ -1693,6 +1707,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
     setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
     render();
+    // La app arrancó: el vigía (vigia.js) ya no tiene que rescatar nada.
+    window.__appLista = true;
     if (recuperada) aviso('Se recuperó tu ronda en curso: sigue donde quedaste.', 'ok', 6000);
     sincronizar();
   });

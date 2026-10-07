@@ -25,6 +25,9 @@ const SHELL = [
   // revienta al primer fix. Es el único archivo nuevo del release y la razón de
   // subir VERSION.
   'geo.js',
+  // El vigía de arranque: si app.js no arranca, es lo que saca al teléfono de
+  // la garita del atasco (ver vigia.js). Tiene que estar también sin señal.
+  'vigia.js',
   'estilos.css',
   'manifest.webmanifest',
   'icono.svg',
@@ -55,9 +58,20 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
   e.respondWith(
     fetch(e.request)
-      .then(resp => {
-        const copia = resp.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copia));
+      .then(async resp => {
+        // Solo se guarda lo que salió bien. Un 502 del proxy a mitad de un
+        // deploy no puede pisar la copia buena ni quedar como "la app": en el
+        // teléfono de la garita (kiosco) nadie podría sacarlo de ahí. Si el
+        // servidor falla y hay copia, se sirve la copia.
+        if (resp.ok) {
+          const copia = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copia));
+          return resp;
+        }
+        if (resp.status >= 500) {
+          const guardada = await caches.match(e.request, { ignoreSearch: true });
+          if (guardada) return guardada;
+        }
         return resp;
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
