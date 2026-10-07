@@ -2,6 +2,13 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.19.1 — 2026-10-07 · La versión del teléfono se ve de inmediato
+
+Los registros de producción del 7 de octubre mostraron que el teléfono de la garita corrió la app vieja todo el día (la página en modo kiosco no se recargó hasta las 16:51) y que los guardias entran, hacen la ronda y salen: el panel podía seguir en "sin datos" aunque el teléfono ya tuviera la versión nueva.
+
+- La app revisa (y avisa) su versión **al entrar el guardia** y **al encenderse la pantalla**, además de cada minuto. Con la pantalla apagada el reloj de un minuto no corre.
+- La pantalla de entrada muestra la versión instalada ("Versión 1.19.1"): se puede confirmar con una foto del guardia, sin sesión.
+
 ## 1.19.0 — 2026-10-06 · Comentario del guardia en la ronda · La app se actualiza sola
 
 ### Comentario del guardia

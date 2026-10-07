@@ -10,7 +10,7 @@
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
 // que la app compara con el servidor para recargarse sola (revisarVersion).
-const VERSION_APP = 'v1.19.0';
+const VERSION_APP = 'v1.19.1';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -656,6 +656,9 @@ async function iniciarSesionGuardia(usuario, pin) {
   pedirAlmacenamientoPersistente();
   await bajarPaquete(true);
   render();
+  // Los guardias entran, hacen la ronda y salen: sin esto la versión solo
+  // quedaba anotada si el minuto del reloj caía dentro de la sesión.
+  revisarVersion();
 }
 
 async function entrar() {
@@ -1663,6 +1666,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (estado.ejecucion || estado.cola.length) guardarEstado();
       return;
     }
+    // Con la pantalla apagada el reloj de un minuto no corre: al encenderla
+    // (lo primero que hace el guardia antes de entrar) se revisa la versión.
+    revisarVersion();
     if (!estado.sesion) return;
     if (gpsWatchId === null || !gpsFresco()) reiniciarGps();
     if (estado.ejecucion && !estado.ejecucion.cerrada) pedirWakeLock();
@@ -1680,6 +1686,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
     window.addEventListener('offline', pintarConexion);
     setInterval(sincronizar, 4000);
+    $('version-app').textContent = `Versión ${VERSION_APP.slice(1)}`;
     setInterval(revisarVersion, 60000);
     revisarVersion();
     // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
