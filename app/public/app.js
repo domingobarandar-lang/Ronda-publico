@@ -10,7 +10,7 @@
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
 // que la app compara con el servidor para recargarse sola (revisarVersion).
-const VERSION_APP = 'v1.20.1';
+const VERSION_APP = 'v1.20.2';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -1070,12 +1070,44 @@ function cerrarRonda() {
 
 // ---------- Cola de sincronización ----------
 
+// Qué hacer con el evento de la cola cuando el envío falló. El servidor es
+// idempotente en los cuatro eventos (iniciar, escaneo, rechazo, cerrar), así que
+// reintentar es siempre seguro, incluso si el servidor sí lo procesó y se perdió
+// la respuesta.
+//   'sesion'     401: se conserva la cola y se pide entrar de nuevo.
+//   'reintentar' sin respuesta, 5xx, 408 o 429: el fallo es del camino o del
+//                servidor (un deploy, el proxy de Railway que da 502), no del
+//                evento. Borrarlo perdería la marca que el guardia ya vio como ✅.
+//   'descartar'  4xx definitivo (400, 403, 404, 409, 422): reintentar no lo
+//                arregla. También un evento que ya agotó sus intentos, para que
+//                uno que siempre da 500 no trabe para siempre lo que viene detrás.
+// Sin respuesta (sin red) no cuenta intentos: horas sin señal no descartan nada.
+const MAX_INTENTOS_EVENTO = 20;
+const ESPERA_REINTENTO_MS = 4000;
+const ESPERA_REINTENTO_MAX_MS = 300000;
+
+function decidirFalla(evento, err) {
+  if (err.status === 401) return 'sesion';
+  if (!err.status) return 'reintentar';
+  const transitorio = err.status >= 500 || err.status === 408 || err.status === 429;
+  if (!transitorio) return 'descartar';
+  return (evento.intentos || 0) + 1 >= MAX_INTENTOS_EVENTO ? 'descartar' : 'reintentar';
+}
+
+// Espera antes del próximo intento tras `intentos` fallos con respuesta: 4 s,
+// 8 s, 16 s… con tope de 5 minutos.
+function esperaReintentoMs(intentos) {
+  return Math.min(ESPERA_REINTENTO_MS * 2 ** Math.max(0, intentos - 1), ESPERA_REINTENTO_MAX_MS);
+}
+
 async function sincronizar() {
   if (sincronizando || !estado.sesion || !navigator.onLine) { pintarConexion(); return; }
   sincronizando = true;
   try {
     while (estado.cola.length) {
       const evento = estado.cola[0];
+      // Un evento que el servidor no pudo atender espera su turno de reintento.
+      if (evento.noAntesDe && evento.noAntesDe > Date.now()) break;
       try {
         if (evento.tipo === 'iniciar') {
           await api('/api/ejecuciones', {
@@ -1111,14 +1143,25 @@ async function sincronizar() {
         estado.cola.shift();
         guardarEstado();
       } catch (err) {
-        if (err.status === 401) {
+        const decision = decidirFalla(evento, err);
+        if (decision === 'sesion') {
           // Sesión caducada: se conserva la cola y se pide entrar de nuevo.
           estado.sesion = null;
           guardarEstado();
           aviso('La sesión caducó. Entra de nuevo para enviar lo pendiente.', 'error');
           break;
-        } else if (err.status) {
-          // El servidor rechazó el evento (p. ej. validación): no bloquear la cola.
+        } else if (decision === 'reintentar') {
+          // Sin red no se anota nada. Con respuesta de error del servidor (502
+          // en un deploy, 500, 429) el evento se conserva con su espera.
+          if (err.status) {
+            evento.intentos = (evento.intentos || 0) + 1;
+            evento.noAntesDe = Date.now() + esperaReintentoMs(evento.intentos);
+            guardarEstado();
+          }
+          break;
+        } else {
+          // El servidor rechazó el evento (p. ej. validación) o agotó sus
+          // reintentos: no bloquear la cola.
           console.warn('Evento rechazado por el servidor:', evento, err.message);
           // Una marca rechazada acá ya se le mostró como ✅ al guardia y no va a
           // salir en el informe, así que hay que decírselo. Normalmente no pasa
@@ -1130,8 +1173,6 @@ async function sincronizar() {
           }
           estado.cola.shift();
           guardarEstado();
-        } else {
-          break; // sin red: reintentar en el próximo ciclo
         }
       }
     }
