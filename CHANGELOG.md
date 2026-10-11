@@ -2,6 +2,16 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.20.1 — 2026-10-11 · Sentry enchufado sobre el manejador de errores
+
+Con `SENTRY_DSN` vacío o ausente todo queda apagado y la app funciona igual que la 1.20.0.
+
+- **Servidor**: `lib/sentry.js` se engancha a `errores.reportar()`, así que el manejador de Express, `process.on`, el programador, los recordatorios y las rondas abandonadas reportan sin más cambios. Envía `release` (`rondas-qr@<versión>`) y `environment` (production/development). El SDK solo se carga si hay DSN.
+- **Navegador**: bundle propio `public/vendor/sentry.js` (~92 KB, 32 KB gzip; se arma con `npm run build:sentry` y se comitea; `@sentry/browser` y `esbuild` son devDependencies, no van a producción). No se usa el CDN de Sentry: sin señal no cargaría. `errores.js` obtiene el DSN de `GET /api/config-errores` e inicia Sentry; los mismos topes por sesión (10) y la misma deduplicación de la 1.20.0 valen también para Sentry. Sin bundle, sin DSN o sin señal, `errores.js` funciona como antes.
+- **Datos personales**: antes de salir, el evento pierde cabeceras (authorization), cookies, cuerpo, query de las URL, PIN, coordenadas GPS y nombres; al guardia solo se lo identifica por su id interno. Sin breadcrumbs de consola/DOM/fetch ni handlers globales de Sentry (solo lo que pasa por `reportar`).
+- `sw.js` precachea `vendor/sentry.js` y los tres HTML lo cargan antes de `errores.js`. Un fallo del bundle o de Sentry no impide que arranque la app ni toca la ronda en curso ni la cola.
+- `SENTRY_PRUEBA=true` habilita `POST /api/admin/sentry-prueba` (solo administrador con sesión) para provocar un error de prueba tras el deploy.
+
 ## 1.20.0 — 2026-10-11 · Los errores de las apps y del servidor dejan rastro
 
 Hasta ahora un error en el teléfono o en el panel desaparecía sin dejar nada, y en el servidor solo había un `console.warn` suelto. Esta versión es la base para enchufar Sentry después: **Sentry queda pendiente** (no se agregó cuenta ni dependencia).

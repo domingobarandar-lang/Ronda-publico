@@ -20,6 +20,7 @@ const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
 const cuenta = require('./lib/cuenta');
 const errores = require('./lib/errores');
+const sentry = require('./lib/sentry');
 
 cargarEnv(__dirname);
 
@@ -334,6 +335,23 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // login) pregunta por GET; con sesión, además avisa qué versión corre, y eso
   // es lo que el panel muestra por guardia: la constancia de que el deploy llegó.
   app.get('/api/version', (req, res) => res.json({ version: VERSION_SERVIDOR }));
+
+  // Datos para que el navegador inicie su Sentry sin escribir el DSN en el
+  // código. Sin SENTRY_DSN responde {} y las apps siguen sin Sentry. El DSN es
+  // público por diseño (solo permite enviar eventos).
+  app.get('/api/config-errores', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(sentry.configCliente());
+  });
+
+  // Error de prueba controlado para ver Sentry tras un deploy. Solo existe si
+  // SENTRY_PRUEBA=true, y aun así exige un administrador con sesión.
+  if (String(process.env.SENTRY_PRUEBA || '').toLowerCase() === 'true') {
+    app.post('/api/admin/sentry-prueba', ...admin, (req, res) => {
+      errores.reportar('sentry-prueba', new Error('Error de prueba controlado (SENTRY_PRUEBA)'));
+      res.json({ ok: true, sentry: sentry.estaActivo() });
+    });
+  }
 
   app.post('/api/mi/version', auth, (req, res) => {
     const version = String((req.body || {}).version || '').slice(0, 20);
@@ -1289,7 +1307,9 @@ if (require.main === module) {
     process.exit(1);
   }
   const { app, store, push, cerrarAbandonadas } = creado;
-  errores.instalarRedProceso();
+  sentry.iniciar();
+  // Con Sentry activo se espera a que el evento salga antes de cerrar.
+  errores.instalarRedProceso(process, code => sentry.vaciar().then(() => process.exit(code)));
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
