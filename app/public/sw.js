@@ -12,7 +12,7 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.20.0';
+const VERSION = 'v1.20.1';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.
@@ -37,6 +37,9 @@ const SHELL = [
   'icono-192.png',
   'icono-512.png',
   'vendor/jsqr.js',
+  // Sentry (bundle propio, no el CDN): index.html lo carga antes de errores.js;
+  // sin esto la app del guardia queda en blanco sin señal.
+  'vendor/sentry.js',
   // Panel del administrador: su código se cachea solo al visitarlo. Acá va lo
   // que el navegador pide al instalarlo como app aparte.
   'panel.webmanifest',

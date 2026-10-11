@@ -12,9 +12,13 @@
 //  - Tope de envíos por sesión y mensajes repetidos descartados, para que un
 //    error en bucle no inunde al servidor ni la pantalla.
 //
-// Punto de enganche para Sentry (más adelante): `window.__reportarError(error,
-// origen)` es la entrada única; si existe `window.__erroresGancho` (una función),
-// recibe { mensaje, pila, origen, pagina } en cada reporte aceptado.
+// Sentry (v1.20.1): `window.__reportarError(error, origen)` es la entrada única.
+// Si public/vendor/sentry.js cargó (window.Sentry) y el servidor entrega un DSN
+// (GET /api/config-errores), cada reporte aceptado —tras el tope por sesión y la
+// deduplicación de abajo— también va a Sentry. Sin bundle o sin DSN todo sigue
+// igual que antes: el reporte al servidor y el aviso no dependen de Sentry.
+// Si existe `window.__erroresGancho` (una función), recibe { mensaje, pila,
+// origen, pagina } en cada reporte aceptado.
 (function () {
   'use strict';
   var MAX_ENVIOS = 10;
@@ -58,6 +62,86 @@
     }, AVISO_MS);
   }
 
+  // --- Sentry ---------------------------------------------------------------
+  // Texto libre sin datos personales (espejo corto del filtro del servidor).
+  function limpiarTexto(t) {
+    t = String(t == null ? '' : t);
+    t = t.replace(/\bBearer\s+[\w.~+\/=-]+/gi, 'Bearer [oculto]');
+    t = t.replace(/(["']?\b(?:pin|clave|password|contrase(?:ñ|n)a|token|authorization)\b["']?\s*[:=]\s*)(["'][^"']*["']|[^\s,;}&"']+)/gi, '$1[oculto]');
+    t = t.replace(/(["']?\b(?:nombre|usuario|name|user)\b["']?\s*[:=]\s*)(["'][^"']*["']|[^,;}&"'\n]+)/gi, '$1[oculto]');
+    t = t.replace(/(["']?\b(?:lat(?:itude)?|lng|lon(?:gitude)?|accuracy)\b["']?\s*[:=]\s*)(-?\d+(?:\.\d+)?)/gi, '$1[oculto]');
+    t = t.replace(/-?\d{1,3}\.\d{3,}\s*[,;]\s*-?\d{1,3}\.\d{3,}/g, '[coordenadas]');
+    t = t.replace(/(https?:\/\/[^\s?#)"']+|\/[\w.\/-]+)\?[^\s)"']*/g, '$1?[oculto]');
+    return t;
+  }
+
+  // beforeSend: deja el evento sin URL con query, cabeceras, cookies, cuerpos,
+  // breadcrumbs ni usuario. Exportado en window para poder probarlo.
+  function filtrarEvento(ev) {
+    if (!ev || typeof ev !== 'object') return null;
+    if (ev.request) ev.request = { url: String(ev.request.url || '').split(/[?#]/)[0] };
+    ev.breadcrumbs = [];
+    delete ev.user;
+    delete ev.extra;
+    if (typeof ev.message === 'string') ev.message = limpiarTexto(ev.message);
+    if (ev.exception && ev.exception.values) {
+      for (var i = 0; i < ev.exception.values.length; i++) {
+        var v = ev.exception.values[i];
+        if (typeof v.value === 'string') v.value = limpiarTexto(v.value);
+        var fr = v.stacktrace && v.stacktrace.frames;
+        if (fr) for (var j = 0; j < fr.length; j++) {
+          if (fr[j].filename) fr[j].filename = String(fr[j].filename).split(/[?#]/)[0];
+        }
+      }
+    }
+    return ev;
+  }
+  window.__erroresFiltrarEvento = filtrarEvento;
+
+  // 'esperando' mientras llega la config; 'activo' o 'apagado' después.
+  var estadoSentry = 'esperando';
+  var pendientes = [];
+
+  function aSentry(error, carga) {
+    try {
+      if (estadoSentry === 'apagado') return;
+      if (estadoSentry === 'esperando') {
+        if (pendientes.length < MAX_ENVIOS) pendientes.push([error, carga]);
+        return;
+      }
+      var e = error instanceof Error ? error : new Error(carga.mensaje);
+      window.Sentry.captureException(e, { tags: { pagina: carga.pagina, origen: carga.origen, version: carga.version } });
+    } catch (x) { /* Sentry roto no cuenta */ }
+  }
+
+  function iniciarSentry() {
+    try {
+      if (!window.Sentry || typeof fetch !== 'function') { estadoSentry = 'apagado'; return; }
+      fetch('/api/config-errores', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (cfg) {
+          if (!cfg || !cfg.dsn) { estadoSentry = 'apagado'; pendientes = []; return; }
+          window.Sentry.init({
+            dsn: cfg.dsn,
+            release: cfg.release,
+            environment: cfg.entorno,
+            // Solo lo que pasa por reportar() (con su tope y deduplicación): sin
+            // handlers globales, breadcrumbs de consola/DOM/fetch ni tracing.
+            defaultIntegrations: false,
+            integrations: [],
+            sendDefaultPii: false,
+            beforeSend: filtrarEvento,
+            beforeBreadcrumb: function () { return null; },
+            denyUrls: [/^(chrome|moz|safari|safari-web)-extension:/i]
+          });
+          estadoSentry = 'activo';
+          var p = pendientes; pendientes = [];
+          for (var i = 0; i < p.length; i++) aSentry(p[i][0], p[i][1]);
+        })
+        .catch(function () { estadoSentry = 'apagado'; pendientes = []; });
+    } catch (e) { estadoSentry = 'apagado'; }
+  }
+
   function versionApp() {
     try {
       // VERSION_APP es un const de app.js: visible por nombre, no por window.
@@ -96,6 +180,7 @@
       };
       avisar();
       enviar(carga);
+      aSentry(error, carga);
       if (typeof window.__erroresGancho === 'function') {
         try { window.__erroresGancho(carga); } catch (e) { /* un gancho roto no cuenta */ }
       }
@@ -103,6 +188,7 @@
   }
 
   window.__reportarError = reportar;
+  iniciarSentry();
 
   window.addEventListener('error', function (ev) {
     // Los fallos de carga de recursos (img, script) llegan sin message: no son
