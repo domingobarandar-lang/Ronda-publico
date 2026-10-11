@@ -2,6 +2,16 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.20.0 — 2026-10-11 · Los errores de las apps y del servidor dejan rastro
+
+Hasta ahora un error en el teléfono o en el panel desaparecía sin dejar nada, y en el servidor solo había un `console.warn` suelto. Esta versión es la base para enchufar Sentry después: **Sentry queda pendiente** (no se agregó cuenta ni dependencia).
+
+- **Las tres páginas** (guardia, panel y fábrica) cargan `errores.js`: captura errores y promesas rechazadas, muestra un aviso corto arriba (no bloquea nada) y los manda al servidor. Máximo 10 reportes por sesión y un mismo mensaje se manda una sola vez. Ignora el ruido (extensiones del navegador, "Script error.", ResizeObserver, "sin señal"). **No recarga, no navega y no toca la ronda en curso ni la cola sin enviar.**
+- **Servidor**: `POST /api/errores-cliente` (sin login, cuerpo máx. 8 KB, tope por IP) deja una línea `[error-cliente]` en los logs con página, mensaje, pila, versión y navegador. **Filtro de datos personales**: se oculta token, PIN, nombres, coordenadas GPS y los parámetros de las URL; todo se limpia de saltos de línea. Solo se registra el id interno del guardia, nunca el nombre.
+- `lib/errores.js` centraliza el registro (`reportar(contexto, error)`): lo usan el manejador de Express, las tareas de fondo (informe semanal, alarma de ronda, rondas abandonadas) y los errores sin atrapar del proceso. Ahí se enchufará Sentry.
+- Una promesa rechazada sin atrapar se registra y el servidor sigue; una excepción sin atrapar se registra y el proceso se reinicia limpio (Railway lo levanta).
+- `errores.js` entra al caché del service worker (sin esto la app del guardia no abre sin señal).
+
 ## 1.19.1 — 2026-10-07 · La versión del teléfono se ve de inmediato
 
 Los registros de producción del 7 de octubre mostraron que el teléfono de la garita corrió la app vieja todo el día (la página en modo kiosco no se recargó hasta las 16:51) y que los guardias entran, hacen la ronda y salen: el panel podía seguir en "sin datos" aunque el teléfono ya tuviera la versión nueva.

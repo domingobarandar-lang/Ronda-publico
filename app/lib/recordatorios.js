@@ -16,6 +16,8 @@
 // Corre dentro del server (igual que lib/programador.js): revisa cada minuto.
 // Nunca lanza: una alarma que falla no puede tumbar el servidor.
 
+const errores = require('./errores');
+
 const MIN_PERMITIDO = 5;
 const MAX_PERMITIDO = 24 * 60;
 
@@ -76,12 +78,13 @@ async function revisar(store, push, ahora = Date.now()) {
       if (r.total) console.log(`[alarma-ronda] ${condominio.nombre}: ${r.ok}/${r.total} teléfonos`);
     } catch (e) {
       console.warn(`[alarma-ronda] ${condominio.nombre}: ${e.message}`);
+      errores.reportar('alarma-ronda', e);
     }
   }
 }
 
 function iniciar(store, push) {
-  const tick = () => revisar(store, push).catch(e => console.warn('[alarma-ronda] error:', e.message));
+  const tick = () => revisar(store, push).catch(e => { console.warn('[alarma-ronda] error:', e.message); errores.reportar('alarma-ronda', e); });
   return setInterval(tick, 60000);
 }
 

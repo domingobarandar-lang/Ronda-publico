@@ -16,6 +16,7 @@
 // SIEMPRE: la foto en el volumen no depende de tener Gmail configurado.
 const correo = require('./correo');
 const respaldo = require('./respaldo');
+const errores = require('./errores');
 const { agruparPorDestinatario } = require('./destinatarios');
 
 // Fecha/hora actual en Chile (maneja el cambio de horario solo).
@@ -94,7 +95,7 @@ function iniciar(store) {
   }
   console.log(`[informe-email] programador activo (día ${process.env.INFORME_DIA ?? 1}, `
             + `hora ${process.env.INFORME_HORA ?? 8} Chile).`);
-  const tick = () => revisar(store).catch(e => console.warn('[informe-email] error:', e.message));
+  const tick = () => revisar(store).catch(e => { console.warn('[informe-email] error:', e.message); errores.reportar('informe-email', e); });
   setTimeout(tick, 30000);            // primera revisión ~30s tras arrancar
   return setInterval(tick, 3600000);  // y luego cada hora
 }

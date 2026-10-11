@@ -19,6 +19,7 @@ const { esFecha, sumarDias, inicioDiaChile } = require('./lib/fechas-chile');
 const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
 const cuenta = require('./lib/cuenta');
+const errores = require('./lib/errores');
 
 cargarEnv(__dirname);
 
@@ -32,7 +33,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   const db = store.db;
   const push = crearPush(store, { enviar: enviarPush });
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  const jsonGeneral = express.json({ limit: '1mb' });
+  // /api/errores-cliente trae su propio parser con tope chico (es pública).
+  app.use((req, res, next) => (req.path === '/api/errores-cliente' ? next() : jsonGeneral(req, res, next)));
   app.use(express.static(path.join(__dirname, 'public')));
   app.get('/vendor/jsqr.js', (req, res) => res.sendFile(require.resolve('jsqr/dist/jsQR.js')));
   // Dirección corta para el acceso del administrador: es la que se dicta por
@@ -1242,12 +1245,31 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ ok: true, to: r.to.join(', '), rango: r.datos.rango });
   }));
 
+  // Errores de las apps (guardia, panel, fábrica). Sin login: el error puede
+  // ocurrir antes de entrar. Por eso es entrada no confiable: cuerpo chico,
+  // tope por IP y todo se sanitiza y redacta en lib/errores.js antes del log.
+  const permitirErrorCliente = errores.crearLimitador({ max: 60, ventanaMs: 60000 });
+  app.post('/api/errores-cliente',
+    express.json({ limit: '8kb' }),
+    (req, res) => {
+      if (!permitirErrorCliente(req.ip)) return res.status(429).json({ error: 'Demasiados reportes.' });
+      // Solo se acepta el id interno si el reporte trae sesión válida: nunca el nombre.
+      const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const sesion = token.length < 100 && Object.hasOwn(db.sesiones, token) ? db.sesiones[token] : null;
+      errores.reportarCliente(req.body, { ua: req.headers['user-agent'], id: sesion ? sesion.usuarioId : '' });
+      res.status(204).end();
+    });
+
   // Última red: cualquier error que se escape de un handler termina acá y sale
   // como 500, en vez de matar el proceso. Se registra entero en consola porque
   // un 500 sin rastro en el log es un bug que no se puede perseguir.
   app.use((err, req, res, next) => {
-    console.error(`[error] ${req.method} ${req.originalUrl}`, err);
+    // Cuerpo demasiado grande o JSON roto: error del cliente, no del servidor.
+    const clienteMalo = err && err.status >= 400 && err.status < 500;
+    // Solo la ruta, sin query string: puede traer datos del usuario.
+    if (!clienteMalo) errores.reportar(`${req.method} ${req.path}`, err);
     if (res.headersSent) return next(err);
+    if (clienteMalo) return res.status(err.status).json({ error: 'Petición inválida.' });
     res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
@@ -1267,6 +1289,7 @@ if (require.main === module) {
     process.exit(1);
   }
   const { app, store, push, cerrarAbandonadas } = creado;
+  errores.instalarRedProceso();
   app.listen(puerto, () => {
     console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
@@ -1284,7 +1307,7 @@ if (require.main === module) {
   // Rondas abandonadas: al arrancar y cada 5 min (lib/rondas.js, estaAbandonada).
   const abandonadas = () => cerrarAbandonadas()
     .then(ids => { if (ids.length) console.log(`[abandonadas] ${ids.length} ronda(s) cerrada(s) automáticamente`); })
-    .catch(e => console.warn('[abandonadas] error:', e.message));
+    .catch(e => { console.warn('[abandonadas] error:', e.message); errores.reportar('abandonadas', e); });
   abandonadas();
   setInterval(abandonadas, 5 * 60000);
 }

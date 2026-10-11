@@ -10,7 +10,7 @@
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
 // que la app compara con el servidor para recargarse sola (revisarVersion).
-const VERSION_APP = 'v1.19.1';
+const VERSION_APP = 'v1.20.0';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
