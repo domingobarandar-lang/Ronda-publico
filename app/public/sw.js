@@ -12,7 +12,7 @@
 //
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
-const VERSION = 'v1.19.1';
+const VERSION = 'v1.20.0';
 const CACHE = 'rondasqr-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.
@@ -28,6 +28,9 @@ const SHELL = [
   // El vigía de arranque: si app.js no arranca, es lo que saca al teléfono de
   // la garita del atasco (ver vigia.js). Tiene que estar también sin señal.
   'vigia.js',
+  // Captura de errores: index.html la carga antes de app.js; sin esto la app
+  // del guardia queda en blanco sin señal (lo vigila test/sw-shell.test.js).
+  'errores.js',
   'estilos.css',
   'manifest.webmanifest',
   'icono.svg',
