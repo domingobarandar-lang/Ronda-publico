@@ -116,7 +116,11 @@ function mostrarTab(nombre) {
   // El GPS solo se calienta en la pestaña donde se mide; en cualquier otra es
   // batería quemada sin motivo.
   if (nombre !== 'puntos') enfriarGps();
-  ({ informes: cargarInformes, puntos: cargarPuntos, guardias: cargarGuardias, rondas: cargarRondas, avisos: cargarAvisos })[nombre]();
+  const cargar = { informes: cargarInformes, puntos: cargarPuntos, guardias: cargarGuardias, rondas: cargarRondas, avisos: cargarAvisos }[nombre];
+  // Con la sesión vencida, api() ya volvió al login: ese 401 no es un fallo y
+  // no tiene que llegar a errores.js (aviso rojo + Sentry). Cualquier otro error
+  // sigue sin atrapar y se reporta como siempre.
+  return cargar().catch(err => { if (sesion) throw err; });
 }
 
 // ---------- Informes ----------
@@ -982,6 +986,8 @@ async function cargarSelectorCondominios() {
   try {
     datos = await api('/api/admin/condominios');
   } catch {
+    // Un 401 deja `sesion = null` y render() ya mostró el login.
+    if (!sesion) return;
     mostrarFijo(sesion.condominio && sesion.condominio.nombre);
     return;
   }
@@ -1027,7 +1033,9 @@ function render() {
   }
   $('vista-login').classList.add('oculta');
   $('vista-panel').classList.remove('oculta');
-  cargarSelectorCondominios().finally(() => mostrarTab('informes'));
+  // Si la sesión se cayó en el selector ya está el login: pedir los informes sin
+  // token solo daría otro 401.
+  cargarSelectorCondominios().finally(() => sesion && mostrarTab('informes'));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
