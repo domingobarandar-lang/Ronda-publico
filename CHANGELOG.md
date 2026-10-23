@@ -2,6 +2,37 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.21.0 — 2026-10-21 · Menos marcas perdidas por la mecánica (QR y GPS), también en Fully Kiosk
+
+No cambia el criterio de presencia: radio, margen, frescura y paridad con el servidor quedan igual. Lo que cambia es que el guardia deja de perder marcas por cómo funcionaba el flujo. Solo toca la app del guardia (`public/app.js`, `index.html`, `estilos.css`); el servidor no cambia. Revisado con foco en los teléfonos que corren la app en **Fully Kiosk Browser** (Android WebView).
+
+- **El QR leído ya no se bota cuando falla la señal.** Si la marca no entra por algo que la señal puede arreglar (sin ubicación, ubicación vieja, señal imprecisa, o distancia dentro del error posible), el QR queda retenido y aparece un panel sobre el botón de escanear con **Reintentar** y **Cancelar**. Reintentar pasa por `procesarCodigo()` igual que un escaneo: mismo control, mismo plazo de espera, mismo registro de rechazo si vuelve a fallar. El rechazo por distancia real y el de un punto bajo techo con la señal de entrada vencida siguen siendo secos.
+  - El plazo es de 2 minutos **desde la lectura del QR**: reintentar no lo renueva, y la espera de un Reintentar tardío se corta donde vence el plazo.
+  - Si llega el QR de otro punto, el retenido se suelta con aviso («quedó SIN marcar: vuelve a escanear su QR»), no en silencio.
+  - El panel dice «todavía NO está marcado» (sin ✓) y avisa al retener, al vencer el plazo y al terminar la ronda con un QR retenido: «QR leído» no es «punto marcado».
+  - El motivo del panel se recalcula con la señal de ahora; si ya alcanza, lo dice («La señal ya alcanza: toca Reintentar»), pero la marca no entra sola.
+  - En un punto bajo techo (anclaje) el panel habla de la entrada del recinto, no de esperar junto al QR.
+- **La espera de señal se ve en ese mismo panel**, no en avisos flotantes que se esfumaban cada segundo y medio: «QR de "X" leído · afinando ubicación… 12 s».
+- **Vigía del GPS.** Si el `watchPosition` habló y lleva 10 s callado (la mitad de la frescura), se vuelve a enganchar. Cubre el teléfono que deja de avisar con el guardia parado frente al punto, que terminaba en «tu ubicación es de hace 25 s».
+  - Solo actúa con una marca en juego (lector abierto, marca esperando señal o QR retenido). En Fully cada `watchPosition` nuevo vuelve a pedirle el permiso a la app; hacerlo cada 12 s todo el turno era buscarse un diálogo o un rechazo.
+  - Un watch que todavía no entregó su primera lectura no se corta antes de 60 s: está adquiriendo, y cortarlo reiniciaba la búsqueda.
+  - Con el permiso de ubicación negado ya no se queda muerto: lo vuelven a pedir los toques del guardia (iniciar ronda, abrir el lector, Reintentar), nunca un bucle.
+- **Lector más robusto.** La cámara se pide a 1080p. jsQR (iPhone y navegadores sin `BarcodeDetector`) lee el recorte del recuadro a 640 px en vez del cuadro entero achicado a 480: casi el doble de píxeles por módulo para un QR chico o lejano. Alterna con el cuadro completo y cada cuatro pasadas prueba el QR invertido. Enfoque continuo donde la cámara lo permite.
+  - No va a resolución nativa a propósito: con poca luz el ruido del sensor llevaba una pasada de 800 px a casi un segundo. Se achica con suavizado, y la pausa entre pasadas crece con lo que costó la anterior: jsQR nunca se lleva más de la mitad del hilo, y los botones siguen respondiendo.
+- **El lector deja de fallar callado.**
+  - El detector nativo (Chrome y WebView lo implementan sobre Google Play Services) puede fallar de dos maneras: si revienta 5 veces seguidas se pasa a jsQR; si responde vacío para siempre (módulo de códigos no operativo), desde los 3 s sin lectura se intercala una pasada de jsQR cada medio segundo.
+  - Releer el mismo QR antes de 2,5 s ya no deja la cámara encendida sin leer.
+  - Cancelar y reabrir rápido, o activar dos veces el botón de escanear, ya no deja dos ciclos de lectura ni una cámara huérfana.
+  - A los 8 s sin lectura el recuadro pasa a alerta, dice qué hacer y ofrece el código a mano. Solo menciona la luz si hay botón de linterna, que aparece cuando la cámara la declara (Chrome/WebView con flash; Safari desde iOS 17). Con dos códigos en cuadro gana el de la app.
+  - El video y el recuadro van en un visor que se encoge: «Cancelar» se ve siempre, también a 360×640 con la ayuda y la linterna visibles (antes quedaba fuera de la pantalla, y en un kiosco no hay botón atrás). Con letra grande (Android al 200 %) queda pegado al borde de abajo del pie.
+- **Actualización desatendida segura (kiosco).** El service worker es network-first archivo por archivo: con señal intermitente tras un deploy, un teléfono puede cargar la página, el código y los estilos de versiones distintas. Antes, la página vieja con el `app.js` nuevo dejaba la app sin arrancar.
+  - `completarHtmlAnterior()` deja la página vieja con la estructura nueva: agrega lo que falta y mete el video y el recuadro en el visor.
+  - `index.html` (`<meta name="version-app">`) y `estilos.css` (`--version-app`) declaran su versión. Con estilos de otra versión se inyectan las reglas mínimas del lector. La detección es por la marca, no por cómo se ve la página: con el lector oculto una medida de maquetación no distingue nada.
+  - El video solo pasa a absoluto dentro del visor, y el pie del lector queda siempre por encima. Medido en Chrome con las cuatro combinaciones de página y estilos (de v1.20.2 y de esta versión), a 360×640 y 320×568: «Cancelar», «Código a mano» y «Encender luz» se ven y se pueden tocar en todas.
+  - `shellMixto()` hace que `revisarVersion()` recargue cuando es seguro. Antes de recargar se exige que la página traiga la marca de la versión nueva; una página sin marca se acepta solo si es un cambio real de versión, para que un rollback a v1.20.x siga llegando a los kioscos.
+  - Test nuevo `test/app-arranque.test.js`: arranca el `app.js` real sobre la página de esta versión y sobre la de v1.20.2 tal cual se publicó (`test/fixtures/`), y cruza cada id que usa `app.js` con `index.html`.
+- **Documento nuevo `entrega/FULLY-KIOSK.md`**: ajustes obligatorios de Fully (cámara y ubicación PLUS, pantalla, recargas y borrado de datos), lo que hoy no funciona ahí (la alarma de ronda por Web Push) y una prueba de 5 minutos por teléfono antes de dar por buena esta versión.
+
 ## 1.20.1 — 2026-10-11 · Sentry enchufado sobre el manejador de errores
 
 Con `SENTRY_DSN` vacío o ausente todo queda apagado y la app funciona igual que la 1.20.0.

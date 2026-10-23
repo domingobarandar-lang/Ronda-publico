@@ -10,7 +10,7 @@
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
 // que la app compara con el servidor para recargarse sola (revisarVersion).
-const VERSION_APP = 'v1.20.2';
+const VERSION_APP = 'v1.21.0';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -32,6 +32,14 @@ let wakeLockMotivo = null;
 let bufferFixes = [];
 let marcaPendiente = null;
 let pendienteTimer = null;
+// QR ya leído cuya marca no se pudo confirmar por señal (v1.21). Mismo criterio
+// que marcaPendiente: variable de módulo, nunca dentro de `estado`.
+let marcaRetenida = null;
+// Cuándo LLEGÓ la última lectura del watch y cuándo se enganchó, en reloj del
+// teléfono. No es el ts del fix: acá se mide si el watch sigue hablando.
+let gpsUltimaLecturaMs = 0;
+let gpsEnganchadoMs = 0;
+let gpsPermisoNegado = false;
 
 // ---------- GPS (CU-15 / CU-18): se observa desde que hay sesión ----------
 // Desde v1.9 el GPS SÍ bloquea. En un punto al que el administrador le fijó
@@ -117,8 +125,11 @@ function iniciarGps() {
     return;
   }
   if (gpsWatchId !== null) return;
+  gpsEnganchadoMs = Date.now();
   gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
+      gpsUltimaLecturaMs = Date.now();
+      gpsPermisoNegado = false;
       const fix = {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude,
@@ -128,7 +139,9 @@ function iniciarGps() {
         // pos.timestamp es la hora REAL del fix según el sistema operativo. Usar
         // Date.now() haría pasar por nuevo un fix cacheado que el SO acaba de
         // entregar, y la antigüedad es justo el criterio de un punto anclado.
-        // Se acota a "no futuro" por si el reloj del teléfono va adelantado.
+        // Se acota a "no futuro" por si el reloj del teléfono va ATRASADO
+        // respecto del que estampó el fix. Con el reloj adelantado el fix nace
+        // viejo y esto no lo corrige: ahí los rechazos traen un edadMs casi fijo.
         ts: Math.min(pos.timestamp || Date.now(), Date.now())
       };
       // El fix crudo entra al buffer; lo que se usa para decidir es el
@@ -147,7 +160,8 @@ function iniciarGps() {
     err => {
       // 1 = PERMISSION_DENIED. Se distingue porque es el único caso que el
       // guardia puede resolver solo (y el que usaría para saltarse el control).
-      gpsMotivoFalla = err && err.code === 1
+      gpsPermisoNegado = Boolean(err && err.code === 1);
+      gpsMotivoFalla = gpsPermisoNegado
         ? 'falta el permiso de ubicación'
         : 'no hay señal todavía';
       pintarGps();
@@ -210,7 +224,7 @@ function consolidarFixes(buffer, ahora) {
     // La edad del conjunto es la de la lectura más nueva; el error que agrega
     // promediar sobre la ventana ya está pagado en el ± de precisionHonesta,
     // que sube cuando el guardia venía caminando. Se acota a "no futuro" por si
-    // el reloj del teléfono va adelantado.
+    // el reloj del teléfono va atrasado respecto del fix.
     ts: Math.min(tsMax, ahora)
   };
 }
@@ -222,6 +236,8 @@ function detenerGps() {
   gpsWatchId = null;
   gpsActual = null;
   gpsMotivoFalla = null;
+  gpsUltimaLecturaMs = 0;
+  gpsPermisoNegado = false;
   bufferFixes = [];
   liberarWakeLock();
 }
@@ -236,6 +252,64 @@ function reiniciarGps() {
   }
   gpsWatchId = null;
   iniciarGps();
+}
+
+// ---------- Vigía del watch (v1.21) ----------
+// watchPosition avisa cuando la posición CAMBIA, y hay teléfonos que con el
+// guardia parado frente al punto dejan de avisar. Mientras tanto el fix
+// envejece, pasa la frescura y la marca se rechaza por "ubicación de hace 25 s"
+// a alguien que no se movió del QR. Si el watch habló y se calló la mitad de la
+// frescura, se vuelve a enganchar: con maximumAge 0 el enganche entrega una
+// lectura nueva, y alcanza a llegar antes de que la anterior venza.
+//
+// Dos cuidados, los dos aprendidos en la revisión de esta versión:
+//   · Un watch que TODAVÍA NO habló desde que se enganchó no está callado, está
+//     adquiriendo. Cortarlo a los 10 s reinicia la búsqueda, y un GPS que
+//     necesita 20 s seguidos (cielo parcial, salida de un subterráneo) no
+//     llegaría nunca. A ese se le da más que su propio timeout de 15 s.
+//   · Solo se reengancha cuando hay una marca en juego (lector abierto, marca
+//     esperando señal o QR retenido). En un navegador kiosco (Fully corre sobre
+//     Android WebView) cada watchPosition nuevo vuelve a pedirle el permiso a la
+//     app anfitriona: hacerlo cada 12 s todo el turno en la garita es buscarse
+//     un diálogo o un rechazo, y gastar batería sin que nadie esté marcando.
+//
+// No toca el criterio: sigue haciendo falta un fix fresco y dentro del radio.
+// Lo único que cambia es que el teléfono no deja de preguntar cuando importa.
+const SILENCIO_WATCH_MS = 10000;
+const SIN_PRIMERA_LECTURA_MS = 60000;
+
+// Puro, para poder probarlo.
+function watchCallado(ultimaLecturaMs, enganchadoMs, ahora) {
+  const ultima = ultimaLecturaMs || 0;
+  const enganche = enganchadoMs || 0;
+  // Habló después del último enganche y se calló.
+  if (ultima > 0 && ultima >= enganche) return ahora - ultima > SILENCIO_WATCH_MS;
+  // Todavía no dijo nada desde que se enganchó: está adquiriendo.
+  return ahora - enganche > SIN_PRIMERA_LECTURA_MS;
+}
+
+function marcaEnJuego() {
+  const lectorAbierto = Boolean($('modal-escaner') && !$('modal-escaner').classList.contains('oculta'));
+  return Boolean(marcaPendiente || retencionVigente(marcaRetenida, Date.now()) || lectorAbierto);
+}
+
+function vigilarGps() {
+  if (gpsWatchId === null || !estado.sesion) return;
+  // Con la pantalla apagada el navegador calla el watch a propósito y al volver
+  // ya lo revive visibilitychange. Y sin permiso, reenganchar solo no arregla
+  // nada: eso lo hace un toque del guardia (reengancharSiNegado).
+  if (document.visibilityState !== 'visible' || gpsPermisoNegado) return;
+  if (!marcaEnJuego()) return;
+  if (watchCallado(gpsUltimaLecturaMs, gpsEnganchadoMs, Date.now())) reiniciarGps();
+}
+
+// Con permiso denegado (code 1) el navegador ya borró el watch y nada lo revive
+// hasta que la página pase por segundo plano, cosa que en un kiosco no ocurre
+// nunca. Se llama SOLO desde toques del guardia (iniciar ronda, abrir el lector,
+// Reintentar): es una solicitud por toque, nunca un diálogo en bucle, y lleva el
+// gesto del usuario, que Chrome exige para ofrecer encender la ubicación.
+function reengancharSiNegado() {
+  if (gpsPermisoNegado) reiniciarGps();
 }
 
 // ---------- Wake Lock (v1.14) ----------
@@ -414,6 +488,14 @@ function verificarPresencia(punto, fix = gpsUltimo()) {
 // favorecer a quien está caminando HACIA el punto.
 const VENTANA_PENDIENTE_MS = 15000;
 
+// Hasta cuándo puede esperar señal una marca: 15 s desde que empezó a esperar,
+// pero nunca más allá del plazo del QR retenido del que vino (v1.21). Sin ese
+// tope, un Reintentar a los 119 s abría 15 s más y la marca entraba a los 134 s
+// de la lectura. Una marca sin `hasta` (las de antes) usa solo los 15 s.
+function limitePendiente(pendiente) {
+  return Number.isFinite(pendiente.hasta) ? pendiente.hasta : pendiente.desde + VENTANA_PENDIENTE_MS;
+}
+
 // Reducer puro: sin DOM, sin timers, sin tocar `estado`. Es el único camino nuevo
 // que decide si una marca cuenta o no, así que tiene que poder probarse entero.
 //   { accion: 'aceptar' }              el criterio se cumplió a tiempo
@@ -427,7 +509,7 @@ function evaluarPendiente(pendiente, fixNuevo, ahora) {
     return { accion: 'rechazar', motivo: 'La marca quedó sin confirmar: vuelve a escanear el QR.' };
   }
   const veredicto = verificarPresencia(pendiente.punto, fixNuevo);
-  const restanteMs = pendiente.desde + VENTANA_PENDIENTE_MS - ahora;
+  const restanteMs = limitePendiente(pendiente) - ahora;
   // El plazo se mira ANTES que el veredicto, a propósito: una señal que recién
   // entra pasado el plazo no rescata la marca. Si no, la ventana no sería una
   // ventana sino una espera indefinida disfrazada.
@@ -729,6 +811,7 @@ async function registrar() {
 function salir() {
   if (estado.cola.length && !confirm('Hay marcas sin enviar al servidor. ¿Salir igual?')) return;
   olvidarPendiente();
+  marcaRetenida = null;
   detenerGps();
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
   // El rev sigue subiendo: si volviera a 0, al próximo arranque el respaldo
@@ -797,6 +880,7 @@ const conTope = (promesa, ms) => Promise.race([promesa, new Promise(r => setTime
 // la alarma. La suscripción del servidor ya la borró el DELETE.
 async function borrarDatosLocales() {
   olvidarPendiente();
+  marcaRetenida = null;
   detenerGps();
   liberarWakeLock();
   try {
@@ -855,14 +939,19 @@ function iniciarRonda(rondaId) {
   estado.ultimoInforme = null;
   estado.cola.push({ tipo: 'iniciar', ejecucionId: estado.ejecucion.id, rondaId, inicio: estado.ejecucion.inicio });
   guardarEstado();
+  // Es el toque que más importa para el GPS: los puntos bajo techo dependen del
+  // fix tomado en la entrada, y un watch muerto por un permiso negado no revive solo.
+  reengancharSiNegado();
   iniciarGps();
   pedirWakeLock();
   render();
   sincronizar();
 }
 
-// Valida un código contra el paquete local y registra la marca.
-function procesarCodigo(texto) {
+// Valida un código contra el paquete local y registra la marca. `leidoMs` es
+// cuándo se LEYÓ el QR: un reintento del QR retenido trae la hora de la lectura
+// original, para que el plazo de retención no se renueve con cada intento.
+function procesarCodigo(texto, leidoMs = Date.now()) {
   const ejecucion = estado.ejecucion;
   const ronda = rondaActual();
   if (!ejecucion || !ronda || ejecucion.cerrada) return;
@@ -895,23 +984,45 @@ function procesarCodigo(texto) {
   // Ese punto ya está esperando señal: volver a escanearlo no la mejora, y
   // reiniciar el plazo sería regalar tiempo infinito escaneando en loop.
   if (marcaPendiente && marcaPendiente.punto.id === punto.id) {
+    // Lo que sí cambia es la lectura: el QR se volvió a leer ahora, y el plazo
+    // de la retención que venga después se cuenta desde acá. La espera en sí no
+    // se alarga más allá de sus 15 s.
+    marcaPendiente.leidoMs = Math.max(marcaPendiente.leidoMs || 0, leidoMs);
+    marcaPendiente.hasta = Math.min(marcaPendiente.desde + VENTANA_PENDIENTE_MS, marcaPendiente.leidoMs + RETENCION_MS);
     aviso(`📍 "${punto.nombre}" ya está esperando señal. Quédate quieto unos segundos.`, 'info');
     return;
   }
+
+  // Un código nuevo reemplaza al QR retenido: o es el reintento de ese mismo
+  // punto, o el guardia ya siguió caminando y el anterior no va a mejorar. Si era
+  // de OTRO punto se le dice, después del resultado de este: si no, el panel
+  // desaparece y el punto anterior termina como faltante sin que sepa por qué.
+  const soltada = marcaRetenida && marcaRetenida.punto.id !== punto.id && retencionVigente(marcaRetenida, Date.now())
+    ? marcaRetenida.punto
+    : null;
+  marcaRetenida = null;
 
   // Verificación de presencia BLOQUEANTE (CU-18). Mismo criterio que el servidor,
   // aplicado antes de encolar: el guardia se entera al instante y la marca
   // rechazada nunca entra a la cola offline. Cubre el escaneo por cámara y el
   // código a mano — los dos pasan por acá, así no queda una puerta de atrás.
-  if (cfgGps().bloquea) {
-    const presencia = verificarPresencia(punto);
-    if (presencia && !presencia.ok) {
-      if (esperaSirve(presencia)) return dejarPendiente(punto, limpio, presencia);
-      return rechazarMarca(punto, presencia);
-    }
+  const presencia = cfgGps().bloquea ? verificarPresencia(punto) : null;
+  if (presencia && !presencia.ok) {
+    if (esperaSirve(presencia)) dejarPendiente(punto, limpio, presencia, leidoMs);
+    else rechazarMarca(punto, presencia);
+  } else {
+    registrarMarca(punto, limpio);
   }
+  avisarRetenidaSoltada(soltada);
+}
 
-  registrarMarca(punto, limpio);
+// El aviso de un QR retenido que se soltó porque llegó otro. Se suma al aviso
+// que acaba de dejar el punto nuevo en vez de pisarlo.
+function avisarRetenidaSoltada(punto) {
+  if (!punto) return;
+  const el = $('aviso');
+  const previo = el && !el.classList.contains('oculta') && el.textContent ? `${el.textContent} · ` : '';
+  aviso(`${previo}"${punto.nombre}" quedó SIN marcar: vuelve a escanear su QR.`, 'error', 7000);
 }
 
 // ¿Esperar unos segundos puede cambiar este veredicto? Sí cuando el problema es
@@ -930,33 +1041,42 @@ function esperaSirve(presencia) {
   return presencia.distanciaM <= presencia.topeM + cfgGps().precisionMaxM;
 }
 
-function dejarPendiente(punto, codigo, presencia) {
+function dejarPendiente(punto, codigo, presencia, leidoMs = Date.now()) {
   // Solo una marca en espera a la vez. Si había otra, el guardia ya se movió
   // hasta este punto: la anterior no va a mejorar. Se cierra como rechazo —con
   // su registro— y se le dice, en vez de dejarla morir en silencio.
   const desplazada = marcaPendiente;
   if (desplazada) registrarRechazo(desplazada.punto, desplazada.ultimo || { motivo: desplazada.motivo });
-  marcaPendiente = { punto, codigo, desde: Date.now(), motivo: presencia.motivo, ultimo: presencia };
+  // `desde` cuenta los 15 s de espera; `leidoMs` es la hora de la lectura del
+  // QR y pasa intacta a la retención si la espera no alcanza. `hasta` corta la
+  // espera donde vence la retención: un Reintentar tardío no estira el plazo.
+  const ahora = Date.now();
+  marcaPendiente = {
+    punto, codigo, desde: ahora, leidoMs,
+    hasta: Math.min(ahora + VENTANA_PENDIENTE_MS, leidoMs + RETENCION_MS),
+    motivo: presencia.motivo, ultimo: presencia
+  };
   clearInterval(pendienteTimer);
   // También corre sin fixes nuevos: si el GPS se calló del todo, el plazo tiene
   // que vencer igual y decírselo al guardia.
   pendienteTimer = setInterval(revisarPendiente, 1000);
   navigator.vibrate && navigator.vibrate(60);
-  aviso(`📍 Afinando señal para "${punto.nombre}"… ${VENTANA_PENDIENTE_MS / 1000} s`
-    + (desplazada ? ` · "${desplazada.punto.nombre}" quedó SIN marcar, vuelve a escanearlo` : ''),
-    desplazada ? 'error' : 'info', desplazada ? 6000 : 1500);
+  // La espera se muestra en el panel de la marca (pintarMarca), que no se
+  // esfuma. El aviso flotante queda solo para lo que el panel no dice: que la
+  // marca anterior se perdió.
+  if (desplazada) aviso(`"${desplazada.punto.nombre}" quedó SIN marcar, vuelve a escanearlo.`, 'error', 6000);
+  // Si el watch venía callado no se espera al próximo tick del vigía: de los 15
+  // segundos de plazo, tres son muchos.
+  vigilarGps();
   pintarGps();
 }
 
+// Suelta la marca en espera. El QR retenido es aparte: se suelta al salir, al
+// cerrar la ronda o cuando llega otro código.
 function olvidarPendiente() {
   clearInterval(pendienteTimer);
   pendienteTimer = null;
   marcaPendiente = null;
-}
-
-function pintarPendiente(restanteMs) {
-  const punto = marcaPendiente ? marcaPendiente.punto.nombre : '';
-  aviso(`📍 Afinando señal para "${punto}"… ${Math.ceil(restanteMs / 1000)} s`, 'info', 1500);
 }
 
 // Corre con cada fix nuevo y una vez por segundo. Solo llama al reducer y pinta.
@@ -965,10 +1085,120 @@ function revisarPendiente() {
   const pendiente = marcaPendiente;
   const r = evaluarPendiente(pendiente, gpsUltimo(), Date.now());
   if (r.veredicto) pendiente.ultimo = r.veredicto;
-  if (r.accion === 'esperar') { pintarPendiente(r.restanteMs); return; }
+  if (r.accion === 'esperar') { pintarMarca(); return; }
   olvidarPendiente();
   if (r.accion === 'aceptar') registrarMarca(pendiente.punto, pendiente.codigo);
-  else rechazarMarca(pendiente.punto, pendiente.ultimo || { motivo: r.motivo });
+  else rechazarMarca(pendiente.punto, pendiente.ultimo || { motivo: r.motivo }, pendiente.codigo, pendiente.leidoMs);
+}
+
+// ---------- QR retenido (v1.21) ----------
+// Hasta v1.20 un rechazo por señal botaba también la lectura del QR: el guardia
+// tenía que abrir la cámara y apuntar de nuevo a un código que la app ya había
+// leído bien. Era el error más repetido de la marcación y el QR no tenía la
+// culpa. Ahora, si el rechazo es de los que la señal puede arreglar, el QR
+// queda retenido y se reintenta con un toque.
+//
+// Reintentar es EXACTAMENTE volver a escanear —pasa por procesarCodigo() con el
+// mismo código— sin la cámara. Mismo criterio, mismo plazo, mismo registro de
+// rechazo si vuelve a fallar. Lo que el guardia podía hacer antes escaneando
+// otra vez lo hace ahora sin apuntar.
+//
+// El plazo existe para que la lectura del QR y la marca no queden separadas por
+// media ronda: pasado ese tiempo hay que volver a pararse frente al código. Se
+// cuenta desde la LECTURA (`desde` es leidoMs), no desde el último rechazo: si
+// no, cada Reintentar fallido lo renovaría y el plazo no existiría.
+const RETENCION_MS = 120000;
+
+// Puro: ¿el QR retenido todavía se puede reintentar?
+function retencionVigente(retenida, ahora) {
+  return Boolean(retenida && retenida.punto && ahora - retenida.desde <= RETENCION_MS);
+}
+
+function reintentarRetenida() {
+  // Antes que nada: si el GPS murió por un permiso negado, este toque es el que
+  // lo vuelve a pedir, aunque el QR ya haya vencido y haya que escanear de nuevo.
+  reengancharSiNegado();
+  const retenida = marcaRetenida;
+  marcaRetenida = null;
+  if (!retencionVigente(retenida, Date.now())) {
+    aviso('Pasó mucho tiempo desde que leíste el QR: vuelve a escanearlo.', 'error', 5000);
+    pintarMarca();
+    return;
+  }
+  procesarCodigo(retenida.codigo, retenida.desde);
+  pintarMarca();
+}
+
+// Por qué no entró, en corto. No se reusa presencia.motivo: ese texto es el del
+// rechazo seco (y el espejo del servidor) y termina en "vuelve a escanear", que
+// es justo lo que acá ya no hace falta. En un punto anclado (bajo techo) la
+// distancia es a la ENTRADA del recinto, y hay que decirlo.
+function textoRetenida(presencia, anclado) {
+  const p = presencia || {};
+  if (p.sinGps) {
+    return anclado
+      ? 'El teléfono no alcanzó a tomar la ubicación de la entrada.'
+      : `El teléfono todavía no tiene ubicación (${gpsMotivoFalla || 'buscando señal'}).`;
+  }
+  if (p.vencido) return `Tu ubicación es de hace ${minutos(p.edadMs)} y hace falta una más reciente.`;
+  if (p.impreciso) return `La señal es demasiado imprecisa (±${p.acc} m).`;
+  if (p.distanciaM != null) {
+    return `El GPS te ubica a ${p.distanciaM} m${anclado ? ' de la entrada' : ''} y el máximo es ${p.topeM} m`
+      + `${p.acc != null ? ` (señal ±${p.acc} m)` : ''}.`;
+  }
+  return 'No se pudo confirmar tu ubicación.';
+}
+
+function descartarRetenida() {
+  marcaRetenida = null;
+  pintarMarca();
+}
+
+// El panel de la marca en curso, sobre el botón de escanear. Dos estados:
+//   afinando     QR leído, esperando señal. Se resuelve solo.
+//   recuperable  QR leído, la señal no alcanzó. Se reintenta sin escanear.
+// La marca aceptada y el rechazo definitivo siguen saliendo por aviso().
+//
+// Ningún título lleva ✓: "QR leído" no es "punto marcado", y confundirlos es
+// justo cómo un guardia se va del punto creyendo que quedó hecho.
+function pintarMarca() {
+  const el = $('marca-estado');
+  if (!el) return;
+  if (marcaRetenida && !retencionVigente(marcaRetenida, Date.now())) {
+    // Vence una sola vez y se dice: si no, el panel desaparece solo y el punto
+    // termina como faltante sin que el guardia sepa por qué.
+    const vencida = marcaRetenida;
+    marcaRetenida = null;
+    aviso(`Se acabó el plazo para "${vencida.punto.nombre}": vuelve a escanear su QR.`, 'error', 6000);
+    navigator.vibrate && navigator.vibrate([80, 60, 80]);
+  }
+  const acciones = $('marca-acciones');
+  if (marcaPendiente) {
+    const restanteS = Math.max(0, Math.ceil((limitePendiente(marcaPendiente) - Date.now()) / 1000));
+    $('marca-titulo').textContent = `QR de "${marcaPendiente.punto.nombre}" leído · afinando ubicación… ${restanteS} s`;
+    $('marca-detalle').textContent = 'Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.';
+    acciones.classList.add('oculta');
+    el.classList.remove('oculta');
+  } else if (marcaRetenida) {
+    const punto = marcaRetenida.punto;
+    const anclado = umbralesDe(punto).anclado;
+    $('marca-titulo').textContent = `QR de "${punto.nombre}" leído · todavía NO está marcado`;
+    // El motivo se recalcula con la señal de AHORA (pintarMarca corre con cada
+    // fix y cada 3 s). Solo informa: aunque ya alcance, la marca no entra sola;
+    // Reintentar sigue pasando por procesarCodigo() con el control completo.
+    const ahora = verificarPresencia(punto);
+    const listo = !ahora || ahora.ok;
+    let queHacer;
+    if (listo) queHacer = 'La señal ya alcanza: toca Reintentar';
+    else if (gpsPermisoNegado) queHacer = 'Activa la ubicación del teléfono para esta app y toca Reintentar';
+    else if (anclado) queHacer = 'Este punto se verifica por la entrada: sal a donde haya señal, pasa por la entrada del recinto y toca Reintentar';
+    else queHacer = 'Espera unos segundos junto al QR y toca Reintentar';
+    $('marca-detalle').textContent = `${listo ? '' : `${textoRetenida(ahora, anclado)} `}${queHacer}. No hace falta escanear de nuevo.`;
+    acciones.classList.remove('oculta');
+    el.classList.remove('oculta');
+  } else {
+    el.classList.add('oculta');
+  }
 }
 
 // Encola la marca. Es el único camino por el que un escaneo entra a la ronda:
@@ -980,6 +1210,7 @@ function registrarMarca(punto, codigo) {
   // el punto pudo marcarse por otra vía.
   if (!ejecucion || !ronda || ejecucion.cerrada) return;
   if (ejecucion.escaneos.some(e => e.puntoId === punto.id)) return;
+  if (marcaRetenida && marcaRetenida.punto.id === punto.id) marcaRetenida = null;
 
   const ts = new Date().toISOString();
   const gps = gpsParaMarca(punto);
@@ -999,10 +1230,26 @@ function registrarMarca(punto, codigo) {
   sincronizar();
 }
 
-// Rechazo definitivo: se le dice al guardia y queda el registro.
-function rechazarMarca(punto, presencia) {
-  aviso(presencia.motivo || 'No se pudo confirmar tu ubicación.', 'error', 6000);
+// La marca no entró: se le dice al guardia y queda el registro. Con `codigo` y
+// un rechazo que la señal puede arreglar (esperaSirve), el QR queda retenido
+// para reintentar sin escanear; si no, es un rechazo definitivo como siempre.
+// El registro del rechazo es el mismo en los dos casos: la marca no contó.
+function rechazarMarca(punto, presencia, codigo, leidoMs) {
   navigator.vibrate && navigator.vibrate([80, 60, 80, 60, 80]);
+  const retenible = codigo && esperaSirve(presencia);
+  const retenida = retenible ? { punto, codigo, desde: leidoMs != null ? leidoMs : Date.now(), presencia } : null;
+  if (retenida && retencionVigente(retenida, Date.now())) {
+    marcaRetenida = retenida;
+    // El panel lo explica, pero el aviso fijo es lo que se ve aunque el teléfono
+    // no vibre (iPhone, kiosco) y aunque el panel quede fuera de la pantalla.
+    aviso(`"${punto.nombre}" todavía NO está marcado: falta la ubicación. Toca Reintentar.`, 'error', 6000);
+  } else if (retenida) {
+    // La espera terminó justo donde vencía el plazo de la lectura: retenerla
+    // sería decir "toca Reintentar" y en el mismo instante "se acabó el plazo".
+    aviso(`Se acabó el plazo para "${punto.nombre}": vuelve a escanear su QR.`, 'error', 6000);
+  } else {
+    aviso(presencia.motivo || 'No se pudo confirmar tu ubicación.', 'error', 6000);
+  }
   registrarRechazo(punto, presencia);
   pintarGps();
 }
@@ -1045,7 +1292,9 @@ function cerrarRonda() {
   // y apellido: son diez segundos de espera contra un punto menos en el informe.
   const enEspera = marcaPendiente
     ? `"${marcaPendiente.punto.nombre}" todavía está esperando señal y NO va a quedar marcado.\n\n`
-    : '';
+    : retencionVigente(marcaRetenida, Date.now())
+      ? `"${marcaRetenida.punto.nombre}" tiene el QR leído pero NO está marcado: falta confirmar la ubicación.\n\n`
+      : '';
   const mensaje = faltan > 0
     ? `${enEspera}Faltan ${faltan} punto(s) por marcar. Si terminas ahora, el informe saldrá INCOMPLETO y se avisará al administrador. ¿Terminar igual?`
     : `${enEspera}¿Terminar la ronda y enviar el informe?`;
@@ -1057,6 +1306,7 @@ function cerrarRonda() {
     olvidarPendiente();
     rechazarMarca(perdida.punto, perdida.ultimo || { motivo: perdida.motivo });
   }
+  marcaRetenida = null;
   ejecucion.cerrada = true;
   ejecucion.fin = new Date().toISOString();
   // El comentario viaja en el mismo evento del cierre: si no hay señal, espera
@@ -1186,24 +1436,129 @@ async function sincronizar() {
 
 // ---------- Escáner ----------
 
-async function abrirEscaner() {
-  $('modal-escaner').classList.remove('oculta');
-  escaneando = true;
+// Desde v1.21 el lector deja de fallar callado. Tres cosas:
+//   · más píxeles sobre el QR: se pide la cámara a 1080p y jsQR lee el recorte
+//     del recuadro a resolución nativa, no el cuadro entero achicado a 480 px;
+//   · si el detector nativo existe pero no sirve, entra jsQR. Falla de dos
+//     maneras (Chromium y Android WebView lo implementan sobre Google Play
+//     Services): revienta en cada detect() cuando falta Play Services, y ahí
+//     jsQR lo reemplaza; o responde vacío para siempre cuando el módulo de
+//     códigos no está operativo, y ahí desde los 3 s sin lectura se intercala
+//     una pasada de jsQR cada medio segundo, sin soltar al nativo que sí puede
+//     estar funcionando (el guardia a veces abre el lector y recién camina);
+//   · a los 8 segundos sin lectura la pantalla lo dice y ofrece salidas
+//     (linterna si la hay, código a mano) en vez de dejar al guardia apuntando.
+//
+// Cada apertura del lector es un "turno". Los ciclos de lectura, la cámara y el
+// aviso de ayuda pertenecen a su turno y mueren con él: cancelar y reabrir
+// rápido en un teléfono lento ya no deja dos ciclos vivos ni una cámara huérfana,
+// que en un kiosco (la página no se recarga nunca) quedaba encendida.
+const AYUDA_ESCANER_MS = 8000;
+const TEXTO_ESCANER = 'Apunta al QR del punto de control';
+let ayudaEscanerTimer = null;
+let linternaEncendida = false;
+let turnoEscaner = 0;
+
+function turnoVivo(turno) {
+  return escaneando && turno === turnoEscaner;
+}
+
+function pistaVideo() {
+  return stream ? stream.getVideoTracks()[0] || null : null;
+}
+
+// Lo que la cámara sabe hacer, si lo declara. Chrome y Android WebView (Fully
+// Kiosk) declaran la linterna solo si la cámara que eligieron tiene flash; Safari
+// la declara desde iOS 17, pero no el enfoque. Lo que no se declara no aparece.
+function capacidadesCamara() {
+  const pista = pistaVideo();
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 } },
+    return pista && pista.getCapabilities ? pista.getCapabilities() : {};
+  } catch {
+    return {};
+  }
+}
+
+async function alternarLinterna() {
+  const pista = pistaVideo();
+  if (!pista) return;
+  try {
+    await pista.applyConstraints({ advanced: [{ torch: !linternaEncendida }] });
+    linternaEncendida = !linternaEncendida;
+  } catch {
+    aviso('Este teléfono no dejó encender la linterna.', 'error');
+  }
+  $('btn-linterna').textContent = linternaEncendida ? '🔦 Apagar luz' : '🔦 Encender luz';
+}
+
+function mostrarAyudaEscaner(turno) {
+  if (!turnoVivo(turno)) return;
+  $('modal-escaner').classList.add('escaner-ayuda');
+  // A los 8 s ya se sabe si hay botón de linterna: no se manda a buscar uno que
+  // no existe.
+  const hayLinterna = !$('btn-linterna').classList.contains('oculta');
+  $('escaner-texto').textContent = '¿No lee? Acércate hasta que el QR llene el recuadro y mantén el teléfono quieto. '
+    + (hayLinterna ? 'Si está oscuro, enciende la luz.' : 'Si está oscuro, busca más luz o ingresa el código a mano.');
+  $('btn-escaner-manual').classList.remove('oculta');
+}
+
+async function abrirEscaner() {
+  // Ya abierto: una segunda activación del botón de atrás (Enter de un teclado,
+  // doble toque de TalkBack con el foco en el botón) no abre otro turno. Si lo
+  // abriera, la cámara del primero quedaría encendida para siempre en un kiosco.
+  if (escaneando) return;
+  // Toque del guardia: si el GPS murió por un permiso negado se vuelve a pedir
+  // ahora, mientras apunta, y no recién cuando el QR ya se leyó.
+  reengancharSiNegado();
+  const turno = ++turnoEscaner;
+  $('modal-escaner').classList.remove('oculta', 'escaner-ayuda');
+  $('escaner-texto').textContent = TEXTO_ESCANER;
+  $('btn-escaner-manual').classList.add('oculta');
+  $('btn-linterna').classList.add('oculta');
+  linternaEncendida = false;
+  escaneando = true;
+  // Con el lector abierto hay una marca en juego: si el watch venía callado se
+  // reengancha ya, y la lectura nueva llega mientras el guardia apunta.
+  vigilarGps();
+  try {
+    const nuevo = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     });
+    // El guardia pudo cancelar (o cancelar y reabrir) mientras el sistema
+    // preguntaba por el permiso: esta cámara ya no es de nadie.
+    if (!turnoVivo(turno)) {
+      for (const pista of nuevo.getTracks()) pista.stop();
+      return;
+    }
+    // Segunda defensa: nunca se pisa la referencia a una cámara sin apagarla.
+    if (stream) for (const pista of stream.getTracks()) pista.stop();
+    stream = nuevo;
     const video = $('video');
     video.srcObject = stream;
     await video.play();
+    if (!turnoVivo(turno)) return;
+    const capacidades = capacidadesCamara();
+    // Enfoque continuo donde se pueda pedir: un QR a 20 cm con el foco clavado
+    // en el infinito no lo lee ningún decodificador.
+    if (Array.isArray(capacidades.focusMode) && capacidades.focusMode.includes('continuous')) {
+      pistaVideo().applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+    }
+    if (capacidades.torch) {
+      $('btn-linterna').textContent = '🔦 Encender luz';
+      $('btn-linterna').classList.remove('oculta');
+    }
+    clearTimeout(ayudaEscanerTimer);
+    ayudaEscanerTimer = setTimeout(() => mostrarAyudaEscaner(turno), AYUDA_ESCANER_MS);
     if ('BarcodeDetector' in window) {
-      const detector = new BarcodeDetector({ formats: ['qr_code'] });
-      cicloDetector(detector);
+      cicloDetector(new BarcodeDetector({ formats: ['qr_code'] }), turno);
     } else {
-      cicloJsqr();
+      cicloJsqr(turno);
     }
   } catch (err) {
+    // Un turno ya cerrado no tiene a quién avisarle: el play() que revienta
+    // porque el guardia canceló no es "no se pudo abrir la cámara".
+    if (!turnoVivo(turno)) return;
     cerrarEscaner();
     aviso('No se pudo abrir la cámara. Usa el código manual.', 'error');
   }
@@ -1211,6 +1566,8 @@ async function abrirEscaner() {
 
 function cerrarEscaner() {
   escaneando = false;
+  clearTimeout(ayudaEscanerTimer);
+  ayudaEscanerTimer = null;
   if (stream) {
     for (const pista of stream.getTracks()) pista.stop();
     stream = null;
@@ -1218,46 +1575,155 @@ function cerrarEscaner() {
   $('modal-escaner').classList.add('oculta');
 }
 
+function abrirManual() {
+  $('campo-codigo').value = '';
+  $('modal-manual').classList.remove('oculta');
+  $('campo-codigo').focus();
+}
+
+// Devuelve true si consumió el código (cerró el lector y lo procesó). Con el
+// mismo QR de hace menos de 2,5 s devuelve false y el ciclo SIGUE leyendo: hasta
+// v1.21 ese caso terminaba el ciclo y dejaba la cámara viva sin leer nada —el
+// guardia que volvía a abrir el lector con el QR todavía al frente se quedaba
+// apuntando a una cámara sorda—. La ventana se conserva: si un detect() en vuelo
+// resuelve después de cerrar, evita procesar el mismo código dos veces.
 function codigoDetectado(valor) {
-  // Evita procesar el mismo QR dos veces seguidas mientras sigue en cámara.
   const ahora = Date.now();
-  if (valor === ultimoCodigoLeido.valor && ahora - ultimoCodigoLeido.ts < 2500) return;
+  if (valor === ultimoCodigoLeido.valor && ahora - ultimoCodigoLeido.ts < 2500) return false;
   ultimoCodigoLeido = { valor, ts: ahora };
   cerrarEscaner();
   procesarCodigo(valor);
+  return true;
 }
 
-function cicloDetector(detector) {
+// Cuántos fallos seguidos del detector nativo se toleran antes de pasar a jsQR.
+const FALLOS_DETECTOR_MAX = 5;
+// Desde cuándo y cada cuánto se intercala jsQR con un detector nativo que
+// responde pero no lee nada.
+const RESPALDO_JSQR_MS = 3000;
+const CADA_JSQR_MS = 500;
+
+function cicloDetector(detector, turno) {
   const video = $('video');
+  const pasarJsqr = lectorJsqr();
+  const inicio = Date.now();
+  let fallos = 0;
+  let proximoJsqr = 0;
   const paso = async () => {
-    if (!escaneando) return;
+    if (!turnoVivo(turno)) return;
     try {
-      const codigos = await detector.detect(video);
-      if (codigos.length && codigos[0].rawValue) return codigoDetectado(codigos[0].rawValue);
-    } catch {}
-    requestAnimationFrame(paso);
-  };
-  requestAnimationFrame(paso);
-}
-
-function cicloJsqr() {
-  const video = $('video');
-  const lienzo = $('lienzo');
-  const ctx = lienzo.getContext('2d', { willReadFrequently: true });
-  const paso = () => {
-    if (!escaneando) return;
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      const escala = 480 / video.videoWidth;
-      lienzo.width = 480;
-      lienzo.height = Math.round(video.videoHeight * escala);
-      ctx.drawImage(video, 0, 0, lienzo.width, lienzo.height);
-      const imagen = ctx.getImageData(0, 0, lienzo.width, lienzo.height);
-      const resultado = window.jsQR && window.jsQR(imagen.data, imagen.width, imagen.height, { inversionAttempts: 'dontInvert' });
-      if (resultado && resultado.data) return codigoDetectado(resultado.data);
+      const codigos = (await detector.detect(video)).filter(c => c.rawValue);
+      if (!turnoVivo(turno)) return;
+      fallos = 0;
+      // Con dos códigos en cuadro (el QR y la etiqueta de un medidor al lado)
+      // gana el que es de la app, no el primero que devolvió el detector.
+      const propio = codigos.find(c => c.rawValue.toUpperCase().startsWith('RQR:')) || codigos[0];
+      if (propio) {
+        if (codigoDetectado(propio.rawValue)) return;
+      } else if (Date.now() - inicio > RESPALDO_JSQR_MS && Date.now() >= proximoJsqr) {
+        const { texto, ms } = pasarJsqr();
+        // El próximo turno de jsQR se cuenta desde que ESTA pasada terminó y
+        // crece con lo que costó: con una escena oscura y ruidosa una pasada
+        // puede llevar casi un segundo, y el detector nativo —que puede estar
+        // funcionando— tiene que conservar la mayor parte del hilo.
+        proximoJsqr = Date.now() + Math.max(CADA_JSQR_MS, 4 * ms);
+        if (texto && codigoDetectado(texto)) return;
+      }
+    } catch {
+      if (!turnoVivo(turno)) return;
+      if (++fallos >= FALLOS_DETECTOR_MAX) return cicloJsqr(turno);
     }
     requestAnimationFrame(paso);
   };
   requestAnimationFrame(paso);
+}
+
+// Qué pedazo del cuadro de video cae bajo el recuadro de la pantalla, en píxeles
+// del video. El video se muestra con object-fit: cover —escalado hasta llenar y
+// recortado por los lados—, así que hay que deshacer esa cuenta. Puro: recibe
+// las medidas y devuelve un cuadrado {x, y, lado}, o null si no hay con qué.
+//
+// `margen` agranda el recuadro: jsQR necesita ver los tres ojos del QR completos
+// y el guardia nunca lo centra perfecto.
+function recorteEscaner(videoW, videoH, cajaVideo, cajaMarco, margen = 1.3) {
+  if (!(videoW > 0 && videoH > 0) || !cajaVideo || !cajaMarco) return null;
+  if (!(cajaVideo.width > 0 && cajaVideo.height > 0 && cajaMarco.width > 0)) return null;
+  const escala = Math.max(cajaVideo.width / videoW, cajaVideo.height / videoH);
+  // Lo que object-fit: cover dejó fuera de pantalla, por cada lado.
+  const fueraX = (videoW * escala - cajaVideo.width) / 2;
+  const fueraY = (videoH * escala - cajaVideo.height) / 2;
+  const centroX = (cajaMarco.left - cajaVideo.left + cajaMarco.width / 2 + fueraX) / escala;
+  const centroY = (cajaMarco.top - cajaVideo.top + cajaMarco.height / 2 + fueraY) / escala;
+  const lado = Math.floor(Math.min(Math.max(cajaMarco.width, cajaMarco.height) * margen / escala, videoW, videoH));
+  if (!(lado > 0) || !Number.isFinite(centroX) || !Number.isFinite(centroY)) return null;
+  const acotar = (v, max) => Math.round(Math.min(Math.max(v, 0), max));
+  return { x: acotar(centroX - lado / 2, videoW - lado), y: acotar(centroY - lado / 2, videoH - lado), lado };
+}
+
+// Tamaños de lo que se le pasa a jsQR. La ganancia está en el recorte: el
+// recuadro llega a 640 px en vez de ocupar ~340 de un cuadro de 480, casi el
+// doble de píxeles por módulo para un QR chico o a un metro. No se va a
+// resolución nativa a propósito: con poca luz el sensor mete ruido, el
+// binarizador de jsQR lo convierte en miles de candidatos a "ojo" y una pasada
+// de 800 px pasaba de decenas de milisegundos a casi un segundo. Achicar con
+// suavizado promedia ese ruido. El cuadro completo va como en v1.20, solo como
+// red para el QR que quedó fuera del recuadro.
+const LADO_RECORTE_MAX = 640;
+const ANCHO_COMPLETO = 480;
+// Respiro mínimo entre pasadas. jsQR es síncrono: sin pausa el teléfono se va
+// en decodificar y el video del visor y los botones se traban, que es lo
+// contrario de ayudar a apuntar. La pausa real crece con lo que costó la pasada.
+const PAUSA_JSQR_MS = 40;
+
+// Una pasada de jsQR sobre el cuadro actual: devuelve el texto leído (o null) y
+// cuánto tardó. La usan el ciclo de jsQR y el respaldo intercalado del detector
+// nativo, que reparten el hilo según ese costo.
+function lectorJsqr() {
+  const video = $('video');
+  const lienzo = $('lienzo');
+  const ctx = lienzo.getContext('2d', { willReadFrequently: true });
+  let pasada = 0;
+  return () => {
+    if (!window.jsQR || video.readyState !== video.HAVE_ENOUGH_DATA || !video.videoWidth) return { texto: null, ms: 0 };
+    const t0 = Date.now();
+    pasada++;
+    // Dos de cada tres pasadas leen el recuadro; la tercera, el cuadro entero.
+    const recorte = pasada % 3
+      ? recorteEscaner(video.videoWidth, video.videoHeight,
+        video.getBoundingClientRect(), document.querySelector('.escaner-marco').getBoundingClientRect())
+      : null;
+    if (recorte) {
+      lienzo.width = lienzo.height = Math.min(recorte.lado, LADO_RECORTE_MAX);
+    } else {
+      const escala = Math.min(1, ANCHO_COMPLETO / video.videoWidth);
+      lienzo.width = Math.round(video.videoWidth * escala);
+      lienzo.height = Math.round(video.videoHeight * escala);
+    }
+    // Cambiar el tamaño del lienzo reinicia el contexto: el suavizado va después.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (recorte) ctx.drawImage(video, recorte.x, recorte.y, recorte.lado, recorte.lado, 0, 0, lienzo.width, lienzo.height);
+    else ctx.drawImage(video, 0, 0, lienzo.width, lienzo.height);
+    const imagen = ctx.getImageData(0, 0, lienzo.width, lienzo.height);
+    // Una de cada cuatro prueba también el QR invertido (claro sobre oscuro):
+    // cuesta el doble, así que no va en todas.
+    const resultado = window.jsQR(imagen.data, imagen.width, imagen.height,
+      { inversionAttempts: pasada % 4 ? 'dontInvert' : 'attemptBoth' });
+    return { texto: resultado && resultado.data ? resultado.data : null, ms: Date.now() - t0 };
+  };
+}
+
+function cicloJsqr(turno) {
+  const pasar = lectorJsqr();
+  const paso = () => {
+    if (!turnoVivo(turno)) return;
+    const { texto, ms } = pasar();
+    if (texto && codigoDetectado(texto)) return;
+    // Al menos tan larga como la pasada: jsQR nunca se lleva más de la mitad del
+    // hilo, y Cancelar, la luz y "Código a mano" siguen respondiendo.
+    setTimeout(paso, Math.max(PAUSA_JSQR_MS, ms));
+  };
+  paso();
 }
 
 // ---------- Render ----------
@@ -1343,10 +1809,13 @@ async function revisarVersion() {
   } catch {
     return; // sin red o servidor caído: se reintenta en el próximo ciclo
   }
-  if (!version || version === VERSION_APP || !seguroRecargar()) return;
+  // Misma versión que el servidor, pero corriendo sobre una página o un estilos
+  // de otra (ver shellMixto): también hay que recargar, cuando sea seguro.
+  if (!version || (version === VERSION_APP && !shellMixto()) || !seguroRecargar()) return;
   // Antes de soltar la página que funciona se comprueba que la nueva está
-  // completa en el servidor: la página responde y app.js ya es el de esa
-  // versión. Si no (deploy a medias, sin señal, copia vieja), no se recarga.
+  // completa en el servidor: la página es la de esa versión y app.js también.
+  // Si no (deploy a medias, sin señal, copia vieja del caché que el service
+  // worker devuelve como si fuera buena), no se recarga.
   try {
     const [pagina, codigo] = await Promise.all([
       fetch('./', { cache: 'no-store' }),
@@ -1354,6 +1823,12 @@ async function revisarVersion() {
     ]);
     if (!pagina.ok || !codigo.ok) return;
     if (!(await codigo.text()).includes(`VERSION_APP = '${version}'`)) return;
+    // La página tiene que ser la de esa versión. Una que declara OTRA versión no
+    // sirve nunca. Una sin marca (anterior a v1.21) sirve solo si es un cambio
+    // real de versión —un rollback a v1.20.x tiene que llegar a los kioscos—;
+    // para reparar un shell mezclado, sin marca es justo la copia vieja del caché.
+    const marca = /<meta name="version-app" content="([^"]+)">/.exec(await pagina.text());
+    if (marca ? marca[1] !== version : version === VERSION_APP) return;
   } catch {
     return;
   }
@@ -1499,6 +1974,9 @@ function textoWakeLock() {
 // Estado del GPS durante la ronda. Con el bloqueo activo el guardia NECESITA
 // ver esto: es la diferencia entre "puedo marcar" y "no me va a dejar".
 function pintarGps() {
+  // La marca en espera o retenida va en su propio panel, junto al botón de
+  // escanear; esta línea sigue mostrando la señal, que es lo que la resuelve.
+  pintarMarca();
   const el = $('ronda-gps');
   if (!el) return;
   const cfg = cfgGps();
@@ -1517,15 +1995,6 @@ function pintarGps() {
     ? ` · ${anclados} punto(s) bajo techo se marcan con la señal que tomaste en la entrada`
     : '';
   const pantalla = textoWakeLock();
-  // Una marca esperando señal manda sobre todo lo demás: es lo único que el
-  // guardia tiene que mirar en ese momento.
-  if (marcaPendiente) {
-    const restanteS = Math.max(0, Math.ceil((marcaPendiente.desde + VENTANA_PENDIENTE_MS - Date.now()) / 1000));
-    el.textContent = `📍 Afinando señal para "${marcaPendiente.punto.nombre}"… ${restanteS} s.`
-      + ' Quédate quieto: si la señal entra, la marca se registra sola.' + pantalla;
-    el.className = 'nota nota-alerta';
-    return;
-  }
   if (!ultimo) {
     el.textContent = `📍 Sin ubicación (${gpsMotivoFalla || 'buscando señal'}): ${conUbicacion.length} punto(s) de esta ronda no se podrán marcar hasta que haya señal.${pantalla}`;
     el.className = 'nota nota-alerta';
@@ -1643,7 +2112,115 @@ function volverAlInicio() {
 
 // ---------- Arranque ----------
 
+// ---------- Página de otra versión (v1.21) ----------
+// El service worker es network-first ARCHIVO POR ARCHIVO. Con señal
+// intermitente justo después de un deploy, la página puede salir de la copia
+// vieja del caché y app.js del servidor ya nuevo, o estilos.css viejo con lo
+// demás nuevo, en cualquier combinación. En el teléfono de la garita (kiosco)
+// eso no lo arregla nadie a mano. Y el salto a esta versión lo ejecuta el
+// código de la ANTERIOR, que no sabe comprobarlo: la protección tiene que vivir
+// acá. Dos partes:
+//   · completarHtmlAnterior() deja la página vieja con la misma estructura que
+//     la nueva (agrega lo que falta y envuelve el video en el visor) y, si los
+//     estilos son de otra versión, inyecta las reglas que mantienen "Cancelar"
+//     a la vista;
+//   · shellMixto() le dice a revisarVersion() que recargue cuando sea seguro,
+//     para terminar de bajar la página y los estilos de esta versión.
+// Las dos versiones se leen de marcas explícitas —<meta name="version-app"> en
+// index.html y --version-app en estilos.css—, no de cómo se ve la página: una
+// medida de maquetación con el lector oculto no distingue nada.
+let estilosAnteriores = false;
+
+function versionDelShell() {
+  const meta = document.querySelector('meta[name="version-app"]');
+  return meta ? meta.getAttribute('content') : null;
+}
+
+function versionDeEstilos() {
+  try {
+    const valor = getComputedStyle(document.documentElement).getPropertyValue('--version-app');
+    return String(valor || '').trim().replace(/^["']|["']$/g, '') || null;
+  } catch {
+    return null;
+  }
+}
+
+function shellMixto() {
+  return versionDelShell() !== VERSION_APP || estilosAnteriores;
+}
+
+// Lo mínimo del lector y del panel que tiene que valer aunque estilos.css sea de
+// otra versión (o no haya cargado): el visor que se encoge, el video dentro de
+// él y el pie siempre por encima. Sin esto un guardia de kiosco puede quedar
+// encerrado en la cámara, con Cancelar fuera de la pantalla o tapado.
+const ESTILOS_MINIMOS = '.escaner-visor{position:relative;flex:1 1 0;min-height:0;overflow:hidden}'
+  + '#video{flex:1;width:100%;min-height:0;object-fit:cover}'
+  + '.escaner-visor>#video{position:absolute;inset:0;height:100%}'
+  + '.escaner-visor .escaner-marco{transform:translate(-50%,-50%);width:auto;height:min(70vw,300px,85%)}'
+  + '.escaner-pie{position:relative;z-index:1;flex:none;max-height:60vh;overflow-y:auto}'
+  + '.escaner-pie .botonera-fila .btn{font-size:15px;padding:14px 10px}'
+  + '#btn-cancelar-escaner{position:sticky;bottom:0}'
+  + '.marca-estado .botonera-fila{margin-top:12px}';
+
+// Idempotente y sin lanzar: corre en cada arranque, también sobre la página
+// nueva, donde no hace nada. Usa solo clases que ya existían en estilos.css.
+function completarHtmlAnterior() {
+  try {
+    const escanear = $('btn-escanear');
+    if (!$('marca-estado') && escanear) {
+      escanear.insertAdjacentHTML('beforebegin', `
+        <div id="marca-estado" class="caja caja-alerta marca-estado oculta">
+          <strong id="marca-titulo"></strong>
+          <p id="marca-detalle" class="marca-detalle" role="status"></p>
+          <div id="marca-acciones" class="botonera-fila oculta">
+            <button id="btn-descartar-marca" class="btn btn-borde">Cancelar</button>
+            <button id="btn-reintentar-marca" class="btn btn-principal">Reintentar</button>
+          </div>
+        </div>`);
+    }
+    const cancelar = $('btn-cancelar-escaner');
+    if (cancelar && !$('escaner-texto')) {
+      const texto = cancelar.parentNode.querySelector('p');
+      if (texto) {
+        texto.id = 'escaner-texto';
+        texto.setAttribute('role', 'status');
+      } else {
+        cancelar.insertAdjacentHTML('beforebegin', '<p id="escaner-texto" class="nota centrado" role="status"></p>');
+      }
+    }
+    if (cancelar && !$('btn-linterna')) {
+      cancelar.insertAdjacentHTML('beforebegin', `
+        <div class="botonera-fila">
+          <button id="btn-linterna" class="btn btn-borde oculta">🔦 Encender luz</button>
+          <button id="btn-escaner-manual" class="btn btn-borde oculta">⌨️ Código a mano</button>
+        </div>`);
+    }
+    // En la página vieja el video y el recuadro cuelgan directo del modal. Se
+    // los envuelve en el visor, igual que en la página nueva: así un mismo
+    // estilos.css (el viejo, el nuevo o las reglas mínimas) vale para las dos.
+    const video = $('video');
+    const padre = video && video.parentNode;
+    if (padre && !(padre.classList && padre.classList.contains('escaner-visor'))) {
+      const visor = document.createElement('div');
+      visor.className = 'escaner-visor';
+      padre.insertBefore(visor, video);
+      visor.appendChild(video);
+      const marco = document.querySelector('.escaner-marco');
+      if (marco) visor.appendChild(marco);
+    }
+    if (versionDeEstilos() !== VERSION_APP) {
+      estilosAnteriores = true;
+      if (!$('estilos-shell-anterior')) {
+        document.head.insertAdjacentHTML('beforeend', `<style id="estilos-shell-anterior">${ESTILOS_MINIMOS}</style>`);
+      }
+    }
+  } catch { /* lo que no se pudo completar lo resuelve la recarga, con red */ }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  // Antes que cualquier otra cosa: los botones de esta versión se cablean abajo
+  // y una página de la versión anterior no los trae.
+  completarHtmlAnterior();
   // Registro (autoservicio del guardia) — accesible desde la pantalla de entrada
   $('btn-ir-registro').addEventListener('click', irARegistro);
   $('btn-registrar').addEventListener('click', registrar);
@@ -1683,11 +2260,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('eliminar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminarCuenta(); });
   $('btn-escanear').addEventListener('click', abrirEscaner);
   $('btn-cancelar-escaner').addEventListener('click', cerrarEscaner);
-  $('btn-manual').addEventListener('click', () => {
-    $('campo-codigo').value = '';
-    $('modal-manual').classList.remove('oculta');
-    $('campo-codigo').focus();
-  });
+  $('btn-linterna').addEventListener('click', alternarLinterna);
+  $('btn-escaner-manual').addEventListener('click', () => { cerrarEscaner(); abrirManual(); });
+  $('btn-reintentar-marca').addEventListener('click', reintentarRetenida);
+  $('btn-descartar-marca').addEventListener('click', descartarRetenida);
+  $('btn-manual').addEventListener('click', abrirManual);
   $('btn-cancelar-manual').addEventListener('click', () => $('modal-manual').classList.add('oculta'));
   $('btn-confirmar-manual').addEventListener('click', () => {
     const codigo = $('campo-codigo').value.trim();
@@ -1746,7 +2323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     revisarVersion();
     // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
-    setInterval(() => { pintarGps(); pintarGpsInicio(); }, 3000);
+    setInterval(() => { vigilarGps(); pintarGps(); pintarGpsInicio(); }, 3000);
     render();
     // La app arrancó: el vigía (vigia.js) ya no tiene que rescatar nada.
     window.__appLista = true;
