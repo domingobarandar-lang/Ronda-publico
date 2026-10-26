@@ -8,8 +8,11 @@
 'use strict';
 
 const CLAVE = 'rondasqr';
-// VERSION_APP: subirla en cada release junto con package.json y sw.js. Es lo
-// que la app compara con el servidor para recargarse sola (revisarVersion).
+// VERSION_APP: subirla en cada release junto con package.json, sw.js, el
+// <meta name="version-app"> de index.html y --version-app de estilos.css (los
+// fija sw-shell.test.js). Es lo que la app compara con el servidor para
+// recargarse sola (revisarVersion) y con la página y los estilos para saber si
+// el service worker le sirvió una mezcla de versiones (shellMixto).
 const VERSION_APP = 'v1.21.0';
 
 let estado = cargarEstado();
@@ -1438,7 +1441,8 @@ async function sincronizar() {
 
 // Desde v1.21 el lector deja de fallar callado. Tres cosas:
 //   · más píxeles sobre el QR: se pide la cámara a 1080p y jsQR lee el recorte
-//     del recuadro a resolución nativa, no el cuadro entero achicado a 480 px;
+//     del recuadro a 640 px, no el cuadro entero achicado a 480 (ver
+//     LADO_RECORTE_MAX: más que eso, con poca luz, cuesta casi un segundo);
 //   · si el detector nativo existe pero no sirve, entra jsQR. Falla de dos
 //     maneras (Chromium y Android WebView lo implementan sobre Google Play
 //     Services): revienta en cada detect() cuando falta Play Services, y ahí

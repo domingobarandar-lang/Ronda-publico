@@ -63,8 +63,8 @@ Además:
 ## 5. Prueba de 5 minutos en cada teléfono Fully (antes de dar por buena la v1.21)
 
 1. Abrir la app e iniciar sesión. A cielo abierto, la línea de GPS de la pantalla de inicio pasa a "Señal lista" en menos de un minuto.
-2. Con la sesión abierta, dejar el teléfono **quieto un minuto bajo techo**: no debe aparecer ningún diálogo de ubicación ni la línea pasar a "falta el permiso de ubicación".
-3. Iniciar una ronda de prueba y tocar **Escanear QR**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
+2. Iniciar una ronda de prueba, abrir **Escanear QR** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
+3. Con la ronda de prueba, tocar **Escanear QR**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
