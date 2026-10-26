@@ -18,6 +18,7 @@ const { registrarAviso } = require('./lib/notificar');
 const { esFecha, sumarDias, inicioDiaChile } = require('./lib/fechas-chile');
 const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
+const { crearAlarmaKiosco } = require('./lib/alarma-kiosco');
 const cuenta = require('./lib/cuenta');
 const errores = require('./lib/errores');
 const sentry = require('./lib/sentry');
@@ -33,6 +34,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   const store = crearStore(rutaDb || process.env.DB_PATH);
   const db = store.db;
   const push = crearPush(store, { enviar: enviarPush });
+  const kioscos = crearAlarmaKiosco(store);
   const app = express();
   const jsonGeneral = express.json({ limit: '1mb' });
   // /api/errores-cliente trae su propio parser con tope chico (es pública).
@@ -1065,15 +1067,23 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Alarma de ronda (lib/recordatorios.js) ----------
   // El administrador fija cada cuánto suena; el teléfono designado del
-  // condominio (el de la garita) la activa desde la app del guardia.
+  // condominio (el de la garita) la activa desde la app del guardia. Le llega
+  // por Web Push o, si corre en Fully Kiosk, preguntando cada minuto
+  // (lib/alarma-kiosco.js).
 
   function estadoAlarma(condominio) {
     const minutos = Number(condominio.recordatorioMin) || 0;
+    kioscos.podar();
+    const enFully = kioscos.deCondominio(condominio.id);
     return {
       minutos,
       texto: recordatorios.textoIntervalo(minutos),
-      telefonos: push.dispositivos(condominio.id, 'guardia').length,
-      ultima: condominio.recordatorioUltimo || null
+      // Todos los que la tienen activada: por notificación y con Fully.
+      telefonos: push.dispositivos(condominio.id, 'guardia').length + enFully.length,
+      // `ultima` cuenta solo los de Web Push: a los de Fully no se les envía
+      // nada, la ven en su consulta. Lo de ellos va en `kioscos`.
+      ultima: condominio.recordatorioUltimo || null,
+      kioscos: enFully
     };
   }
 
@@ -1097,18 +1107,24 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   });
 
   // Hace sonar la alarma ahora en los teléfonos designados, para comprobar que
-  // llega. No mueve el reloj de la alarma programada.
+  // llega. No mueve el reloj de la alarma programada. Los teléfonos con Fully
+  // la ven en su próxima consulta (alarmaPrueba, ver recordatorios.alarmaVigente).
   app.post('/api/admin/alarma-ronda/prueba', ...admin, alerta(async (req, res) => {
     const condominio = db.condominios.find(c => c.id === miCondominio(req));
     if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
-    const r = await push.recordar(condominio, {
-      titulo: '⏰ Prueba de alarma de ronda',
-      cuerpo: `${condominio.nombre}: así sonará el aviso de hacer la ronda.`,
-      url: './',
-      tag: `ronda-${condominio.id}`
+    const enFully = kioscos.deCondominio(condominio.id);
+    const conPush = push.dispositivos(condominio.id, 'guardia').length;
+    if (!conPush && !enFully.length) return res.status(422).json({ error: 'Ningún teléfono del condominio tiene la alarma activada.' });
+    if (enFully.length) {
+      condominio.alarmaPrueba = { ts: new Date().toISOString() };
+      store.guardar();
+    }
+    const r = await push.recordar(condominio, recordatorios.textoAlarma(condominio, { prueba: true }));
+    res.json({
+      ok: r.ok,
+      total: r.total,
+      kioscos: { total: enFully.length, conectados: enFully.filter(k => k.conectado && k.interfaz).length }
     });
-    if (!r.total) return res.status(422).json({ error: 'Ningún teléfono del condominio tiene la alarma activada.' });
-    res.json({ ok: r.ok, total: r.total });
   }));
 
   // Lado del guardia: el teléfono de la garita se suscribe a la alarma de su
@@ -1135,6 +1151,46 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       && s.condominioId === miCondominio(req) && s.destino === 'guardia');
     if (propia) push.desuscribir(endpoint);
     res.json({ ok: true });
+  });
+
+  // Lo mismo para un teléfono con Fully Kiosk, que no puede recibir push
+  // (lib/alarma-kiosco.js). Activarla pide sesión; lo que devuelve es la
+  // credencial del teléfono, que sigue sirviendo aunque la sesión venza o
+  // cambie el turno. La alarma que ya estaba en pie al activar va en la
+  // respuesta para que el teléfono no la haga sonar de golpe.
+  app.post('/api/mi/alarma-kiosco', auth, (req, res) => {
+    const condominio = db.condominios.find(c => c.id === miCondominio(req));
+    if (!condominio) return res.status(404).json({ error: 'El condominio no existe.' });
+    const cuerpo = req.body || {};
+    const registro = kioscos.activar({
+      condominioId: condominio.id,
+      usuarioId: req.usuario.id,
+      dispositivo: cuerpo.dispositivo,
+      nombre: cuerpo.nombre
+    });
+    res.status(201).json({
+      token: registro.token,
+      minutos: Number(condominio.recordatorioMin) || 0,
+      alarma: recordatorios.alarmaVigente(store, condominio)
+    });
+  });
+
+  app.delete('/api/mi/alarma-kiosco', auth, (req, res) => {
+    kioscos.desactivar(String((req.body || {}).token || ''), miCondominio(req));
+    res.json({ ok: true });
+  });
+
+  // La consulta de cada minuto. Sin sesión a propósito: la garita puede estar
+  // en la pantalla de login. 404 = ese teléfono ya no tiene la alarma activada.
+  app.post('/api/alarma-kiosco', (req, res) => {
+    const cuerpo = req.body || {};
+    const registro = kioscos.latido(cuerpo.token, { interfaz: cuerpo.interfaz, sonada: cuerpo.sonada });
+    const condominio = registro && db.condominios.find(c => c.id === registro.condominioId);
+    if (!condominio) return res.status(404).json({ error: 'La alarma de ronda no está activada en este teléfono.' });
+    res.json({
+      minutos: Number(condominio.recordatorioMin) || 0,
+      alarma: recordatorios.alarmaVigente(store, condominio)
+    });
   });
 
   // ---------- Fábrica: alta de condominios y de sus administradores ----------

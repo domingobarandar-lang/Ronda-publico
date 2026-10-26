@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.21.0';
+const VERSION_APP = 'v1.22.0';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -880,12 +880,14 @@ const conTope = (promesa, ms) => Promise.race([promesa, new Promise(r => setTime
 
 // Deja el teléfono como recién instalado: sin sesión, sin paquete de rondas
 // (trae los códigos de los QR), sin respaldo en IndexedDB y sin suscripción a
-// la alarma. La suscripción del servidor ya la borró el DELETE.
+// la alarma (Web Push o Fully). La del servidor ya la borró el DELETE.
 async function borrarDatosLocales() {
   olvidarPendiente();
   marcaRetenida = null;
   detenerGps();
   liberarWakeLock();
+  cerrarAlarmaKiosco();
+  try { localStorage.removeItem(CLAVE_ALARMA_KIOSCO); } catch {}
   try {
     if (pushSoportado()) {
       const reg = await conTope(navigator.serviceWorker.ready, 3000);
@@ -942,6 +944,7 @@ function iniciarRonda(rondaId) {
   estado.ultimoInforme = null;
   estado.cola.push({ tipo: 'iniciar', ejecucionId: estado.ejecucion.id, rondaId, inicio: estado.ejecucion.inicio });
   guardarEstado();
+  cerrarAlarmaKiosco(); // salir a la ronda es atender la alarma
   // Es el toque que más importa para el GPS: los puntos bajo techo dependen del
   // fix tomado en la entrada, y un watch muerto por un permiso negado no revive solo.
   reengancharSiNegado();
@@ -1798,7 +1801,8 @@ const CLAVE_RECARGA = 'rondasqr-recarga';
 function seguroRecargar() {
   const foco = document.activeElement;
   const escribiendo = foco && /^(INPUT|TEXTAREA|SELECT)$/.test(foco.tagName);
-  return !estado.ejecucion && !estado.cola.length && !sincronizando && !escribiendo;
+  // Con la alarma de Fully sonando tampoco: la recarga la cortaría a la mitad.
+  return !estado.ejecucion && !estado.cola.length && !sincronizando && !escribiendo && !alarmaTimer;
 }
 
 async function revisarVersion() {
@@ -1857,6 +1861,35 @@ async function revisarVersion() {
 // Cada cuánto suena lo decide el administrador (viene en el paquete como
 // alarmaMin). La suscripción queda amarrada al condominio, no al guardia: si
 // cambia el turno y entra otro, el teléfono de la garita sigue sonando.
+//
+// Dos caminos, y en cada teléfono corre UNO solo (modoAlarma()), así una misma
+// alarma no puede sonar dos veces en la misma app:
+//   'push'    Web Push (Chrome Android, iPhone con la app instalada). Suena
+//             aunque la app esté cerrada.
+//   'fully'   Fully Kiosk con su interfaz JavaScript activa (objeto `fully`).
+//             El Android WebView no tiene push: la app le pregunta al servidor
+//             cada minuto y la hace sonar con las funciones de Fully. Solo con
+//             la página viva: pantalla encendida o con el protector de pantalla.
+//   'kiosco'  Android WebView SIN la interfaz de Fully: no puede sonar; la app
+//             dice qué ajuste falta.
+// Si el teléfono también tiene la app en Chrome con la alarma activada, esa es
+// otra app y suena aparte: eso se evita en la configuración (FULLY-KIOSK.md).
+
+function fullyDisponible() {
+  return typeof fully !== 'undefined' && fully !== null && typeof fully.playSound === 'function';
+}
+
+// "; wv)" en el user agent es la marca del Android WebView (Fully lo usa, Chrome no).
+function esWebViewAndroid() {
+  return /;\s*wv\)/.test(navigator.userAgent || '');
+}
+
+function modoAlarma() {
+  if (fullyDisponible()) return 'fully';
+  if (pushSoportado()) return 'push';
+  if (esWebViewAndroid() || leerAlarmaKiosco()) return 'kiosco';
+  return null;
+}
 
 function base64AUint8(base64) {
   const relleno = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -1880,7 +1913,9 @@ async function pintarAlarma() {
   const btn = $('btn-alarma');
   const nota = $('estado-alarma');
   const min = (estado.paquete && estado.paquete.alarmaMin) || 0;
-  if (!pushSoportado()) {
+  const modo = modoAlarma();
+  if (modo === 'fully' || modo === 'kiosco') return pintarAlarmaKiosco(modo, alarmaKioscoMin !== null ? alarmaKioscoMin : min);
+  if (modo !== 'push') {
     btn.classList.add('oculta');
     nota.textContent = min ? 'Este navegador no puede recibir la alarma de ronda. En iPhone: instala la app en la pantalla de inicio y ábrela desde ahí.' : '';
     return;
@@ -1901,6 +1936,7 @@ async function pintarAlarma() {
 }
 
 async function alternarAlarma() {
+  if (modoAlarma() !== 'push') return alternarAlarmaKiosco();
   const btn = $('btn-alarma');
   btn.disabled = true;
   try {
@@ -1923,6 +1959,224 @@ async function alternarAlarma() {
     }
   } catch (err) {
     aviso(err.message || 'No se pudo cambiar la alarma de ronda.', 'error');
+  }
+  pintarAlarma();
+}
+
+// ---------- Alarma de ronda dentro de Fully Kiosk ----------
+// Cuándo toca lo decide el servidor (lib/recordatorios.js, el mismo reloj que
+// el Web Push): acá no se cuentan intervalos. La app pregunta una vez por
+// minuto, con la credencial del teléfono que el servidor entregó al activarla
+// (sirve sin sesión: la garita puede quedar en el login), y el servidor contesta
+// con la alarma en pie, si hay. Cada alarma suena UNA vez por teléfono: su `ts`
+// queda anotado acá como `vista`, también después de una recarga.
+//
+// Sin señal no llega nada (igual que el push); al volver, si la alarma sigue en
+// pie (nadie salió a la ronda y no se cumplió el intervalo), suena atrasada.
+//
+// Registro en localStorage, fuera de `estado`: tiene que sobrevivir a "Salir"
+// (es del teléfono, no del guardia). { token, vista, sonada }
+
+const CLAVE_ALARMA_KIOSCO = 'rondasqr-alarma-kiosco';
+// alarma.wav: tres pitidos por segundo durante 4 s (8 kHz, 8 bits). Se toca
+// sin bucle y la app lo repite: si la página muere a la mitad, el sonido se
+// corta solo en segundos en vez de quedar sonando para siempre.
+const SONIDO_ALARMA_MS = 4000;
+// Cuánto insiste si nadie toca «Entendido». El aviso en pantalla queda.
+const ALARMA_INSISTE_MS = 60000;
+// Canal de audio de Android para playSound: 4 = alarma (tiene su propio
+// volumen, aparte del de multimedia).
+const CANAL_ALARMA = 4;
+
+let alarmaKioscoMin = null;        // cada cuánto, según la última consulta
+let alarmaKioscoConexion = null;   // null: sin consultar todavía · true/false
+let alarmaKioscoConsultando = false;
+let alarmaTimer = null;            // repetición del sonido mientras insiste
+let alarmaAviso = null;            // el aviso en pantalla
+
+function leerAlarmaKiosco() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CLAVE_ALARMA_KIOSCO));
+    return r && typeof r.token === 'string' ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarAlarmaKiosco(registro) {
+  try { localStorage.setItem(CLAVE_ALARMA_KIOSCO, JSON.stringify(registro)); } catch { /* se pierde la anotación, no la alarma */ }
+}
+
+// Qué hacer con la alarma que contestó el servidor:
+//   null       nada: no hay, ya pasó por este teléfono, o viene rota
+//   'sonar'    hacerla sonar
+//   'atender'  anotarla sin sonar: el guardia ya está en una ronda en ESTE
+//              teléfono (el servidor puede no saberlo: la ronda se inició sin
+//              señal). La prueba del panel suena igual: la pidieron a propósito.
+function decidirAlarmaKiosco(alarma, registro, rondaEnCurso) {
+  if (!alarma || !registro) return null;
+  const ts = Date.parse(alarma.ts);
+  if (!Number.isFinite(ts)) return null;
+  if (ts <= (Date.parse(registro.vista) || 0)) return null;
+  return rondaEnCurso && !alarma.prueba ? 'atender' : 'sonar';
+}
+
+// Llama una función de Fully sin dejar que una que falte (versión vieja de
+// Fully) o que lance frene a las demás.
+function llamarFully(nombre, ...args) {
+  try {
+    if (fullyDisponible() && typeof fully[nombre] === 'function') return fully[nombre](...args);
+  } catch { /* sigue con las otras */ }
+  return null;
+}
+
+async function consultarAlarmaKiosco() {
+  const registro = leerAlarmaKiosco();
+  if (!registro || alarmaKioscoConsultando) return;
+  if (!navigator.onLine) {
+    alarmaKioscoConexion = false;
+    return;
+  }
+  alarmaKioscoConsultando = true;
+  const interfaz = fullyDisponible();
+  try {
+    const r = await api('/api/alarma-kiosco', {
+      metodo: 'POST', cuerpo: { token: registro.token, interfaz, sonada: registro.sonada || null }
+    });
+    alarmaKioscoConexion = true;
+    alarmaKioscoMin = Number(r.minutos) || 0;
+    // Sin la interfaz no se anota nada: si la activan mientras la alarma sigue
+    // en pie, suena entonces. Se relee el registro: lo pudieron desactivar
+    // mientras la consulta iba y volvía.
+    const vigente = leerAlarmaKiosco();
+    const rondaEnCurso = Boolean(estado.ejecucion && !estado.ejecucion.cerrada);
+    const accion = interfaz && vigente ? decidirAlarmaKiosco(r.alarma, vigente, rondaEnCurso) : null;
+    if (accion) {
+      // Se anota ANTES de sonar: si algo de Fully lanza, no se reintenta cada minuto.
+      vigente.vista = r.alarma.ts;
+      if (accion === 'sonar') vigente.sonada = r.alarma.ts;
+      guardarAlarmaKiosco(vigente);
+      if (accion === 'sonar') sonarAlarmaKiosco(r.alarma);
+    }
+  } catch (err) {
+    if (err.status === 404) {
+      // El servidor ya no lo tiene: lo dieron de baja, pasó una semana sin
+      // consultar o se borró la cuenta que lo activó.
+      try { localStorage.removeItem(CLAVE_ALARMA_KIOSCO); } catch {}
+      alarmaKioscoConexion = null;
+      aviso('La alarma de ronda se desactivó en este teléfono. Actívala de nuevo si corresponde.', 'error', 8000);
+    } else {
+      alarmaKioscoConexion = false;
+    }
+  } finally {
+    alarmaKioscoConsultando = false;
+  }
+  if (estado.sesion) pintarAlarma();
+}
+
+function sonarAlarmaKiosco(alarma) {
+  cerrarAlarmaKiosco();
+  // Con el protector de pantalla la página sigue viva: se lo saca y se trae Fully
+  // al frente. Con la pantalla APAGADA esto ya no corre (el WebView se detiene).
+  llamarFully('turnScreenOn');
+  llamarFully('stopScreensaver');
+  llamarFully('bringToForeground');
+  llamarFully('showNotification', alarma.titulo, alarma.cuerpo, new URL('./', location.href).href, true);
+  llamarFully('vibrate', 1500);
+  const sonido = new URL('alarma.wav', location.href).href;
+  const inicio = Date.now();
+  llamarFully('playSound', sonido, false, CANAL_ALARMA);
+  alarmaTimer = setInterval(() => {
+    if (Date.now() - inicio + SONIDO_ALARMA_MS > ALARMA_INSISTE_MS) return callarAlarmaKiosco();
+    llamarFully('playSound', sonido, false, CANAL_ALARMA);
+  }, SONIDO_ALARMA_MS);
+  mostrarAvisoAlarma(alarma);
+}
+
+// Encima de todo (también del lector y del login), con estilo en línea: tiene
+// que verse aunque el estilos.css cargado sea de otra versión.
+function mostrarAvisoAlarma(alarma) {
+  const caja = document.createElement('div');
+  caja.className = 'caja caja-alerta';
+  caja.setAttribute('role', 'alert');
+  // El tono de .caja-alerta es transparente: va sobre un fondo opaco para que
+  // no se trasluzca la pantalla de abajo.
+  caja.style.cssText = 'position:fixed;left:16px;right:16px;top:16px;z-index:70;margin:0 auto;max-width:520px;'
+    + 'background:linear-gradient(rgba(245,158,11,.18),rgba(245,158,11,.18)),#1d1d28;'
+    + 'box-shadow:0 12px 32px rgba(0,0,0,.5)';
+  caja.innerHTML = `<strong>${esc(alarma.titulo)}</strong>`
+    + `<p>${esc(alarma.cuerpo)} (${esc(hora(Date.now()))})</p>`
+    + '<button class="btn btn-principal">Entendido</button>';
+  caja.querySelector('button').addEventListener('click', cerrarAlarmaKiosco);
+  document.body.appendChild(caja);
+  alarmaAviso = caja;
+}
+
+function callarAlarmaKiosco() {
+  if (!alarmaTimer) return;
+  clearInterval(alarmaTimer);
+  alarmaTimer = null;
+  llamarFully('stopSound');
+}
+
+function cerrarAlarmaKiosco() {
+  callarAlarmaKiosco();
+  if (alarmaAviso) alarmaAviso.remove();
+  alarmaAviso = null;
+}
+
+function pintarAlarmaKiosco(modo, min) {
+  const btn = $('btn-alarma');
+  const nota = $('estado-alarma');
+  const registro = leerAlarmaKiosco();
+  btn.disabled = false;
+  if (modo === 'kiosco' && !registro) {
+    btn.classList.add('oculta');
+    nota.textContent = min
+      ? 'En este navegador la alarma de ronda no puede sonar. Si es Fully Kiosk, falta activar su interfaz JavaScript: avísale a soporte.'
+      : '';
+    return;
+  }
+  btn.classList.remove('oculta');
+  btn.textContent = registro ? '🔕 Desactivar alarma de ronda en este teléfono' : '⏰ Activar alarma de ronda en este teléfono';
+  if (!registro) {
+    nota.textContent = min
+      ? `El administrador programó una alarma cada ${textoIntervalo(min)}. En este teléfono suena con la pantalla encendida o con el protector de pantalla, no apagada.`
+      : 'El administrador todavía no programó la alarma de ronda.';
+  } else if (modo === 'kiosco') {
+    nota.textContent = 'La alarma está activada, pero Fully tiene apagada su interfaz JavaScript y así no puede sonar. Avísale a soporte.';
+  } else if (alarmaKioscoConexion === false) {
+    nota.textContent = 'Sin conexión con el servidor: la alarma no puede llegar hasta que vuelva la señal.';
+  } else if (!min) {
+    nota.textContent = 'Alarma activada en este teléfono, pero el administrador todavía no la programó.';
+  } else {
+    nota.textContent = `Alarma activa: suena cada ${textoIntervalo(min)}. Deja la pantalla encendida o con el protector: apagada no suena.`;
+  }
+}
+
+async function alternarAlarmaKiosco() {
+  const btn = $('btn-alarma');
+  btn.disabled = true;
+  const registro = leerAlarmaKiosco();
+  try {
+    if (registro) {
+      await api('/api/mi/alarma-kiosco', { metodo: 'DELETE', cuerpo: { token: registro.token } });
+      try { localStorage.removeItem(CLAVE_ALARMA_KIOSCO); } catch {}
+      cerrarAlarmaKiosco();
+      alarmaKioscoConexion = null;
+      aviso('Alarma de ronda desactivada en este teléfono.');
+    } else if (fullyDisponible()) {
+      const r = await api('/api/mi/alarma-kiosco', {
+        metodo: 'POST', cuerpo: { dispositivo: llamarFully('getDeviceId'), nombre: llamarFully('getDeviceName') }
+      });
+      // La alarma que ya estaba en pie queda como vista: activar no la hace sonar de golpe.
+      guardarAlarmaKiosco({ token: r.token, vista: r.alarma ? r.alarma.ts : null, sonada: null });
+      alarmaKioscoMin = Number(r.minutos) || 0;
+      alarmaKioscoConexion = true;
+      aviso('Listo: la alarma de ronda sonará en este teléfono mientras la app esté abierta y la pantalla no se apague.', 'ok', 8000);
+    }
+  } catch (err) {
+    aviso(err.status ? err.message : 'Necesitas conexión para cambiar la alarma de ronda.', 'error');
   }
   pintarAlarma();
 }
@@ -2303,8 +2557,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     // Con la pantalla apagada el reloj de un minuto no corre: al encenderla
-    // (lo primero que hace el guardia antes de entrar) se revisa la versión.
+    // (lo primero que hace el guardia antes de entrar) se revisa la versión, y
+    // en Fully la alarma de ronda (si sonó mientras tanto y sigue en pie).
     revisarVersion();
+    consultarAlarmaKiosco();
     if (!estado.sesion) return;
     if (gpsWatchId === null || !gpsFresco()) reiniciarGps();
     if (estado.ejecucion && !estado.ejecucion.cerrada) pedirWakeLock();
@@ -2319,12 +2575,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // o perder la cola que traía el respaldo.
   recuperarRespaldo().catch(() => false).then(recuperada => {
     if (estado.sesion) pedirAlmacenamientoPersistente();
-    window.addEventListener('online', () => { pintarConexion(); sincronizar(); });
+    window.addEventListener('online', () => { pintarConexion(); sincronizar(); consultarAlarmaKiosco(); });
     window.addEventListener('offline', pintarConexion);
     setInterval(sincronizar, 4000);
     $('version-app').textContent = `Versión ${VERSION_APP.slice(1)}`;
     setInterval(revisarVersion, 60000);
     revisarVersion();
+    // Alarma de ronda en Fully: solo hace algo si este teléfono la activó.
+    setInterval(consultarAlarmaKiosco, 60000);
+    consultarAlarmaKiosco();
     // El fix GPS caduca solo (cfgGps().frescoMs): sin repintar, el guardia
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
     setInterval(() => { vigilarGps(); pintarGps(); pintarGpsInicio(); }, 3000);

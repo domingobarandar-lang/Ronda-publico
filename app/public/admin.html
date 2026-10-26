@@ -181,7 +181,8 @@
             <strong>⏰ Alarma de ronda:</strong> suena una notificación en el teléfono de la
             garita para que el guardia salga a hacer la ronda. Si el guardia ya empezó una
             ronda, el conteo parte de nuevo desde ese momento. El teléfono se activa desde la
-            app del guardia (botón «Activar alarma de ronda en este teléfono»).
+            app del guardia (botón «Activar alarma de ronda en este teléfono»). En un teléfono
+            con Fully Kiosk suena solo con la pantalla encendida o con el protector de pantalla.
           </p>
           <div class="fila-form">
             <label for="campo-alarma-ronda">Enviar alarma cada</label>
@@ -201,6 +202,9 @@
             <button id="btn-probar-alarma" class="btn btn-borde">Hacerla sonar ahora</button>
           </div>
           <p id="estado-alarma" class="nota"></p>
+          <!-- Teléfonos con Fully Kiosk: la alarma no les llega por notificación,
+               la consultan cada minuto. Acá se ve si están conectados. -->
+          <ul id="alarma-kioscos" class="nota"></ul>
         </div>
         <div class="caja-config">
           <p class="nota">

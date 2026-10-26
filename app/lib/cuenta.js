@@ -3,7 +3,7 @@
 // tiene que poder borrarse dentro de la app y desde una página web pública.
 //
 // Qué se BORRA: el usuario (usuario, nombre, hash del PIN), todas sus sesiones
-// y sus suscripciones push.
+// y sus suscripciones push, también las de la alarma en Fully Kiosk.
 //
 // Qué se CONSERVA, anonimizado: las rondas que hizo. Son del condominio
 // (control laboral del empleador), así que no se borran; pero la ejecución
@@ -62,6 +62,7 @@ function eliminarGuardia(store, guardia) {
       if (sesion.usuarioId === guardia.id) delete db.sesiones[token];
     }
     db.pushSuscripciones = (db.pushSuscripciones || []).filter(s => s.usuarioId !== guardia.id);
+    if (db.alarmaKioscos) db.alarmaKioscos = db.alarmaKioscos.filter(k => k.usuarioId !== guardia.id);
     for (const e of store.ejecuciones.deGuardia(guardia.id)) {
       e.guardiaId = null;
       e.guardiaEliminado = true;
