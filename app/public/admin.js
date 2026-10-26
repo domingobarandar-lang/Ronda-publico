@@ -864,7 +864,7 @@ function horaCorta(ts) {
   return new Date(ts).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function pintarAlarma({ minutos, texto, telefonos, ultima }) {
+function pintarAlarma({ minutos, texto, telefonos, ultima, kioscos = [] }) {
   const campo = $('campo-alarma-ronda');
   // Un intervalo que no está en la lista (fijado por API) se agrega para no
   // mostrar otro distinto del que de verdad rige.
@@ -877,8 +877,25 @@ function pintarAlarma({ minutos, texto, telefonos, ultima }) {
   partes.push(telefonos
     ? `${telefonos} teléfono${telefonos === 1 ? '' : 's'} con la alarma activada.`
     : 'Ningún teléfono la tiene activada todavía: actívala desde la app del guardia.');
-  if (ultima && ultima.ts) partes.push(`Última: ${horaCorta(ultima.ts)} (${ultima.ok} de ${ultima.total} teléfonos).`);
+  // `ultima` cuenta los teléfonos con notificación; los de Fully van en su lista.
+  if (ultima && ultima.ts) {
+    partes.push(ultima.total || !kioscos.length
+      ? `Última: ${horaCorta(ultima.ts)} (${ultima.ok} de ${ultima.total} teléfonos con notificación).`
+      : `Última: ${horaCorta(ultima.ts)} (cómo sonó en cada teléfono con Fully, abajo).`);
+  }
   $('estado-alarma').textContent = partes.join(' ');
+  $('alarma-kioscos').innerHTML = kioscos.map(k => `<li>${esc(textoKiosco(k))}</li>`).join('');
+}
+
+// Un teléfono con Fully Kiosk: si puede sonar ahora y cuándo sonó por última vez.
+function textoKiosco({ nombre, guardia, visto, conectado, interfaz, sonada }) {
+  const quien = `«${nombre}» (Fully${guardia ? `, activada por ${guardia}` : ''})`;
+  // La hora va entre paréntesis: en es-CL termina en "p. m." y un punto después queda doble.
+  if (!conectado) {
+    return `${quien}: ahí la alarma no puede sonar, está sin conexión desde ${horaCorta(visto)} (pantalla apagada, sin señal o la app cerrada).`;
+  }
+  if (!interfaz) return `${quien}: conectado, pero con la interfaz JavaScript de Fully apagada. Así la alarma no puede sonar.`;
+  return `${quien}: conectado${sonada ? ` (la última alarma sonó el ${horaCorta(sonada)})` : ''}.`;
 }
 
 async function cargarAlarma() {
@@ -904,7 +921,16 @@ async function guardarAlarma() {
 async function probarAlarma() {
   try {
     const r = await api('/api/admin/alarma-ronda/prueba', { metodo: 'POST' });
-    aviso(`Alarma enviada a ${r.ok} de ${r.total} teléfonos.`);
+    const partes = [];
+    if (r.total) partes.push(`Alarma enviada a ${r.ok} de ${r.total} teléfonos con notificación.`);
+    const k = r.kioscos || { total: 0, conectados: 0 };
+    if (k.total) {
+      partes.push(k.conectados
+        ? `En ${k.conectados === 1 ? 'el teléfono' : `los ${k.conectados} teléfonos`} con Fully suena en menos de un minuto.`
+        : 'Ningún teléfono con Fully está conectado ahora: suena si se conecta en los próximos 10 minutos.');
+    }
+    aviso(partes.join(' '));
+    cargarAlarma();
   } catch (err) {
     aviso(err.message, 'error');
   }

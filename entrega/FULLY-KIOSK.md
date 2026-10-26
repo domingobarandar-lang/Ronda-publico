@@ -4,7 +4,7 @@ Público: José (soporte). Aplica a cualquier teléfono de guardia que corra la 
 
 Fully no es Chrome. Muestra la app con el **Android System WebView** del teléfono y decide qué puede usar la página: cámara, GPS, pantalla, recargas, borrado de datos. Varias de esas cosas dependen de ajustes **PLUS** (licencia por equipo). Si un ajuste de esta lista está mal, la app falla de una forma que desde el panel parece culpa del guardia: puntos sin marcar, rondas que desaparecen, "sin ubicación".
 
-Marcas en las tablas: ✅ confirmado en la documentación oficial de Fully (revisada el 2026-10-21) · 🔎 documentado o reportado, pero pendiente de comprobar en un teléfono real.
+Marcas en las tablas: ✅ confirmado en la documentación oficial de Fully (revisada el 2026-10-21; interfaz JavaScript, contenido web, ajustes web avanzados y API REST, el 2026-10-26) · 🔎 documentado o reportado, pero pendiente de comprobar en un teléfono real.
 
 ## 1. Ajustes obligatorios
 
@@ -54,13 +54,38 @@ Además:
 - **No desinstalar Fully** ni pasar de la versión APK a la de Google Play (o al revés): desinstalar borra su almacenamiento.
 - Las actualizaciones de Android System WebView cierran Fully 🔎. Que el teléfono se actualice fuera de los horarios de ronda.
 
-## 4. Lo que hoy NO funciona en Fully
+## 4. Alarma de ronda en Fully (desde la v1.22)
 
-- **La alarma de ronda (Web Push) no suena en Fully.** El WebView no tiene las APIs de notificaciones push 🔎 (lo dicen la documentación de compatibilidad de los navegadores y la de Fully). La app lo detecta: oculta el botón y dice que el navegador no puede recibir la alarma. Para la garita con Fully hay dos alternativas, ninguna construida todavía: usar las funciones propias de Fully desde la página (notificación, sonido, encender la pantalla; PLUS, y solo con la página viva) o que el servidor le mande la orden a Fully por su API remota.
+La alarma normal es Web Push, y el WebView de Fully no la tiene 🔎 (no trae las APIs de push ni de notificaciones). Desde la v1.22, en Fully la app hace otra cosa: **le pregunta al servidor una vez por minuto si toca la alarma** y, si toca, la hace sonar con las funciones propias de Fully ✅: saca el protector de pantalla y enciende la pantalla, trae Fully al frente, muestra una notificación de Android, vibra y toca pitidos por el **canal de alarma** de Android durante un minuto. En la app aparece un aviso arriba con **Entendido**, que corta el sonido. Empezar una ronda también lo corta.
+
+Cuándo toca lo sigue decidiendo el servidor, con el mismo reloj que el Web Push: el intervalo que fijó el administrador, contado desde la última alarma o desde el inicio de la última ronda. El teléfono no cuenta nada por su cuenta.
+
+Se activa igual que en Chrome: en la app del guardia, **⏰ Activar alarma de ronda en este teléfono**. La activación es del teléfono, no del guardia: sigue sonando aunque la sesión venza, cambie el turno o la app quede en la pantalla de entrada.
+
+| Ajuste | Valor | Si está mal | |
+|---|---|---|---|
+| **Enable JavaScript Interface** (Advanced Web Settings, PLUS) | Activado | La alarma no puede sonar. La app lo dice bajo el botón («falta activar su interfaz JavaScript») y, si ya estaba activada, el panel muestra ese teléfono con «la interfaz JavaScript de Fully apagada». | ✅ |
+| **URL Whitelist** (Web Content Settings) | `https://<servidor>/*` | Fully advierte que, con la interfaz JavaScript activa, **cualquier página que cargue** puede leer los archivos y cambiar ajustes del teléfono, y **no tiene un ajuste para limitar la interfaz a un dominio**. Lo que recomienda es la lista blanca: así Fully solo carga la app. Después de ponerla, repetir la prueba de 5 minutos (la app tiene que cargar y marcar igual). | ✅ / 🔎 |
+| Volumen de **alarma** de Android | Alto | La app toca el sonido por el canal de alarma, que tiene su propio volumen (aparte del de multimedia). En cero no se oye; la notificación y el aviso en pantalla salen igual. | 🔎 |
+| Permiso de **notificaciones** de Android para Fully (Android 13 o más nuevo) | Permitir | Sin él no aparece la notificación; el sonido y el aviso en pantalla salen igual. | 🔎 |
+| Pantalla (sección 2) | Encendida o con protector | **Con la pantalla apagada la alarma no suena**: el WebView está detenido y la página no puede preguntar. Con el protector de pantalla sí (la página sigue viva). | ✅ |
+| Alarma en **Chrome** en ese mismo teléfono | Desactivada | Si alguna vez se activó la alarma en Chrome en ese teléfono, Chrome la sigue recibiendo aparte y suena dos veces. Desactivarla en Chrome (mismo botón) o desinstalar la app de Chrome. | 🔎 |
+
+Cómo se comporta:
+
+- **Una vez por alarma y por teléfono.** El teléfono anota cada alarma que ya sonó: no la repite en la consulta del minuto siguiente ni después de que la app se recargue para actualizarse. Si en la garita hay **dos teléfonos con la alarma activada, suenan los dos**, igual que con Web Push: para que suene uno solo, activarla en uno solo.
+- **Sin señal no llega** (tampoco el Web Push). Cuando vuelve, si la alarma sigue en pie (nadie salió a la ronda desde que sonó y no se cumplió el intervalo), suena atrasada. Lo mismo al encender la pantalla.
+- **Si el guardia ya está en una ronda en ese teléfono**, no suena, aunque el servidor todavía no lo sepa (ronda iniciada sin señal). La prueba del panel suena igual.
+- **Qué ve el administrador** (Avisos → Alarma de ronda): cada teléfono con Fully, con su nombre y quién activó la alarma, y si está conectado y cuándo sonó la última alarma ahí, o desde cuándo no se conecta («ahí la alarma no puede sonar»), o que tiene la interfaz JavaScript apagada. «Hacerla sonar ahora» llega a esos teléfonos en menos de un minuto. Un teléfono que no se conecta en 7 días sale de la lista y hay que volver a activarlo.
+
+Lo que se descartó: que el servidor le mande la orden a Fully por su **API REST / Remote Admin** ✅. Esa API escucha en el propio teléfono (`http://<ip-del-teléfono>:2323`) y está pensada para la red local: el servidor en Railway no llega a un teléfono con datos móviles o detrás del router de la garita sin abrir puertos o montar un túnel. Además cada llamada lleva la contraseña de Remote Admin en la dirección, y esa contraseña permite cosas como borrar los datos de la app; guardarla en el servidor por cada teléfono es un riesgo que no se justifica. Y aun así solo funcionaría con Fully encendido, igual que la consulta de cada minuto.
+
+## 5. Otras cosas de Fully
+
 - **Linterna en el lector de la app:** aparece si la cámara que el teléfono eligió declara flash (mismo código que Chrome). Comprobarlo en cada modelo con la prueba de abajo.
-- Fully trae su **propio lector de QR** (`fully.scanQrCode`, con opción de linterna; requiere "Enable JavaScript Interface" y "Enable QR Code Scanner", PLUS) ✅. La app no lo usa. Si se activa "Enable JavaScript Interface", restringirlo al dominio de la app.
+- Fully trae su **propio lector de QR** (`fully.scanQrCode`, con opción de linterna; requiere "Enable JavaScript Interface" y "Enable QR Code Scanner", PLUS) ✅. La app no lo usa.
 
-## 5. Prueba de 5 minutos en cada teléfono Fully (antes de dar por buena la v1.21)
+## 6. Prueba de 5 minutos en cada teléfono Fully (antes de dar por buena la versión)
 
 1. Abrir la app e iniciar sesión. A cielo abierto, la línea de GPS de la pantalla de inicio pasa a "Señal lista" en menos de un minuto.
 2. Iniciar una ronda de prueba, abrir **Escanear QR** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
@@ -68,7 +93,8 @@ Además:
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
-7. En el panel → Guardias, la versión de ese teléfono dice **v1.21.0** y "al día".
+7. En el panel → Guardias, la versión de ese teléfono dice **v1.22.0** y "al día".
+8. **Alarma de ronda** (solo en el teléfono que la tiene que recibir), con la ronda de prueba ya terminada: bajo el botón de la alarma **no** debe decir «falta activar su interfaz JavaScript». Tocar **Activar alarma de ronda en este teléfono**; en el panel → Avisos aparece ese teléfono como «conectado». Tocar **Hacerla sonar ahora** en el panel: en menos de un minuto el teléfono pita, vibra, muestra la notificación y el aviso con **Entendido**, que corta el sonido. Repetirlo con el protector de pantalla puesto: tiene que salir del protector y sonar.
 
 ## Fuentes
 
@@ -77,5 +103,6 @@ Además:
 - Permisos de Android que pide Fully: https://www.fully-kiosk.com/docs/en/getting-started/permissions
 - Pantalla y energía: https://www.fully-kiosk.com/docs/en/configuration/device-management · https://www.fully-kiosk.com/docs/en/faq/screensaver
 - Detección de movimiento: https://www.fully-kiosk.com/docs/en/features/motion-detection
-- Interfaz JavaScript y lector de QR: https://www.fully-kiosk.com/docs/en/api/javascript · https://www.fully-kiosk.com/docs/en/configuration/advanced-web · https://www.fully-kiosk.com/docs/en/faq/barcode
+- Interfaz JavaScript (notificación, sonido, pantalla) y lector de QR: https://www.fully-kiosk.com/docs/en/api/javascript · https://www.fully-kiosk.com/docs/en/configuration/advanced-web · https://www.fully-kiosk.com/docs/en/faq/barcode
+- API REST / Remote Admin (descartada para la alarma): https://www.fully-kiosk.com/docs/en/api/rest
 - Historial de versiones: https://www.fully-kiosk.com/docs/en/getting-started/version-history
