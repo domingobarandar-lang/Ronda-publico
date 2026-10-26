@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0e13">
+  <title>Rondas QR</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icono-192.png">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <header class="cabecera">
+    <div class="cabecera-titulo">🛡️ Rondas QR</div>
+    <div id="chip-conexion" class="chip">—</div>
+  </header>
+
+  <main>
+    <!-- Login del guardia: primera pantalla al entrar (la app es solo del guardia;
+         el administrador tiene su propia app en /panel) -->
+    <section id="vista-login" class="vista oculta">
+      <div class="logo-badge">🛡️</div>
+      <h1>Rondas QR</h1>
+      <p class="nota centrado">La app del guardia. Necesitas conexión solo para entrar: la ronda funciona sin señal.</p>
+      <label>Usuario
+        <input id="campo-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: guardia">
+      </label>
+      <label>PIN
+        <input id="campo-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
+      </label>
+      <button id="btn-login" class="btn btn-principal btn-gigante">Entrar</button>
+      <p id="error-login" class="error oculta"></p>
+      <button id="btn-ir-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
+      <p class="nota centrado">¿Guardia nuevo? Crea tu usuario para empezar.</p>
+      <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>
+      <p id="nota-instalar-ios" class="nota centrado oculta">
+        Para instalarla en iPhone: botón <strong>Compartir</strong> → <strong>Añadir a pantalla de inicio</strong>.
+      </p>
+      <!-- Siempre visible: el administrador entra directo a su panel y ahí pone
+           su usuario y PIN. target=_blank: si la app del guardia está instalada,
+           el panel abre en su propia ventana en vez de quedar dentro de esta. -->
+      <a id="enlace-panel" class="btn btn-borde btn-chico btn-centrado" href="/panel" target="_blank" rel="noopener">🗂️ Soy administrador</a>
+      <p id="version-app" class="nota centrado"></p>
+    </section>
+
+    <!-- Registro del guardia (autoservicio) -->
+    <section id="vista-registro" class="vista oculta">
+      <div class="logo-badge">🆕</div>
+      <h1>Crear mi usuario</h1>
+      <p class="nota">Crea tu cuenta de guardia. La usarás para entrar cada vez.</p>
+      <label>Condominio donde trabajas
+        <select id="registro-condominio"></select>
+      </label>
+      <label>Código del condominio
+        <input id="registro-codigo" autocapitalize="characters" autocomplete="off" placeholder="te lo entrega tu administrador">
+      </label>
+      <label>Tu nombre
+        <input id="registro-nombre" autocomplete="name" autocapitalize="words" placeholder="ej: Pedro Soto">
+      </label>
+      <label>Usuario (con el que entrarás)
+        <input id="registro-usuario" autocomplete="username" autocapitalize="none" placeholder="ej: pedro">
+      </label>
+      <label>PIN (entre 4 y 8 números)
+        <input id="registro-pin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="****">
+      </label>
+      <label>Repite el PIN
+        <input id="registro-pin2" type="password" inputmode="numeric" autocomplete="new-password" placeholder="****">
+      </label>
+      <button id="btn-registrar" class="btn btn-principal">Crear mi usuario y entrar</button>
+      <p id="error-registro" class="error oculta"></p>
+      <button id="btn-volver-login" class="btn btn-borde btn-chico btn-centrado">← Ya tengo usuario</button>
+    </section>
+
+    <!-- Inicio: rondas disponibles -->
+    <section id="vista-inicio" class="vista oculta">
+      <div class="saludo">
+        <div>
+          <div id="texto-guardia" class="grande"></div>
+          <div id="texto-condominio" class="nota"></div>
+        </div>
+        <button id="btn-salir" class="btn btn-borde btn-chico">Salir</button>
+      </div>
+      <div id="estado-sync" class="tarjeta-sync oculta"></div>
+      <!-- El GPS se enciende al entrar, no al iniciar la ronda: así el primer
+           punto —el que más se marca en todo el sistema— no se escanea con el
+           receptor recién despertado. Acá se ve que está trabajando. -->
+      <p id="inicio-gps" class="nota"></p>
+      <h2>Rondas</h2>
+      <div id="lista-rondas"></div>
+      <button id="btn-actualizar" class="btn btn-borde">↻ Actualizar rondas desde el servidor</button>
+      <p id="texto-paquete" class="nota centrado"></p>
+      <!-- Alarma de ronda: el administrador fija cada cuánto suena (panel →
+           Avisos); acá el teléfono de la garita se anota para recibirla. -->
+      <button id="btn-alarma" class="btn btn-borde">⏰ Activar alarma de ronda en este teléfono</button>
+      <p id="estado-alarma" class="nota centrado"></p>
+      <!-- Discreto a propósito: es un requisito de Google Play, no una acción
+           del día a día. Lleva a la confirmación con PIN (vista-eliminar). -->
+      <button id="btn-eliminar-cuenta" class="btn-discreto">Eliminar mi cuenta</button>
+    </section>
+
+    <!-- Eliminar la cuenta del guardia (CU-25). También se puede sin la app,
+         desde /eliminar-cuenta.html. -->
+    <section id="vista-eliminar" class="vista oculta">
+      <h1>Eliminar mi cuenta</h1>
+      <p class="nota">Esto no se puede deshacer. Si después vuelves a trabajar en un condominio, tendrás que crear un usuario nuevo.</p>
+      <div class="caja caja-peligro">
+        <strong>Se borra:</strong><br>
+        tu usuario, tu nombre y tu PIN, tus sesiones abiertas y las notificaciones de este teléfono.
+      </div>
+      <div class="caja">
+        <strong>Se conserva, sin tu nombre:</strong><br>
+        las rondas que ya hiciste. Son registros del condominio: quedan en sus informes como «Guardia eliminado», con la hora y la ubicación de cada punto marcado.
+      </div>
+      <p class="nota">Las copias de respaldo del sistema se renuevan solas: lo borrado desaparece de ellas en un máximo de 14 días.</p>
+      <label>Tu PIN, para confirmar
+        <input id="eliminar-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="****">
+      </label>
+      <button id="btn-confirmar-eliminar" class="btn btn-peligro">Eliminar mi cuenta definitivamente</button>
+      <p id="error-eliminar" class="error oculta"></p>
+      <button id="btn-cancelar-eliminar" class="btn btn-borde">Cancelar</button>
+      <p class="nota centrado"><a href="/privacidad.html" target="_blank" rel="noopener">Política de privacidad</a></p>
+    </section>
+
+    <!-- Ronda en curso -->
+    <section id="vista-ronda" class="vista oculta">
+      <div class="ronda-cabecera">
+        <div>
+          <div id="ronda-nombre" class="grande"></div>
+          <div id="ronda-avance" class="nota"></div>
+        </div>
+        <div id="ronda-progreso" class="progreso"></div>
+      </div>
+      <div id="ronda-gps" class="nota"></div>
+      <div id="lista-puntos"></div>
+      <div class="botonera">
+        <button id="btn-escanear" class="btn btn-principal btn-gigante">📷 Escanear QR</button>
+        <button id="btn-manual" class="btn btn-borde">⌨️ Ingresar código a mano</button>
+        <label>Comentario (opcional)
+          <textarea id="ronda-comentario" rows="2" maxlength="280" placeholder="Luminaria apagada en el estacionamiento"></textarea>
+        </label>
+        <button id="btn-cerrar-ronda" class="btn btn-peligro">Terminar ronda</button>
+      </div>
+    </section>
+
+    <!-- Resumen final -->
+    <section id="vista-final" class="vista oculta">
+      <h1 id="final-titulo"></h1>
+      <div id="final-resumen"></div>
+      <p id="final-sync" class="nota centrado"></p>
+      <button id="btn-volver" class="btn btn-principal">Volver al inicio</button>
+    </section>
+  </main>
+
+  <!-- Escáner -->
+  <div id="modal-escaner" class="modal oculta">
+    <video id="video" playsinline muted></video>
+    <canvas id="lienzo" hidden></canvas>
+    <div class="escaner-marco"></div>
+    <div class="escaner-pie">
+      <p class="nota centrado">Apunta al QR del punto de control</p>
+      <button id="btn-cancelar-escaner" class="btn btn-borde">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Código manual -->
+  <div id="modal-manual" class="modal modal-centrado oculta">
+    <div class="dialogo">
+      <h2>Código del punto</h2>
+      <p class="nota">Está impreso bajo el QR (6 letras/números).</p>
+      <input id="campo-codigo" autocapitalize="characters" autocomplete="off" placeholder="ej: PRT234" maxlength="10">
+      <div class="botonera-fila">
+        <button id="btn-cancelar-manual" class="btn btn-borde">Cancelar</button>
+        <button id="btn-confirmar-manual" class="btn btn-principal">Marcar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aviso" class="aviso oculta"></div>
+
+  <script src="vendor/jsqr.js"></script>
+  <!-- geo.js antes que app.js: app.js lo usa para consolidar los fixes del GPS. -->
+  <script src="vigia.js"></script>
+  <script src="vendor/sentry.js"></script>
+  <script src="errores.js"></script>
+  <script src="geo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

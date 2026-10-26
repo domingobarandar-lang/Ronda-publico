@@ -2,6 +2,8 @@
 
 Guía de administración y operación. Público: José (soporte) y el administrador del condominio (uso diario).
 
+> Teléfonos que corren la app del guardia en **Fully Kiosk Browser** (el de la garita): ajustes obligatorios y prueba de 5 minutos en [FULLY-KIOSK.md](FULLY-KIOSK.md).
+
 ## Alta de un condominio nuevo (pantalla de fábrica)
 
 Los condominios se crean desde `https://<servidor>/fabrica`, con la cuenta de la operación. Esa dirección **no está enlazada** desde ninguna parte de la app: hay que escribirla.

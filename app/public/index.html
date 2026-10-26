@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e0e13">
+  <!-- Versión del shell: app.js la compara con la suya para detectar que el
+       service worker sirvió una página de otra versión (ver shellMixto). Sube
+       en cada release junto con package.json, sw.js y VERSION_APP. -->
+  <meta name="version-app" content="v1.21.0">
   <title>Rondas QR</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
@@ -134,6 +138,17 @@
       <div id="ronda-gps" class="nota"></div>
       <div id="lista-puntos"></div>
       <div class="botonera">
+        <!-- Marca en curso: QR ya leído que espera señal (se resuelve sola) o
+             que no la consiguió (se reintenta sin volver a escanear). Va sobre
+             el botón de escanear, que es donde el guardia tiene el dedo. -->
+        <div id="marca-estado" class="caja caja-alerta marca-estado oculta">
+          <strong id="marca-titulo"></strong>
+          <p id="marca-detalle" class="marca-detalle" role="status"></p>
+          <div id="marca-acciones" class="botonera-fila oculta">
+            <button id="btn-descartar-marca" class="btn btn-borde">Cancelar</button>
+            <button id="btn-reintentar-marca" class="btn btn-principal">Reintentar</button>
+          </div>
+        </div>
         <button id="btn-escanear" class="btn btn-principal btn-gigante">📷 Escanear QR</button>
         <button id="btn-manual" class="btn btn-borde">⌨️ Ingresar código a mano</button>
         <label>Comentario (opcional)
@@ -154,11 +169,22 @@
 
   <!-- Escáner -->
   <div id="modal-escaner" class="modal oculta">
-    <video id="video" playsinline muted></video>
+    <!-- El visor se encoge para dejarle lugar al pie: "Cancelar" tiene que verse
+         siempre, en un kiosco no hay botón atrás. El recuadro se centra sobre el
+         video visible, que es lo que lee recorteEscaner(). -->
+    <div class="escaner-visor">
+      <video id="video" playsinline muted></video>
+      <div class="escaner-marco"></div>
+    </div>
     <canvas id="lienzo" hidden></canvas>
-    <div class="escaner-marco"></div>
     <div class="escaner-pie">
-      <p class="nota centrado">Apunta al QR del punto de control</p>
+      <p id="escaner-texto" class="nota centrado" role="status">Apunta al QR del punto de control</p>
+      <!-- La linterna aparece solo si la cámara la declara; el código a mano,
+           a los segundos sin lectura. Van en una fila para no empujar Cancelar. -->
+      <div class="botonera-fila">
+        <button id="btn-linterna" class="btn btn-borde oculta">🔦 Encender luz</button>
+        <button id="btn-escaner-manual" class="btn btn-borde oculta">⌨️ Código a mano</button>
+      </div>
       <button id="btn-cancelar-escaner" class="btn btn-borde">Cancelar</button>
     </div>
   </div>

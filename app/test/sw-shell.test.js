@@ -62,3 +62,20 @@ test('la VERSION_APP de la app del guardia acompaña a la de package.json', () =
   assert.match(leer('app.js'), new RegExp(`const VERSION_APP = 'v${version.replace(/\./g, '\\.')}'`),
     `app.js debe declarar VERSION_APP = 'v${version}'`);
 });
+
+test('la versión de index.html acompaña a la de package.json', () => {
+  // app.js la compara con VERSION_APP para detectar que el service worker sirvió
+  // la página de otra versión, y revisarVersion() exige esta línea exacta en la
+  // página nueva antes de recargar. Si no sube, cada teléfono se creería mezclado.
+  const version = require('../package.json').version;
+  assert.ok(leer('index.html').includes(`<meta name="version-app" content="v${version}">`),
+    `index.html debe declarar <meta name="version-app" content="v${version}">`);
+});
+
+test('la versión de estilos.css acompaña a la de package.json', () => {
+  // Misma razón que la de index.html: app.js la lee para detectar un estilos.css
+  // de otra versión servido desde el caché e inyectar las reglas del lector.
+  const version = require('../package.json').version;
+  assert.ok(leer('estilos.css').includes(`--version-app: "v${version}";`),
+    `estilos.css debe declarar --version-app: "v${version}";`);
+});

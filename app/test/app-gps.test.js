@@ -44,7 +44,7 @@ function constante(nombre) {
 function montarApp(cfg) {
   const nombres = [
     'cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos',
-    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'evaluarPendiente', 'esperaSirve'
+    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'limitePendiente', 'evaluarPendiente', 'esperaSirve'
   ];
   const codigo = `
     let estado = { paquete: { gps: CFG } };
@@ -146,7 +146,7 @@ test('el buffer NO viaja en el estado que se serializa a localStorage', () => {
   assert.match(fuente, /^let bufferFixes = \[\];$/m, 'bufferFixes debe ser variable de módulo');
   const estadoInicial = /\{ sesion: null, paquete: null, ejecucion: null, cola: \[\], ultimoInforme: null \}/;
   assert.match(fuente, estadoInicial, 'cambió la forma de `estado`: revisar que el buffer no entró');
-  assert.ok(!/estado\.(bufferFixes|fixes|marcaPendiente)/.test(fuente), 'el buffer se coló dentro de `estado`');
+  assert.ok(!/estado\.(bufferFixes|fixes|marcaPendiente|marcaRetenida)/.test(fuente), 'el buffer se coló dentro de `estado`');
 });
 
 // ---------- evaluarPendiente ----------
@@ -243,4 +243,193 @@ test('esperaSirve: la señal fría se espera, la distancia real no', () => {
   assert.equal(app.esperaSirve({ distanciaM: 60, topeM: 35 }), true);
   // A 1,1 km no hay señal que arregle eso: es distancia, no error de medida.
   assert.equal(app.esperaSirve({ distanciaM: 1100, topeM: 35 }), false);
+});
+
+// ---------- v1.21: menos marcas perdidas por la mecánica ----------
+// Piezas montadas aparte: ninguna toca el criterio de presencia.
+
+function montarV121() {
+  const codigo = `
+    const SILENCIO_WATCH_MS = ${constante('SILENCIO_WATCH_MS')};
+    const SIN_PRIMERA_LECTURA_MS = ${constante('SIN_PRIMERA_LECTURA_MS')};
+    const RETENCION_MS = ${constante('RETENCION_MS')};
+    let gpsMotivoFalla = null;
+    let ultimoCodigoLeido = { valor: null, ts: 0 };
+    const procesados = [];
+    let cerrados = 0;
+    const cerrarEscaner = () => { cerrados++; };
+    const procesarCodigo = v => { procesados.push(v); };
+    ${['watchCallado', 'retencionVigente', 'recorteEscaner', 'minutos', 'textoRetenida', 'codigoDetectado'].map(extraer).join('\n')}
+    return {
+      watchCallado, retencionVigente, recorteEscaner, textoRetenida, codigoDetectado,
+      procesados, cerrados: () => cerrados,
+      silencioMs: SILENCIO_WATCH_MS, primeraMs: SIN_PRIMERA_LECTURA_MS, retencionMs: RETENCION_MS
+    };
+  `;
+  return new Function(codigo)();
+}
+
+const v121 = montarV121();
+
+test('vigía del GPS: un watch que sigue hablando no se toca', () => {
+  const ahora = Date.now();
+  assert.equal(v121.watchCallado(ahora - 2000, ahora - 60000, ahora), false);
+});
+
+test('vigía del GPS: callado más de la mitad de la frescura, se reengancha', () => {
+  const ahora = Date.now();
+  assert.equal(v121.watchCallado(ahora - v121.silencioMs - 1, ahora - 60000, ahora), true);
+  // El reenganche tiene que dejarle tiempo a la lectura nueva para llegar antes
+  // de que la anterior venza: si no, el vigía llegaría tarde siempre.
+  assert.ok(v121.silencioMs < cfg.frescoMs, 'el vigía espera más que la frescura del fix');
+});
+
+test('vigía del GPS: un watch que todavía no habló está adquiriendo, no callado', () => {
+  // Un GPS que necesita 20-40 s seguidos para el primer fix (cielo parcial, salida
+  // de un subterráneo) no llegaría nunca si se lo corta a los 10 s: cada corte
+  // reinicia la búsqueda. Antes de su primera lectura se le da más que su propio
+  // timeout de 15 s.
+  const ahora = Date.now();
+  assert.equal(v121.watchCallado(0, ahora - 3000, ahora), false);
+  assert.equal(v121.watchCallado(0, ahora - 40000, ahora), false, 'cortó una adquisición de 40 s');
+  // La lectura de ANTES del reenganche no cuenta como "habló".
+  assert.equal(v121.watchCallado(ahora - 60000, ahora - 30000, ahora), false);
+  assert.equal(v121.watchCallado(0, ahora - v121.primeraMs - 1, ahora), true);
+  assert.ok(v121.primeraMs > 15000, 'el plazo de la primera lectura no supera el timeout del watch');
+});
+
+test('vigía del GPS: solo reengancha con una marca en juego y nunca sin permiso', () => {
+  // En un kiosco (Fully sobre Android WebView) cada watchPosition nuevo vuelve a
+  // pedirle el permiso a la app anfitriona: no puede pasar cada 12 s todo el turno.
+  const cuerpo = extraer('vigilarGps');
+  assert.match(cuerpo, /if \(!marcaEnJuego\(\)\) return;/);
+  assert.match(cuerpo, /gpsPermisoNegado\) return;/);
+  assert.match(extraer('marcaEnJuego'), /marcaPendiente \|\| retencionVigente\(marcaRetenida, Date\.now\(\)\) \|\| lectorAbierto/);
+});
+
+test('permiso de ubicación negado: lo vuelven a pedir los toques del guardia', () => {
+  // Con code 1 el navegador borró el watch y en un kiosco la página nunca pasa
+  // por segundo plano: sin esto, Reintentar repetiría el mismo rechazo para siempre.
+  for (const nombre of ['reintentarRetenida', 'abrirEscaner', 'iniciarRonda']) {
+    assert.match(extraer(nombre), /reengancharSiNegado\(\);/, `${nombre}() no vuelve a pedir la ubicación`);
+  }
+});
+
+test('QR retenido: se puede reintentar dentro del plazo y no después', () => {
+  const ahora = Date.now();
+  const retenida = desde => ({ punto: PUNTO, codigo: 'PRT234', desde });
+  assert.equal(v121.retencionVigente(retenida(ahora - 5000), ahora), true);
+  assert.equal(v121.retencionVigente(retenida(ahora - v121.retencionMs - 1), ahora), false);
+  assert.equal(v121.retencionVigente(null, ahora), false);
+});
+
+test('QR retenido: reintentar pasa por el mismo control que escanear', () => {
+  // La garantía del cambio: no hay camino nuevo hacia registrarMarca(). El
+  // reintento vuelve a entrar por procesarCodigo(), con su verificación.
+  const cuerpo = extraer('reintentarRetenida');
+  assert.match(cuerpo, /procesarCodigo\(retenida\.codigo, retenida\.desde\)/);
+  assert.ok(!/registrarMarca/.test(cuerpo), 'el reintento registra la marca sin verificar');
+});
+
+test('QR retenido: el plazo se cuenta desde la LECTURA y no se renueva al reintentar', () => {
+  // Si cada Reintentar fallido lo renovara, el plazo anunciado no existiría y la
+  // lectura del QR y la marca podrían quedar separadas por media ronda.
+  assert.match(extraer('procesarCodigo'), /dejarPendiente\(punto, limpio, presencia, leidoMs\)/);
+  assert.match(extraer('revisarPendiente'), /pendiente\.codigo, pendiente\.leidoMs\)/);
+  assert.match(extraer('rechazarMarca'), /desde: leidoMs != null \? leidoMs : Date\.now\(\)/);
+});
+
+test('QR retenido: en un punto bajo techo el texto habla de la entrada', () => {
+  const distancia = { distanciaM: 70, topeM: 45, acc: 12 };
+  assert.match(v121.textoRetenida(distancia, true), /a 70 m de la entrada/);
+  assert.doesNotMatch(v121.textoRetenida(distancia, false), /entrada/);
+  assert.match(v121.textoRetenida({ sinGps: true }, true), /ubicación de la entrada/);
+});
+
+test('lector: releer el mismo QR antes de 2,5 s no lo deja sordo', () => {
+  // codigoDetectado() devuelve false cuando ignora el código: el ciclo sigue
+  // leyendo en vez de terminar con la cámara viva y sin nadie mirando.
+  assert.equal(v121.codigoDetectado('RQR:p1:ABC123'), true);
+  assert.equal(v121.codigoDetectado('RQR:p1:ABC123'), false);
+  assert.deepEqual(v121.procesados, ['RQR:p1:ABC123']);
+  assert.equal(v121.cerrados(), 1, 'el duplicado cerró el lector');
+  for (const nombre of ['cicloDetector', 'cicloJsqr']) {
+    assert.doesNotMatch(extraer(nombre), /return codigoDetectado\(/, `${nombre}() termina aunque el código se haya ignorado`);
+  }
+});
+
+test('lector: un detector nativo que responde vacío no lo deja sin leer', () => {
+  // Play Services sin el módulo de códigos: detect() resuelve [] para siempre.
+  // Desde RESPALDO_JSQR_MS sin lectura se intercala jsQR.
+  const cuerpo = extraer('cicloDetector');
+  assert.match(cuerpo, /RESPALDO_JSQR_MS/);
+  assert.match(cuerpo, /pasarJsqr\(\)/);
+});
+
+test('QR retenido: solo se retiene lo que la señal puede arreglar', () => {
+  // Lejos de verdad (esperaSirve false) sigue siendo un rechazo seco.
+  assert.match(extraer('rechazarMarca'), /const retenible = codigo && esperaSirve\(presencia\);/);
+  assert.equal(app.esperaSirve({ distanciaM: 1100, topeM: 35 }), false);
+});
+
+test('QR retenido: la espera de un Reintentar tardío no pasa el plazo de la lectura', () => {
+  // Reintentar a los 119 s abría 15 s más de espera: la marca entraba a los
+  // 134 s de leer el QR. Con `hasta`, la espera se corta donde vence la lectura.
+  const desde = Date.now();
+  const tardio = { ...pendiente(desde), hasta: desde + 1000 };
+  assert.equal(app.evaluarPendiente(tardio, fixA(0, 8), desde + 500).accion, 'aceptar');
+  assert.equal(app.evaluarPendiente(tardio, fixA(0, 8), desde + 1500).accion, 'rechazar');
+  // Sin `hasta`, como antes: 15 s desde que empezó a esperar.
+  assert.equal(app.evaluarPendiente(pendiente(desde), fixA(0, 8), desde + 14000).accion, 'aceptar');
+  assert.match(extraer('dejarPendiente'), /hasta: Math\.min\(ahora \+ VENTANA_PENDIENTE_MS, leidoMs \+ RETENCION_MS\)/);
+  // Y una retención que nacería vencida no se muestra como "toca Reintentar".
+  assert.match(extraer('rechazarMarca'), /if \(retenida && retencionVigente\(retenida, Date\.now\(\)\)\)/);
+});
+
+test('QR retenido: si llega el QR de otro punto, el retenido no se pierde en silencio', () => {
+  const cuerpo = extraer('procesarCodigo');
+  assert.match(cuerpo, /marcaRetenida\.punto\.id !== punto\.id/);
+  assert.match(cuerpo, /avisarRetenidaSoltada\(soltada\);\s*\}$/);
+});
+
+test('lector: una segunda activación del botón no abre otro turno ni deja una cámara encendida', () => {
+  const cuerpo = extraer('abrirEscaner');
+  // Lo primero que hace, antes de cualquier otra cosa.
+  assert.match(cuerpo, /^function abrirEscaner\(\) \{\s*(?:\/\/[^\n]*\s*)*if \(escaneando\) return;/);
+  assert.match(cuerpo, /if \(stream\) for \(const pista of stream\.getTracks\(\)\) pista\.stop\(\);\s*stream = nuevo;/);
+});
+
+test('lector: jsQR reparte el hilo según lo que cuesta cada pasada', () => {
+  // Con poca luz una pasada puede llevar casi un segundo: el intervalo se cuenta
+  // desde que terminó y crece con su costo, y la pausa nunca es menor que la pasada.
+  assert.match(extraer('cicloDetector'), /proximoJsqr = Date\.now\(\) \+ Math\.max\(CADA_JSQR_MS, 4 \* ms\);/);
+  assert.match(extraer('cicloJsqr'), /setTimeout\(paso, Math\.max\(PAUSA_JSQR_MS, ms\)\);/);
+  assert.ok(Number(constante('LADO_RECORTE_MAX')) <= 640, 'el recorte volvió a resolución casi nativa');
+});
+
+// Pantalla de teléfono vertical: video 1080x1920 mostrado en 360x640 (cover
+// exacto, escala 1/3), recuadro de 252 px centrado.
+const cajaVideo = { left: 0, top: 0, width: 360, height: 640 };
+const cajaMarco = { left: 54, top: 194, width: 252, height: 252 };
+
+test('recorte del lector: toma el recuadro, a resolución del video', () => {
+  const r = v121.recorteEscaner(1080, 1920, cajaVideo, cajaMarco, 1);
+  assert.deepEqual(r, { x: 162, y: 582, lado: 756 });
+});
+
+test('recorte del lector: deshace el recorte de object-fit cover', () => {
+  // Cámara apaisada (1920x1080) en pantalla vertical: cover la escala por el
+  // alto y bota los costados. El centro del recuadro sigue siendo el del video.
+  const r = v121.recorteEscaner(1920, 1080, cajaVideo, cajaMarco, 1);
+  assert.ok(Math.abs(r.x + r.lado / 2 - 960) <= 1);
+  assert.ok(Math.abs(r.y + r.lado / 2 - 540) <= 1);
+});
+
+test('recorte del lector: nunca se sale del cuadro ni devuelve basura', () => {
+  const esquina = { left: 300, top: 600, width: 252, height: 252 };
+  const r = v121.recorteEscaner(1080, 1920, cajaVideo, esquina, 1.3);
+  assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.lado <= 1080 && r.y + r.lado <= 1920);
+  // Video todavía sin dimensiones: null, y el lector cae al cuadro completo.
+  assert.equal(v121.recorteEscaner(0, 0, cajaVideo, cajaMarco), null);
+  assert.equal(v121.recorteEscaner(1080, 1920, { left: 0, top: 0, width: 0, height: 0 }, cajaMarco), null);
 });
