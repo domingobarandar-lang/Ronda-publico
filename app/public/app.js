@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.23.0';
+const VERSION_APP = 'v1.24.0';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -2769,7 +2769,7 @@ function completarHtmlAnterior() {
           </div>
         </div>`);
     }
-    // v1.23: el botón ya no dice "QR" (abre la cámara o la chapita), y la
+    // v1.24: el botón ya no dice "QR" (abre la cámara o la chapita), y la
     // pantalla de la chapita con la pregunta de la ronda mixta (CU-28).
     if (escanear && /QR/.test(escanear.textContent)) escanear.textContent = 'Escanear';
     if (!$('modal-nfc') && $('modal-manual')) $('modal-manual').insertAdjacentHTML('afterend', HTML_MODAL_NFC);

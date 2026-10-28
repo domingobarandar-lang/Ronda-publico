@@ -2,7 +2,7 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
-## 1.23.0 — 2026-10-28 · Puntos con chapita NFC, compatibles con los QR
+## 1.24.0 — 2026-10-28 · Puntos con chapita NFC, compatibles con los QR
 
 Un punto puede marcarse con una **chapita NFC** (sticker NTAG213 en carcasa impresa) en vez de un QR. Es por punto: un punto es NFC solo cuando tiene una chapita registrada. **Los puntos sin chapita funcionan exactamente igual que antes**: los condominios actuales no migran nada ni cambian de comportamiento. Caso de uso nuevo CU-28 en SPEC.md; guía paso a paso en `entrega/OPERACION.md`.
 

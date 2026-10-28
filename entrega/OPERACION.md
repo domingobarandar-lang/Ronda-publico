@@ -49,12 +49,12 @@ Todo se hace en `https://<servidor>/panel` con su usuario y PIN. Es una app apar
   - **Si el guardia dice "estoy en el punto y no me deja marcar"**, en ese orden: (1) mirar en el panel la calidad con que se fijó ese punto — si dice "fijado sin medir", "método antiguo" o ±40 m, **volver a medirlo** es el arreglo de verdad; (2) el guardia tiene que ver "📍 Ubicación activa" con una precisión razonable antes de escanear — si dice "señal imprecisa", esperar unos segundos a que el GPS afine; (3) recién ahí, aflojar `GPS_MARGEN_MAX_M` (o el radio del punto con "Ajustar"). Apagar el bloqueo con `GPS_BLOQUEA=0` es el último recurso. Nada de esto requiere volver a desplegar la app del guardia.
   - **Desde v1.14 el guardia casi no debería ver rechazos por señal fría**: si al escanear la ubicación todavía no alcanza, la app muestra "📍 Afinando señal… N s" y registra la marca sola cuando entra, sin volver a escanear. Solo si en 15 segundos no alcanza aparece el rechazo — y ese rechazo ahora **queda registrado en el servidor**, que es el dato con el que se van a ajustar estos umbrales la próxima vez. Si un guardia reporta que ve "afinando señal" en todos los puntos, el problema es el teléfono o el edificio, no el umbral.
   - **El teléfono del guardia mantiene la pantalla encendida durante la ronda** (Wake Lock): con la pantalla apagada el navegador mata el GPS y el guardia llega al punto sin ubicación. Si el teléfono no lo permite, la app lo dice en la línea de estado. Cuesta batería: en rondas largas conviene que el guardia salga con el teléfono cargado.
-- **Chapitas NFC** *(v1.23, CU-28)*: un punto puede marcarse con una chapita en vez de QR. Ver la guía completa más abajo, «Puntos con chapita NFC».
+- **Chapitas NFC** *(v1.24, CU-28)*: un punto puede marcarse con una chapita en vez de QR. Ver la guía completa más abajo, «Puntos con chapita NFC».
 - **Guardias**: crear usuario + PIN (4-8 dígitos). "Nuevo PIN" si se le olvidó. Eliminar corta el acceso de inmediato.
 - **Rondas**: armar la secuencia tocando los puntos en orden. "El orden importa" hace que marcar desordenado quede como observación. La duración máxima genera observación si se excede. Los guardias ven los cambios al tocar "Actualizar rondas".
 - **Avisos**: historial de notificaciones enviadas.
 
-## Puntos con chapita NFC *(v1.23, CU-28)*
+## Puntos con chapita NFC *(v1.24, CU-28)*
 
 Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa en 3D. El guardia marca el punto acercando el teléfono; no hay QR que fotografiar. Es **por punto**: los puntos sin chapita siguen con su QR igual que siempre, y en una misma ronda pueden convivir los dos.
 
@@ -214,7 +214,7 @@ En local es lo mismo sin `railway ssh --`, con el servidor detenido o reinicián
 
 ## Limitaciones conocidas de la v1 (transparencia con el cliente)
 
-- **QR fotografiado**: un guardia podría escanear una foto del QR sin ir al punto. Mitigación desde la v1.9: **el GPS bloquea la marca** — con la ubicación del punto fijada, marcar a más de 20 m o con la ubicación apagada simplemente no se puede. En los puntos bajo techo la v1.10 exige haber pasado por la entrada del recinto (más débil, pero obliga a caminar hasta el edificio). Huecos conocidos: en un punto anclado el guardia puede escanear la foto desde la entrada sin bajar, y el GPS del teléfono puede falsearse con apps de mock location (requiere root). Si un condominio exige cerrar eso, desde la v1.23 el punto puede llevar una **chapita NFC** (ver arriba).
+- **QR fotografiado**: un guardia podría escanear una foto del QR sin ir al punto. Mitigación desde la v1.9: **el GPS bloquea la marca** — con la ubicación del punto fijada, marcar a más de 20 m o con la ubicación apagada simplemente no se puede. En los puntos bajo techo la v1.10 exige haber pasado por la entrada del recinto (más débil, pero obliga a caminar hasta el edificio). Huecos conocidos: en un punto anclado el guardia puede escanear la foto desde la entrada sin bajar, y el GPS del teléfono puede falsearse con apps de mock location (requiere root). Si un condominio exige cerrar eso, desde la v1.24 el punto puede llevar una **chapita NFC** (ver arriba).
 - **Hora offline**: las marcas sin señal usan el reloj del teléfono y quedan etiquetadas "(offline)" en el informe.
 - El login inicial del guardia requiere conexión; después la ronda es 100 % offline.
 

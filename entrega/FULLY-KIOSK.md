@@ -85,7 +85,7 @@ Lo que se descartó: que el servidor le mande la orden a Fully por su **API REST
 - **Linterna en el lector de la app:** aparece si la cámara que el teléfono eligió declara flash (mismo código que Chrome). Comprobarlo en cada modelo con la prueba de abajo.
 - Fully trae su **propio lector de QR** (`fully.scanQrCode`, con opción de linterna; requiere "Enable JavaScript Interface" y "Enable QR Code Scanner", PLUS) ✅. La app no lo usa.
 
-## 5b. Chapitas NFC en Fully — PENDIENTE (v1.23)
+## 5b. Chapitas NFC en Fully — PENDIENTE (v1.24)
 
 La app lee las chapitas NFC con **Web NFC** (`NDEFReader`), que existe solo en Chrome de Android. El WebView de Fully no lo tiene. Fully trae su propio lector NFC en la interfaz JavaScript (`fully.nfcScanStart` y los eventos `onNdefDiscovered` / `onNfcTagDiscovered`, según su documentación), pero **no se pudo verificar** cómo entrega el texto y el número de serie del tag (el sitio de Fully estaba bloqueado desde la sesión de desarrollo). Sin la serie, la marca no valdría en un punto con chapita (ver CU-28).
 
@@ -114,7 +114,7 @@ Para hacerlo:
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
-7. En el panel → Guardias, la versión de ese teléfono dice **v1.23.0** y "al día".
+7. En el panel → Guardias, la versión de ese teléfono dice **v1.24.0** y "al día".
 8. **Alarma de ronda** (solo en el teléfono que la tiene que recibir), con la ronda de prueba ya terminada: bajo el botón de la alarma **no** debe decir «falta activar su interfaz JavaScript». Tocar **Activar alarma de ronda en este teléfono**; en el panel → Avisos aparece ese teléfono como «conectado». Tocar **Hacerla sonar ahora** en el panel: en menos de un minuto el teléfono pita, vibra, muestra la notificación y el aviso con **Entendido**, que corta el sonido. Repetirlo con el protector de pantalla puesto: tiene que salir del protector y sonar.
 
 ## Fuentes

@@ -171,7 +171,7 @@ function calcular(store, opciones = {}) {
     // la ronda de hoy: si el administrador la editó después, la historia no cambia.
     for (const s of e.escaneos) {
       const c = cob(s.puntoId); c.marcadas++; c.esperadas++;
-      // Con qué se marcó (CU-28). Las marcas de antes de la v1.23 no lo traen.
+      // Con qué se marcó (CU-28). Las marcas de antes de la v1.24 no lo traen.
       if (s.medio) c.medios[s.medio] = (c.medios[s.medio] || 0) + 1;
     }
     for (const pid of ((e.evaluacion && e.evaluacion.faltantes) || [])) cob(pid).esperadas++;

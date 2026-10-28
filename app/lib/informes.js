@@ -36,7 +36,7 @@ function armarInforme(db, ejecucion) {
       // verificación es "pasó por la entrada", no "estuvo en el punto".
       anclado: Boolean(esc && esc.anclado),
       edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
-      // Con qué se marcó (CU-28). Las marcas de antes de la v1.23 no lo
+      // Con qué se marcó (CU-28). Las marcas de antes de la v1.24 no lo
       // guardaban y todas eran de QR o a mano: se dejan sin etiqueta.
       medio: esc ? esc.medio || null : null,
       lejos: lejosIds.has(pid),

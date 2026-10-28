@@ -202,7 +202,7 @@ test('CRÍTICO la app arranca sobre la página de v1.20.2 y la deja con la estru
   junto('marca-estado', 'btn-escanear');
   junto('btn-linterna', 'btn-cancelar-escaner');
   junto('btn-escaner-manual', 'btn-cancelar-escaner');
-  // v1.23 (CU-28): la pantalla de la chapita y la pregunta de la ronda mixta.
+  // v1.24 (CU-28): la pantalla de la chapita y la pregunta de la ronda mixta.
   // Sin ellas el arranque revienta al cablear sus botones.
   for (const id of ['modal-nfc', 'nfc-texto', 'btn-reintentar-nfc', 'nfc-reporte', 'btn-cancelar-nfc', 'btn-nfc-reportar',
     'modal-medio', 'btn-medio-qr', 'btn-medio-nfc', 'btn-cancelar-medio']) {
