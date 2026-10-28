@@ -2,6 +2,25 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## 1.23.0 — 2026-10-28 · Puntos con chapita NFC, compatibles con los QR
+
+Un punto puede marcarse con una **chapita NFC** (sticker NTAG213 en carcasa impresa) en vez de un QR. Es por punto: un punto es NFC solo cuando tiene una chapita registrada. **Los puntos sin chapita funcionan exactamente igual que antes**: los condominios actuales no migran nada ni cambian de comportamiento. Caso de uso nuevo CU-28 en SPEC.md; guía paso a paso en `entrega/OPERACION.md`.
+
+- **Qué lleva la chapita:** un registro NDEF de texto con el mismo payload del QR (`RQR:<condominio>:<punto>:<código>`). El panel registra además el **número de serie de fábrica** del tag (`nfcSerie`, hex en mayúsculas sin separadores), y el servidor lo **exige**: una foto del QR o una copia del texto en otro tag común no sirve. Una chapita no puede pertenecer a dos puntos (tampoco de dos condominios).
+- **Panel → Puntos:** al agregar un punto se elige «con QR» o «con chapita NFC» (`nfcPendiente`: se marca con QR hasta grabarla). En cada punto, **📶 Grabar chapita** / **Reemplazar chapita** / **Volver a QR**. La grabación se hace en terreno con Chrome en un Android con NFC: lee la serie (avisa si la chapita ya tiene otro punto), escribe, vuelve a leer para verificar, ofrece **bloquearla para siempre** (`makeReadOnly`, marcado por defecto) y recién al final guarda la serie (`PUT /api/admin/puntos/:id/chapita`; `DELETE` para volver a QR). Fuera de Android/Chrome el botón explica dónde y cómo hacerlo. Sugiere no fijarle GPS a un punto bajo techo.
+- **App del guardia:** el botón principal dice **«Escanear»**. Abre la pantalla **«Acerca la parte trasera del teléfono a la chapita»** si todos los puntos que faltan son NFC (o el próximo, con orden estricto); la cámara si ninguno lo es; y en una ronda mixta sin orden, la cámara con el lector NFC escuchando a la vez. El lector arranca con el toque (Web NFC lo exige) y se detiene al cerrar (`AbortController`).
+  - La lectura entra por `procesarCodigo()` con la serie: GPS, espera de señal, retención, cola offline y avisos son los mismos. El evento de la cola lleva `nfc: { serie }`.
+  - Validación offline espejo del servidor: el paquete trae `nfc` y `nfcSerie` por punto y `manualEnNfc`. Un QR leído para un punto NFC se rechaza («Este punto se marca con la chapita NFC…») y queda en el registro de rechazos.
+  - Sin Web NFC (iPhone, Fully Kiosk, otro navegador), permiso negado (`NotAllowedError`), NFC apagado (`NotReadableError`) o sin NFC (`NotSupportedError`): mensaje claro y el código a mano como salida.
+  - La página de una versión anterior servida por el caché se completa con la pantalla nueva (`completarHtmlAnterior`).
+- **Servidor (`registrarEscaneo`):** en un punto con chapita la marca entra solo con la serie que coincide (medio `nfc`) o con el código a mano (medio `manual`). QR sin serie o con otra serie → 422, registrado en `rechazos`. Cada marca guarda `medio: 'qr' | 'nfc' | 'manual'`. Las reglas de GPS no cambian.
+- **Código a mano en un punto NFC: decisión pendiente.** Hoy entra y el informe lo anota como observación, no como sospecha. Una sola constante para cambiarlo: `MANUAL_EN_PUNTO_NFC` en `lib/rondas.js` (`'observacion'` | `'sospecha'` | `'rechazo'`); viaja en el paquete, así que la app aplica la misma regla.
+- **Hoja de QR:** los puntos NFC salen marcados «Chapita NFC — no lleva QR», sin QR ni código.
+- **Informe, aviso al administrador e informe semanal:** cada marca muestra 📶 NFC / 📷 QR / ⌨️ a mano (las marcas anteriores a esta versión no lo guardaban y salen sin etiqueta). En el informe semanal, la tabla de puntos agrega el desglose cuando hubo NFC o código a mano.
+- **Fully Kiosk:** fuera de alcance. No se pudo verificar su API NFC (su sitio está bloqueado desde la sesión de desarrollo). La app detecta Fully y dice «Este teléfono todavía no lee chapitas NFC: usa el código a mano». Queda como pendiente en `entrega/FULLY-KIOSK.md`.
+- `entrega/SEGURIDAD.md` corregido: un NTAG213 **sí** se puede copiar; la serie de fábrica lo frena, salvo con tags «mágicos» de serie cambiable. NTAG 424 DNA queda como opción futura.
+- Tests nuevos: `test/chapita-nfc.test.js` (servidor) y `test/app-nfc.test.js` (app, con un `NDEFReader` simulado).
+
 ## 1.22.0 — 2026-10-26 · La alarma de ronda suena en Fully Kiosk
 
 En Fully Kiosk Browser la alarma de ronda no sonaba: el Android WebView no tiene Web Push ni notificaciones, y la app ocultaba el botón. Ahora, en un teléfono con Fully y su interfaz JavaScript activa, la app consulta al servidor y la hace sonar con las funciones propias de Fully. El Web Push de Chrome Android y del iPhone no cambia, y el criterio de presencia del GPS tampoco.

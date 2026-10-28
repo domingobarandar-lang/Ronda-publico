@@ -139,8 +139,8 @@ function calcular(store, opciones = {}) {
   const diasList = diasEntre(desde, hasta);
   const porDia = new Map(diasList.map(d => [d, 0]));
   const rondasDia = new Map(diasList.map(d => [d, new Map()]));   // día -> guardia -> rondas
-  const cobertura = new Map();   // puntoId -> { marcadas, esperadas }
-  const cob = pid => { if (!cobertura.has(pid)) cobertura.set(pid, { marcadas: 0, esperadas: 0 }); return cobertura.get(pid); };
+  const cobertura = new Map();   // puntoId -> { marcadas, esperadas, medios }
+  const cob = pid => { if (!cobertura.has(pid)) cobertura.set(pid, { marcadas: 0, esperadas: 0, medios: {} }); return cobertura.get(pid); };
   const porGuardia = new Map();
   let total = 0, sinIdentificar = 0, marcDia = 0, marcNoche = 0;
   let completas = 0, incompletas = 0, sospechosas = 0;
@@ -169,7 +169,11 @@ function calcular(store, opciones = {}) {
 
     // Cobertura con lo que se evaluó AL CERRAR (evaluacion.faltantes), no con
     // la ronda de hoy: si el administrador la editó después, la historia no cambia.
-    for (const s of e.escaneos) { const c = cob(s.puntoId); c.marcadas++; c.esperadas++; }
+    for (const s of e.escaneos) {
+      const c = cob(s.puntoId); c.marcadas++; c.esperadas++;
+      // Con qué se marcó (CU-28). Las marcas de antes de la v1.23 no lo traen.
+      if (s.medio) c.medios[s.medio] = (c.medios[s.medio] || 0) + 1;
+    }
     for (const pid of ((e.evaluacion && e.evaluacion.faltantes) || [])) cob(pid).esperadas++;
   }
 
@@ -230,11 +234,12 @@ function calcular(store, opciones = {}) {
   // Puntos: TODOS los del condominio (también los que nadie marcó, que antes no
   // aparecían) más los ya eliminados que tuvieron actividad, sumados en una fila.
   const filas = new Map();
-  const fila = (clave, nombre) => { if (!filas.has(clave)) filas.set(clave, { nombre, marcadas: 0, esperadas: 0 }); return filas.get(clave); };
+  const fila = (clave, nombre) => { if (!filas.has(clave)) filas.set(clave, { nombre, marcadas: 0, esperadas: 0, medios: {} }); return filas.get(clave); };
   for (const p of db.puntos.filter(p => p.condominioId === condominioId)) fila(p.id, p.nombre);
   for (const [pid, c] of cobertura) {
     const f = puntosDb.has(pid) ? fila(pid, nombrePunto(pid)) : fila('(eliminado)', '(punto eliminado)');
     f.marcadas += c.marcadas; f.esperadas += c.esperadas;
+    for (const [m, n] of Object.entries(c.medios)) f.medios[m] = (f.medios[m] || 0) + n;
   }
   const todas = [...filas.values()].map(f => ({ ...f, omitidas: f.esperadas - f.marcadas, pct: pctDe(f.marcadas, f.esperadas) }));
   // Orden: lo que requiere atención primero (menor cobertura, más omisiones);
@@ -496,6 +501,14 @@ function tablaGuardias(guardias) {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [2200, 1100, 1550, 1150, 1400, 1960], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
 }
 
+// "📶 5 · ⌨️ 1": con qué se marcó el punto en la semana. Solo cuando hubo NFC o
+// código a mano: en un condominio que marca todo con QR no agrega nada.
+function textoMedios(medios = {}) {
+  if (!medios.nfc && !medios.manual) return '';
+  return [['nfc', '📶'], ['qr', '📷'], ['manual', '⌨️']]
+    .filter(([m]) => medios[m]).map(([m, icono]) => `${icono} ${medios[m]}`).join(' · ');
+}
+
 function tablaPuntos(puntos) {
   const th = (t, r) => cell(P(run(t, { bold: true, color: WHITE, size: 18, caps: true, spacing: 20 }), { align: r ? AlignmentType.RIGHT : undefined, keepNext: true }), { fill: HEADFILL });
   const td = (t, o = {}) => cell(P(run(t, { size: 19, color: o.color, bold: o.bold }), { align: o.r ? AlignmentType.RIGHT : undefined, keepNext: o.keepNext }), { fill: o.fill });
@@ -505,7 +518,7 @@ function tablaPuntos(puntos) {
     const color = x.omitidas === 0 ? GREEN : (x.pct >= 90 ? OCHRE : RED);
     rows.push(new TableRow({ cantSplit: true, children: [
       td(x.nombre, { bold: true, fill: f, keepNext: keep }),
-      td(`${x.marcadas} de ${x.esperadas}`, { r: true, fill: f, keepNext: keep }),
+      td(`${x.marcadas} de ${x.esperadas}${textoMedios(x.medios) ? ` (${textoMedios(x.medios)})` : ''}`, { r: true, fill: f, keepNext: keep }),
       td(x.omitidas ? String(x.omitidas) : '—', { r: true, fill: f, color: x.omitidas ? color : GRAY, keepNext: keep }),
       td(x.pct + '%', { r: true, fill: f, color, bold: true, keepNext: keep })
     ] }));

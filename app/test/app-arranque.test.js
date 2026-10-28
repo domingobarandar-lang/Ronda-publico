@@ -202,6 +202,12 @@ test('CRÍTICO la app arranca sobre la página de v1.20.2 y la deja con la estru
   junto('marca-estado', 'btn-escanear');
   junto('btn-linterna', 'btn-cancelar-escaner');
   junto('btn-escaner-manual', 'btn-cancelar-escaner');
+  // v1.23 (CU-28): la pantalla de la chapita y la línea de la ronda mixta. Sin
+  // ellas el arranque revienta al cablear sus botones.
+  for (const id of ['modal-nfc', 'nfc-texto', 'btn-reintentar-nfc', 'btn-cancelar-nfc', 'btn-nfc-manual']) {
+    assert.ok(dom.porId.has(id), `no se completó ${id}`);
+  }
+  junto('escaner-nfc', 'btn-cancelar-escaner');
   assert.equal(enApp('shellMixto()'), true, 'la app no sabe que tiene que recargarse');
 });
 

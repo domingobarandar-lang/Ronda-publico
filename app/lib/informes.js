@@ -36,6 +36,9 @@ function armarInforme(db, ejecucion) {
       // verificación es "pasó por la entrada", no "estuvo en el punto".
       anclado: Boolean(esc && esc.anclado),
       edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
+      // Con qué se marcó (CU-28). Las marcas de antes de la v1.23 no lo
+      // guardaban y todas eran de QR o a mano: se dejan sin etiqueta.
+      medio: esc ? esc.medio || null : null,
       lejos: lejosIds.has(pid),
       faltante: !esc
     };
@@ -64,6 +67,9 @@ function hora(ts) {
   });
 }
 
+// Cómo se ve el medio de una marca en el informe, el aviso y el panel.
+const MEDIOS = { nfc: '📶 NFC', qr: '📷 QR', manual: '⌨️ a mano' };
+
 function informeTexto(inf) {
   const lineas = [];
   lineas.push(`🛡️ Ronda "${inf.ronda}" — ${inf.condominio}`);
@@ -78,6 +84,7 @@ function informeTexto(inf) {
       continue;
     }
     const marcas = [];
+    if (MEDIOS[d.medio]) marcas.push(MEDIOS[d.medio]);
     if (d.offline) marcas.push('(offline)');
     if (d.lejos) marcas.push(`⚠️ a ${d.distanciaM} m ${d.anclado ? 'de la entrada' : 'del punto'}`);
     else if (d.anclado) marcas.push('📍 por entrada');
@@ -95,4 +102,4 @@ function informeTexto(inf) {
   return lineas.join('\n');
 }
 
-module.exports = { armarInforme, informeTexto, ETIQUETAS, hora };
+module.exports = { armarInforme, informeTexto, ETIQUETAS, MEDIOS, hora };

@@ -7,7 +7,7 @@
   <!-- Versión del shell: app.js la compara con la suya para detectar que el
        service worker sirvió una página de otra versión (ver shellMixto). Sube
        en cada release junto con package.json, sw.js y VERSION_APP. -->
-  <meta name="version-app" content="v1.22.0">
+  <meta name="version-app" content="v1.23.0">
   <title>Rondas QR</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
@@ -149,7 +149,7 @@
             <button id="btn-reintentar-marca" class="btn btn-principal">Reintentar</button>
           </div>
         </div>
-        <button id="btn-escanear" class="btn btn-principal btn-gigante">📷 Escanear QR</button>
+        <button id="btn-escanear" class="btn btn-principal btn-gigante">Escanear</button>
         <button id="btn-manual" class="btn btn-borde">⌨️ Ingresar código a mano</button>
         <label>Comentario (opcional)
           <textarea id="ronda-comentario" rows="2" maxlength="280" placeholder="Luminaria apagada en el estacionamiento"></textarea>
@@ -185,7 +185,32 @@
         <button id="btn-linterna" class="btn btn-borde oculta">🔦 Encender luz</button>
         <button id="btn-escaner-manual" class="btn btn-borde oculta">⌨️ Código a mano</button>
       </div>
+      <!-- Ronda mixta (puntos con QR y con chapita, sin orden): el lector NFC
+           escucha a la vez que la cámara. -->
+      <p id="escaner-nfc" class="nota centrado oculta"></p>
       <button id="btn-cancelar-escaner" class="btn btn-borde">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Chapita NFC (CU-28): en un punto con chapita "Escanear" abre esto en vez
+       de la cámara. El lector arranca con ese toque y se detiene al cerrar. La
+       misma pantalla está en HTML_MODAL_NFC de app.js, para la página de una
+       versión anterior. -->
+  <div id="modal-nfc" class="modal modal-centrado oculta">
+    <div class="dialogo dialogo-nfc">
+      <svg class="dibujo-nfc" viewBox="0 0 160 120" aria-hidden="true">
+        <rect x="58" y="6" width="58" height="104" rx="9" fill="none" stroke="currentColor" stroke-width="5"/>
+        <circle cx="87" cy="20" r="4" fill="currentColor"/>
+        <path d="M44 40a26 26 0 0 0 0 40M34 32a38 38 0 0 0 0 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        <rect x="4" y="44" width="30" height="30" rx="7" fill="currentColor" opacity=".85"/>
+      </svg>
+      <h2>Acerca la parte trasera del teléfono a la chapita</h2>
+      <p id="nfc-texto" class="nota centrado" role="status"></p>
+      <button id="btn-reintentar-nfc" class="btn btn-principal oculta">Reintentar</button>
+      <div class="botonera-fila">
+        <button id="btn-cancelar-nfc" class="btn btn-borde">Cancelar</button>
+        <button id="btn-nfc-manual" class="btn btn-borde">⌨️ Código a mano</button>
+      </div>
     </div>
   </div>
 
@@ -193,7 +218,7 @@
   <div id="modal-manual" class="modal modal-centrado oculta">
     <div class="dialogo">
       <h2>Código del punto</h2>
-      <p class="nota">Está impreso bajo el QR (6 letras/números).</p>
+      <p class="nota">Está impreso bajo el QR (6 letras/números). En un punto con chapita, lo tiene el administrador.</p>
       <input id="campo-codigo" autocapitalize="characters" autocomplete="off" placeholder="ej: PRT234" maxlength="10">
       <div class="botonera-fila">
         <button id="btn-cancelar-manual" class="btn btn-borde">Cancelar</button>

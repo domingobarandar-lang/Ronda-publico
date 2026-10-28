@@ -49,9 +49,52 @@ Todo se hace en `https://<servidor>/panel` con su usuario y PIN. Es una app apar
   - **Si el guardia dice "estoy en el punto y no me deja marcar"**, en ese orden: (1) mirar en el panel la calidad con que se fijó ese punto — si dice "fijado sin medir", "método antiguo" o ±40 m, **volver a medirlo** es el arreglo de verdad; (2) el guardia tiene que ver "📍 Ubicación activa" con una precisión razonable antes de escanear — si dice "señal imprecisa", esperar unos segundos a que el GPS afine; (3) recién ahí, aflojar `GPS_MARGEN_MAX_M` (o el radio del punto con "Ajustar"). Apagar el bloqueo con `GPS_BLOQUEA=0` es el último recurso. Nada de esto requiere volver a desplegar la app del guardia.
   - **Desde v1.14 el guardia casi no debería ver rechazos por señal fría**: si al escanear la ubicación todavía no alcanza, la app muestra "📍 Afinando señal… N s" y registra la marca sola cuando entra, sin volver a escanear. Solo si en 15 segundos no alcanza aparece el rechazo — y ese rechazo ahora **queda registrado en el servidor**, que es el dato con el que se van a ajustar estos umbrales la próxima vez. Si un guardia reporta que ve "afinando señal" en todos los puntos, el problema es el teléfono o el edificio, no el umbral.
   - **El teléfono del guardia mantiene la pantalla encendida durante la ronda** (Wake Lock): con la pantalla apagada el navegador mata el GPS y el guardia llega al punto sin ubicación. Si el teléfono no lo permite, la app lo dice en la línea de estado. Cuesta batería: en rondas largas conviene que el guardia salga con el teléfono cargado.
+- **Chapitas NFC** *(v1.23, CU-28)*: un punto puede marcarse con una chapita en vez de QR. Ver la guía completa más abajo, «Puntos con chapita NFC».
 - **Guardias**: crear usuario + PIN (4-8 dígitos). "Nuevo PIN" si se le olvidó. Eliminar corta el acceso de inmediato.
 - **Rondas**: armar la secuencia tocando los puntos en orden. "El orden importa" hace que marcar desordenado quede como observación. La duración máxima genera observación si se excede. Los guardias ven los cambios al tocar "Actualizar rondas".
 - **Avisos**: historial de notificaciones enviadas.
+
+## Puntos con chapita NFC *(v1.23, CU-28)*
+
+Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa en 3D. El guardia marca el punto acercando el teléfono; no hay QR que fotografiar. Es **por punto**: los puntos sin chapita siguen con su QR igual que siempre, y en una misma ronda pueden convivir los dos.
+
+**Lo que hace falta:** para **grabar** la chapita, un teléfono **Android con NFC y Chrome** (en iPhone, en computadores y en Fully Kiosk no se puede). Para **marcar**, el guardia también necesita Android + Chrome con NFC. Ojo con los teléfonos de gama baja: hay modelos que salen en una variante sin NFC (en Ajustes, buscar «NFC»: si no aparece, no tiene).
+
+### 1. Agregar el punto en el panel
+
+1. Panel → **Puntos** → «Agregar punto»: escribir el nombre y elegir **📶 con chapita NFC** (o «📷 con QR» para uno normal).
+2. El punto queda con el aviso «📶 falta grabar la chapita (mientras, se marca con QR)». Hasta que se grabe, funciona como un punto QR: nunca queda un punto sin forma de marcarse.
+3. Un punto que ya existe también se pasa a chapita: en su fila, **📶 Grabar chapita**.
+
+### 2. Instalar y grabar la chapita (en terreno)
+
+1. **Instalar primero**: pegar la carcasa con la chapita en el lugar del punto. Se graba **a través del plástico**, ya instalada.
+2. Parado junto a la chapita, con el **NFC del teléfono encendido** (Ajustes → buscar «NFC»), abrir el panel (`https://<servidor>/panel`) en **Chrome**, entrar, ir a **Puntos** y tocar **📶 Grabar chapita** en ese punto. (Para cambiar una chapita rota: **Reemplazar chapita**.)
+3. Revisar la casilla **«Bloquear chapita (permanente: nadie la podrá reescribir)»**. Viene marcada: impide que alguien le grabe otro punto encima. **Es para siempre**: una chapita bloqueada ya no se puede regrabar ni usar en otro punto. Desmarcarla solo para pruebas.
+4. Tocar **Empezar** y **acercar la parte trasera del teléfono a la chapita** (la antena suele estar al centro o arriba de la espalda del teléfono). La primera vez Chrome pide permiso para usar NFC: permitir.
+5. El panel va diciendo qué hace:
+   - lee el **número de serie** de la chapita. Si la chapita ya tiene grabado otro punto, pregunta antes de seguir; si ya está registrada en otro punto, se detiene;
+   - **graba** el punto («no muevas el teléfono»);
+   - pide **alejar el teléfono y volver a acercarlo** para **verificar** que quedó bien;
+   - la **bloquea** si la casilla estaba marcada («mantén el teléfono sobre la chapita»);
+   - **guarda** la serie en el servidor: «✅ Chapita lista y bloqueada».
+6. Si algo falla antes del final (se movió el teléfono, NFC apagado, permiso negado), el punto queda **como estaba**: tocar **Reintentar**.
+7. **Bajo techo:** si el punto está en un subterráneo o una sala cerrada, **no le fijes ubicación GPS** (ni 📍 ni 🏠): la chapita ya prueba que el guardia estuvo ahí, y una ubicación exacta bajo techo haría rechazar la marca por falta de señal. Si el punto ya tenía ubicación, **Quitar 📍**.
+8. Desde ese momento ese punto **ya no sale como QR** en la hoja de QR (sale marcado «Chapita NFC — no lleva QR»). Retirar la lámina QR vieja de ese punto, si había una.
+9. Los guardias reciben el cambio al tocar «Actualizar rondas» (o al volver a entrar).
+
+**Volver a QR:** en la fila del punto, **Volver a QR**. La chapita deja de valer; reimprimir la hoja de QR y pegar la lámina.
+
+### 3. Cómo marca el guardia
+
+1. En la ronda toca **Escanear** (el mismo botón de siempre).
+2. Si el punto que toca es de chapita, en vez de la cámara aparece **«Acerca la parte trasera del teléfono a la chapita»**. Acerca el teléfono y lo deja quieto hasta que vibre: el punto queda ✅ con «📶 NFC». En una ronda que mezcla puntos con QR y con chapita sin orden fijo, se abre la cámara y la chapita también se lee: «o acerca la parte trasera del teléfono a la chapita».
+3. **Sin señal también funciona:** la chapita no necesita internet ni GPS; la marca queda en la cola y se envía sola al volver la señal.
+4. Si alguien escanea una **foto del QR** o una **copia** de la chapita, la app lo rechaza («Este punto se marca con la chapita NFC») y el rechazo queda registrado.
+5. Si el teléfono no puede leer chapitas, la pantalla dice por qué y qué hacer: NFC apagado (activarlo en Ajustes y Reintentar), permiso negado (candado junto a la dirección → Permisos → NFC → Permitir), teléfono sin NFC, iPhone o Fully Kiosk. La salida siempre es **⌨️ Código a mano**.
+6. **Código a mano en un punto con chapita** (chapita rota, teléfono sin NFC): el código es el de la columna «Código» del panel; en un punto con chapita no se imprime, así que lo entrega el administrador. La marca entra como «⌨️ a mano» y el informe la anota como observación (no como sospecha). *Decisión pendiente de José*: se cambia con `MANUAL_EN_PUNTO_NFC` en `app/lib/rondas.js`.
+
+En el informe de cada ronda, cada punto muestra con qué se marcó: **📶 NFC**, **📷 QR** o **⌨️ a mano**.
 
 ## Guardias: instalación en el teléfono
 
@@ -166,7 +209,7 @@ En local es lo mismo sin `railway ssh --`, con el servidor detenido o reinicián
 
 ## Limitaciones conocidas de la v1 (transparencia con el cliente)
 
-- **QR fotografiado**: un guardia podría escanear una foto del QR sin ir al punto. Mitigación desde la v1.9: **el GPS bloquea la marca** — con la ubicación del punto fijada, marcar a más de 20 m o con la ubicación apagada simplemente no se puede. En los puntos bajo techo la v1.10 exige haber pasado por la entrada del recinto (más débil, pero obliga a caminar hasta el edificio). Huecos conocidos: en un punto anclado el guardia puede escanear la foto desde la entrada sin bajar, y el GPS del teléfono puede falsearse con apps de mock location (requiere root). Si un condominio exige cerrar eso, la v2 contempla NFC físico.
+- **QR fotografiado**: un guardia podría escanear una foto del QR sin ir al punto. Mitigación desde la v1.9: **el GPS bloquea la marca** — con la ubicación del punto fijada, marcar a más de 20 m o con la ubicación apagada simplemente no se puede. En los puntos bajo techo la v1.10 exige haber pasado por la entrada del recinto (más débil, pero obliga a caminar hasta el edificio). Huecos conocidos: en un punto anclado el guardia puede escanear la foto desde la entrada sin bajar, y el GPS del teléfono puede falsearse con apps de mock location (requiere root). Si un condominio exige cerrar eso, desde la v1.23 el punto puede llevar una **chapita NFC** (ver arriba).
 - **Hora offline**: las marcas sin señal usan el reloj del teléfono y quedan etiquetadas "(offline)" en el informe.
 - El login inicial del guardia requiere conexión; después la ronda es 100 % offline.
 

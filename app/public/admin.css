@@ -352,6 +352,7 @@ td { font-variant-numeric: tabular-nums; }
 }
 .tarjeta-qr img { width: 100%; max-width: 260px; }
 .tarjeta-qr .nombre { font-size: 20px; font-weight: 800; margin-top: var(--esp-2); }
+.tarjeta-qr .chapita-nfc { font-size: 96px; line-height: 1.4; }
 .tarjeta-qr .codigo { font-size: 16px; letter-spacing: 3px; color: var(--texto-suave); margin-top: var(--esp-1); }
 
 @media print {

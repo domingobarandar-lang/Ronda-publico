@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const { cargarEnv } = require('./lib/env');
 const { crearStore } = require('./lib/store');
 const { hashPin, verificarPin, crearSesion, autenticar, soloAdmin } = require('./lib/auth');
-const { codigoCorto, id, payloadQR } = require('./lib/codigos');
+const { codigoCorto, id, payloadQR, normalizarSerie } = require('./lib/codigos');
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
@@ -400,7 +400,13 @@ function crearApp({ rutaDb, enviarPush } = {}) {
             // Con qué precisión se fijó la coordenada: entra en el presupuesto
             // de error que la app calcula sin conexión (CU-23).
             precisionM: p.lat != null ? precisionM : null,
-            anclado
+            anclado,
+            // Chapita NFC (CU-28): la app decide con esto qué abre "Escanear" y
+            // valida la serie sin señal, con la misma regla que el servidor. La
+            // serie no es secreta (cualquier teléfono la lee de la chapita); lo
+            // que no se puede es fabricar un tag común con esa serie.
+            nfc: motor.esPuntoNfc(p),
+            nfcSerie: p.nfcSerie || null
           };
         })
       }));
@@ -413,6 +419,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       // Cada cuánto suena la alarma de ronda (0 = apagada), para que la app
       // muestre el estado junto al botón que la activa en este teléfono.
       alarmaMin: Number(condominio.recordatorioMin) || 0,
+      // Qué hacer con el código a mano en un punto con chapita (ver
+      // MANUAL_EN_PUNTO_NFC en lib/rondas.js).
+      manualEnNfc: motor.MANUAL_EN_PUNTO_NFC,
       rondas
     });
   });
@@ -496,12 +505,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.post('/api/ejecuciones/:id/escaneos', auth, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
-    const { codigo, ts, offline, gps } = req.body || {};
+    const { codigo, ts, offline, gps, nfc } = req.body || {};
     // Una ronda sin señal que el sistema dio por abandonada: el teléfono del
     // guardia aparece con sus marcas y la ronda se reabre para recibirlas. La
     // reapertura se guarda solo si la marca entra (y no era repetida).
     const reabierta = ejecucion.guardiaId === req.usuario.id && motor.reabrirSiAutomatica(ejecucion);
-    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps });
+    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc });
+    // Un QR (o una chapita ajena) en un punto con chapita NFC: queda en el
+    // registro de rechazos igual que los del GPS. La app ya lo rechaza sin
+    // encolar; llega acá desde una app vieja o un cliente que no es la app.
+    if (r.error && r.rechazoMedio && anotarRechazo(ejecucion, { puntoId: r.punto.id, ts, motivo: r.error })) {
+      store.ejecuciones.guardar(ejecucion);
+    }
     // presencia: cuando el rechazo es por GPS viaja el detalle (distancia y tope)
     // para que la app pueda explicarle al guardia cuánto le falta acercarse.
     if (r.error) return res.status(r.codigo).json({ error: r.error, presencia: r.presencia || null });
@@ -525,37 +540,41 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.post('/api/ejecuciones/:id/rechazos', auth, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
-    const { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs } = req.body || {};
+    const { puntoId } = req.body || {};
     const punto = db.puntos.find(p => p.id === puntoId && p.condominioId === ejecucion.condominioId);
     if (!punto) return res.status(422).json({ error: 'Ese punto no es de esta ronda.' });
+    const nuevo = anotarRechazo(ejecucion, req.body || {});
+    if (nuevo) store.ejecuciones.guardar(ejecucion);
+    res.status(nuevo ? 201 : 200).json({ ok: true, repetido: !nuevo });
+  });
+
+  // Agrega un rechazo a la ejecución (sin guardarla). Devuelve false si ya
+  // estaba: la cola del teléfono reenvía hasta que el servidor conteste, y sin
+  // esto un mismo rechazo entraría tantas veces como intentos hubo.
+  function anotarRechazo(ejecucion, { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs }) {
     // Se acota como el motivo: el cuerpo puede traer hasta 1 MB y esto queda
     // dentro de la ejecución, que se reescribe entera en cada marca. Un ts de
     // 300 KB no es un ataque sofisticado, es un campo sin cota.
     const cuando = String(ts || new Date().toISOString()).slice(0, 40);
     if (!ejecucion.rechazos) ejecucion.rechazos = [];
-    // La cola del teléfono reenvía hasta que el servidor conteste: sin esto, un
-    // mismo rechazo entraría tantas veces como intentos hubo.
-    const repetido = ejecucion.rechazos.some(r => r.puntoId === puntoId && r.ts === cuando);
-    if (!repetido) {
-      const num = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
-      ejecucion.rechazos.push({
-        puntoId,
-        ts: cuando,
-        motivo: String(motivo || '').slice(0, 300),
-        distanciaM: num(distanciaM),
-        topeM: num(topeM),
-        acc: num(acc),
-        edadMs: num(edadMs)
-      });
-      // Un teléfono con el GPS roto podría encolar cientos: el registro no puede
-      // hacer crecer la ejecución sin techo. Se conservan los últimos.
-      if (ejecucion.rechazos.length > MAX_RECHAZOS) {
-        ejecucion.rechazos.splice(0, ejecucion.rechazos.length - MAX_RECHAZOS);
-      }
-      store.ejecuciones.guardar(ejecucion);
+    if (ejecucion.rechazos.some(r => r.puntoId === puntoId && r.ts === cuando)) return false;
+    const num = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+    ejecucion.rechazos.push({
+      puntoId,
+      ts: cuando,
+      motivo: String(motivo || '').slice(0, 300),
+      distanciaM: num(distanciaM),
+      topeM: num(topeM),
+      acc: num(acc),
+      edadMs: num(edadMs)
+    });
+    // Un teléfono con el GPS roto podría encolar cientos: el registro no puede
+    // hacer crecer la ejecución sin techo. Se conservan los últimos.
+    if (ejecucion.rechazos.length > MAX_RECHAZOS) {
+      ejecucion.rechazos.splice(0, ejecucion.rechazos.length - MAX_RECHAZOS);
     }
-    res.status(repetido ? 200 : 201).json({ ok: true, repetido });
-  });
+    return true;
+  }
 
   app.post('/api/ejecuciones/:id/cerrar', auth, alerta(async (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
@@ -615,6 +634,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     let codigo;
     do { codigo = codigoCorto(); } while (db.puntos.some(p => p.codigoCorto === codigo));
     const punto = { id: id(), condominioId: miCondominio(req), nombre, codigoCorto: codigo };
+    // "Con chapita NFC" (CU-28): el punto nace esperando que le graben la
+    // chapita en terreno. Es solo un recordatorio para el panel: hasta que la
+    // chapita quede registrada el punto se marca con QR, como cualquier otro.
+    if ((req.body || {}).medio === 'nfc') punto.nfcPendiente = true;
     db.puntos.push(punto);
     store.guardar();
     res.status(201).json(punto);
@@ -722,6 +745,42 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       punto[campo] = Math.round(n);
     }
 
+    store.guardar();
+    res.json(punto);
+  });
+
+  // Chapita NFC del punto (CU-28). El panel la graba en terreno —Android +
+  // Chrome, parado junto a la chapita— y recién al final, con el texto escrito y
+  // verificado, manda acá la serie de fábrica que leyó. Desde ese momento el
+  // punto solo acepta esa chapita (o el código a mano, ver lib/rondas.js).
+  app.put('/api/admin/puntos/:id/chapita', ...admin, (req, res) => {
+    const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
+    if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
+    const serie = normalizarSerie((req.body || {}).serie);
+    if (!serie) return res.status(422).json({ error: 'El número de serie de la chapita no es válido.' });
+    // Una chapita, un punto, en toda la instalación: si no, la misma chapita
+    // marcaría dos puntos (y de dos condominios distintos).
+    const otro = db.puntos.find(p => p.id !== punto.id && p.nfcSerie === serie);
+    if (otro) {
+      const donde = otro.condominioId === punto.condominioId ? `al punto "${otro.nombre}"` : 'a un punto de otro condominio';
+      return res.status(409).json({ error: `Esa chapita ya pertenece ${donde}. Usa otra, o primero pasa ese punto a QR.` });
+    }
+    punto.nfcSerie = serie;
+    punto.nfcGrabada = new Date().toISOString();
+    punto.nfcBloqueada = Boolean((req.body || {}).bloqueada);
+    delete punto.nfcPendiente;
+    store.guardar();
+    res.json(punto);
+  });
+
+  // "Volver a QR": el punto deja de tener chapita y se marca como siempre.
+  app.delete('/api/admin/puntos/:id/chapita', ...admin, (req, res) => {
+    const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
+    if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
+    delete punto.nfcSerie;
+    delete punto.nfcGrabada;
+    delete punto.nfcBloqueada;
+    delete punto.nfcPendiente;
     store.guardar();
     res.json(punto);
   });
@@ -1030,6 +1089,12 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const puntos = db.puntos.filter(p => p.condominioId === miCondominio(req));
     const hoja = [];
     for (const p of puntos) {
+      // Un punto con chapita no lleva QR: imprimirlo sería dejar pegada al lado
+      // de la chapita una lámina que el servidor rechaza (CU-28).
+      if (motor.esPuntoNfc(p)) {
+        hoja.push({ id: p.id, nombre: p.nombre, codigoCorto: p.codigoCorto, nfc: true, dataUrl: null });
+        continue;
+      }
       hoja.push({
         id: p.id,
         nombre: p.nombre,
