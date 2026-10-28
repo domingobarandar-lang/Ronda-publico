@@ -88,11 +88,16 @@ Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa 
 ### 3. Cómo marca el guardia
 
 1. En la ronda toca **Escanear** (el mismo botón de siempre).
-2. Si el punto que toca es de chapita, en vez de la cámara aparece **«Acerca la parte trasera del teléfono a la chapita»**. Acerca el teléfono y lo deja quieto hasta que vibre: el punto queda ✅ con «📶 NFC». En una ronda que mezcla puntos con QR y con chapita sin orden fijo, se abre la cámara y la chapita también se lee: «o acerca la parte trasera del teléfono a la chapita».
+2. Si el punto que toca es de chapita, en vez de la cámara aparece **«Acerca la parte trasera del teléfono a la chapita»**. Acerca el teléfono y lo deja quieto hasta que vibre: el punto queda ✅ con «📶 NFC». Si el punto es de QR, se abre solo la cámara. **Nunca se abren las dos cosas a la vez.**
+   - En una ronda **con orden**, la app sabe cuál es el próximo punto y abre su medio directo.
+   - En una ronda **sin orden** que mezcla puntos con QR y con chapita, la app no sabe frente a cuál está el guardia, así que pregunta **«¿Qué hay en este punto?»**: **📷 Un QR** o **📶 Una chapita**. Si la ronda es toda de chapitas o toda de QR, no pregunta.
 3. **Sin señal también funciona:** la chapita no necesita internet ni GPS; la marca queda en la cola y se envía sola al volver la señal.
 4. Si alguien escanea una **foto del QR** o una **copia** de la chapita, la app lo rechaza («Este punto se marca con la chapita NFC») y el rechazo queda registrado.
-5. Si el teléfono no puede leer chapitas, la pantalla dice por qué y qué hacer: NFC apagado (activarlo en Ajustes y Reintentar), permiso negado (candado junto a la dirección → Permisos → NFC → Permitir), teléfono sin NFC, iPhone o Fully Kiosk. La salida siempre es **⌨️ Código a mano**.
-6. **Código a mano en un punto con chapita** (chapita rota, teléfono sin NFC): el código es el de la columna «Código» del panel; en un punto con chapita no se imprime, así que lo entrega el administrador. La marca entra como «⌨️ a mano» y el informe la anota como observación (no como sospecha). *Decisión pendiente de José*: se cambia con `MANUAL_EN_PUNTO_NFC` en `app/lib/rondas.js`.
+5. Si el teléfono no puede leer chapitas, la pantalla dice por qué y qué hacer: NFC apagado (activarlo en Ajustes y Reintentar), permiso negado (candado junto a la dirección → Permisos → NFC → Permitir), teléfono sin NFC, iPhone o Fully Kiosk. **Los puntos con chapita solo se marcan con un Android con NFC y Chrome.**
+6. **En un punto con chapita el código a mano NO sirve.** El código a mano no prueba que el guardia fue (se aprende una vez y se tipea desde la caseta), y en los puntos bajo techo tampoco hay GPS que lo frene. Si alguien lo intenta, la app lo rechaza y el intento queda registrado.
+7. **«⚠️ La chapita no lee»** (botón en la pantalla de la chapita): para cuando la chapita está rota, despegada o el teléfono no lee NFC. El punto queda **SIN marcar** (sale como faltante y la ronda como incompleta) y el informe le dice al administrador: «El guardia avisó que la chapita no leyó en: Sala de bombas (03:12). Revisar o reemplazar la chapita». En una ronda sin orden con varias chapitas pendientes, la app pregunta en cuál está. Avisar no marca: así no hay atajo.
+   - El administrador revisa la chapita: si se rompió, **Reemplazar chapita**; si va a tardar, **Volver a QR** mientras tanto.
+   - *Si algún día se quiere volver a aceptar el código a mano* (anotado como observación o como sospecha): una línea, `MANUAL_EN_PUNTO_NFC` en `app/lib/rondas.js`.
 
 En el informe de cada ronda, cada punto muestra con qué se marcó: **📶 NFC**, **📷 QR** o **⌨️ a mano**.
 

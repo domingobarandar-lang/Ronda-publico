@@ -44,4 +44,12 @@ function normalizarSerie(texto) {
   return /^[0-9A-F]{8,20}$/.test(limpio) && limpio.length % 2 === 0 ? limpio : null;
 }
 
-module.exports = { ALFABETO, codigoCorto, id, payloadQR, interpretarCodigo, normalizarSerie };
+// Huella de la serie (SHA-256 en hexadecimal) para el paquete del guardia: con
+// ella la app valida la chapita sin señal y la serie no queda guardada en el
+// teléfono. Ojo: es una traba, no un secreto — una serie tiene pocos bits y
+// quien quiera puede leerla igual de la chapita con cualquier teléfono.
+function huellaSerie(serie) {
+  return serie ? crypto.createHash('sha256').update(String(serie)).digest('hex') : null;
+}
+
+module.exports = { ALFABETO, codigoCorto, id, payloadQR, interpretarCodigo, normalizarSerie, huellaSerie };

@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const { cargarEnv } = require('./lib/env');
 const { crearStore } = require('./lib/store');
 const { hashPin, verificarPin, crearSesion, autenticar, soloAdmin } = require('./lib/auth');
-const { codigoCorto, id, payloadQR, normalizarSerie } = require('./lib/codigos');
+const { codigoCorto, id, payloadQR, normalizarSerie, huellaSerie } = require('./lib/codigos');
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
@@ -402,11 +402,11 @@ function crearApp({ rutaDb, enviarPush } = {}) {
             precisionM: p.lat != null ? precisionM : null,
             anclado,
             // Chapita NFC (CU-28): la app decide con esto qué abre "Escanear" y
-            // valida la serie sin señal, con la misma regla que el servidor. La
-            // serie no es secreta (cualquier teléfono la lee de la chapita); lo
-            // que no se puede es fabricar un tag común con esa serie.
+            // valida la chapita sin señal, con la misma regla que el servidor.
+            // Viaja la huella de la serie, no la serie: así no queda escrita en
+            // el almacenamiento del teléfono del guardia (ver huellaSerie).
             nfc: motor.esPuntoNfc(p),
-            nfcSerie: p.nfcSerie || null
+            nfcHuella: huellaSerie(p.nfcSerie)
           };
         })
       }));
@@ -544,6 +544,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const punto = db.puntos.find(p => p.id === puntoId && p.condominioId === ejecucion.condominioId);
     if (!punto) return res.status(422).json({ error: 'Ese punto no es de esta ronda.' });
     const nuevo = anotarRechazo(ejecucion, req.body || {});
+    // "La chapita no lee" (CU-28) viaja como un rechazo marcado: el motor lo
+    // pone en las observaciones del informe al cerrar.
     if (nuevo) store.ejecuciones.guardar(ejecucion);
     res.status(nuevo ? 201 : 200).json({ ok: true, repetido: !nuevo });
   });
@@ -551,7 +553,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // Agrega un rechazo a la ejecución (sin guardarla). Devuelve false si ya
   // estaba: la cola del teléfono reenvía hasta que el servidor conteste, y sin
   // esto un mismo rechazo entraría tantas veces como intentos hubo.
-  function anotarRechazo(ejecucion, { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs }) {
+  function anotarRechazo(ejecucion, { puntoId, ts, motivo, distanciaM, topeM, acc, edadMs, reporte }) {
     // Se acota como el motivo: el cuerpo puede traer hasta 1 MB y esto queda
     // dentro de la ejecución, que se reescribe entera en cada marca. Un ts de
     // 300 KB no es un ataque sofisticado, es un campo sin cota.
@@ -566,7 +568,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       distanciaM: num(distanciaM),
       topeM: num(topeM),
       acc: num(acc),
-      edadMs: num(edadMs)
+      edadMs: num(edadMs),
+      // Único valor aceptado: lo que no se conoce no se guarda.
+      ...(reporte === 'chapita' ? { reporte: 'chapita' } : {})
     });
     // Un teléfono con el GPS roto podría encolar cientos: el registro no puede
     // hacer crecer la ejecución sin techo. Se conservan los últimos.

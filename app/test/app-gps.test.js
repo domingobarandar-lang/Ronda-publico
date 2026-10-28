@@ -395,7 +395,7 @@ test('QR retenido: si llega el QR de otro punto, el retenido no se pierde en sil
 test('lector: una segunda activación del botón no abre otro turno ni deja una cámara encendida', () => {
   const cuerpo = extraer('abrirEscaner');
   // Lo primero que hace, antes de cualquier otra cosa.
-  assert.match(cuerpo, /^function abrirEscaner\(conNfc = false\) \{\s*(?:\/\/[^\n]*\s*)*if \(escaneando\) return;/);
+  assert.match(cuerpo, /^function abrirEscaner\(\) \{\s*(?:\/\/[^\n]*\s*)*if \(escaneando\) return;/);
   assert.match(cuerpo, /if \(stream\) for \(const pista of stream\.getTracks\(\)\) pista\.stop\(\);\s*stream = nuevo;/);
 });
 

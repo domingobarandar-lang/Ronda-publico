@@ -185,9 +185,6 @@
         <button id="btn-linterna" class="btn btn-borde oculta">🔦 Encender luz</button>
         <button id="btn-escaner-manual" class="btn btn-borde oculta">⌨️ Código a mano</button>
       </div>
-      <!-- Ronda mixta (puntos con QR y con chapita, sin orden): el lector NFC
-           escucha a la vez que la cámara. -->
-      <p id="escaner-nfc" class="nota centrado oculta"></p>
       <button id="btn-cancelar-escaner" class="btn btn-borde">Cancelar</button>
     </div>
   </div>
@@ -207,10 +204,25 @@
       <h2>Acerca la parte trasera del teléfono a la chapita</h2>
       <p id="nfc-texto" class="nota centrado" role="status"></p>
       <button id="btn-reintentar-nfc" class="btn btn-principal oculta">Reintentar</button>
+      <div id="nfc-reporte" class="oculta"></div>
       <div class="botonera-fila">
         <button id="btn-cancelar-nfc" class="btn btn-borde">Cancelar</button>
-        <button id="btn-nfc-manual" class="btn btn-borde">⌨️ Código a mano</button>
+        <button id="btn-nfc-reportar" class="btn btn-borde">⚠️ La chapita no lee</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Ronda con puntos de QR y de chapita, sin orden: la app no sabe frente a
+       cuál está el guardia, así que pregunta. Abre solo la cámara o solo el
+       lector de la chapita, nunca los dos. -->
+  <div id="modal-medio" class="modal modal-centrado oculta">
+    <div class="dialogo dialogo-nfc">
+      <h2>¿Qué hay en este punto?</h2>
+      <div class="botonera-fila">
+        <button id="btn-medio-qr" class="btn btn-principal">📷 Un QR</button>
+        <button id="btn-medio-nfc" class="btn btn-principal">📶 Una chapita</button>
+      </div>
+      <button id="btn-cancelar-medio" class="btn btn-borde">Cancelar</button>
     </div>
   </div>
 

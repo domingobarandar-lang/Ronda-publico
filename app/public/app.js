@@ -1059,23 +1059,42 @@ function motivoMedio(punto, texto, nfc) {
   if (!punto.nfc) return null;
   if (medioDe(punto, texto, nfc) === 'manual') {
     // La regla del código a mano en puntos con chapita la decide el servidor
-    // (MANUAL_EN_PUNTO_NFC) y viaja en el paquete.
-    return estado.paquete && estado.paquete.manualEnNfc === 'rechazo'
-      ? `"${punto.nombre}" se marca solo con la chapita NFC: acerca la parte trasera del teléfono a la chapita.`
+    // (MANUAL_EN_PUNTO_NFC) y viaja en el paquete. Un paquete anterior a la
+    // regla no la trae: se aplica la de hoy, que es rechazar.
+    const regla = (estado.paquete && estado.paquete.manualEnNfc) || 'rechazo';
+    return regla === 'rechazo'
+      ? `En "${punto.nombre}" el código a mano no sirve: se marca con la chapita NFC. Si no lee, toca «La chapita no lee» para avisar al administrador.`
       : null;
   }
   if (!nfc) return `Este punto se marca con la chapita NFC: acerca la parte trasera del teléfono a la chapita de "${punto.nombre}".`;
-  if (!nfc.serie) return 'El teléfono no entregó el número de serie de la chapita. Vuelve a acercarlo, o usa el código a mano.';
-  if (nfc.serie !== punto.nfcSerie) {
-    return `Esta chapita no es la registrada para "${punto.nombre}". Si la cambiaron, avisa al administrador; mientras tanto usa el código a mano.`;
+  if (!nfc.serie) return 'El teléfono no entregó el número de serie de la chapita. Vuelve a acercarlo.';
+  // El paquete no trae la serie, trae su huella (SHA-256): la serie no queda
+  // guardada en el teléfono del guardia. Sin huella calculada (un navegador sin
+  // crypto.subtle) decide el servidor.
+  if (nfc.huella && punto.nfcHuella && nfc.huella !== punto.nfcHuella) {
+    return `Esta chapita no es la registrada para "${punto.nombre}". Si la cambiaron, avisa al administrador.`;
   }
   return null;
 }
 
-// Qué abre "Escanear" (puro, se prueba sin teléfono):
-//   'nfc'   todos los puntos que faltan tienen chapita → pantalla de la chapita
-//   'qr'    ninguno la tiene → la cámara, como siempre
-//   'ambos' ronda mixta sin orden → cámara y lector NFC a la vez
+// La huella de una serie: SHA-256 en hexadecimal, igual que huellaSerie() de
+// lib/codigos.js. null si el navegador no tiene crypto.subtle.
+async function huellaSerie(serie) {
+  try {
+    const bytes = new TextEncoder().encode(serie);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
+// Qué abre "Escanear" (puro, se prueba sin teléfono). Nunca la cámara y el
+// lector a la vez: cada punto se marca solo con su medio.
+//   'nfc'    todos los puntos que faltan tienen chapita → pantalla de la chapita
+//   'qr'     ninguno la tiene → la cámara, como siempre
+//   'elegir' ronda mixta sin orden: la app no sabe frente a qué punto está el
+//            guardia, así que le pregunta ("¿Qué hay en este punto?")
 // Con orden estricto manda el medio del próximo punto.
 function medioEscaner(ronda, ejecucion) {
   if (!ronda) return 'qr';
@@ -1085,7 +1104,7 @@ function medioEscaner(ronda, ejecucion) {
   if (ronda.ordenEstricto) return pendientes[0].nfc ? 'nfc' : 'qr';
   const conChapita = pendientes.filter(p => p.nfc).length;
   if (conChapita === pendientes.length) return 'nfc';
-  return conChapita ? 'ambos' : 'qr';
+  return conChapita ? 'elegir' : 'qr';
 }
 
 function esIphone() {
@@ -1099,9 +1118,9 @@ function sinLectorNfc() {
   if ('NDEFReader' in window) return null;
   // Fully Kiosk tiene su propio lector NFC, pero esta versión no lo usa
   // todavía (pendiente en entrega/FULLY-KIOSK.md).
-  if (fullyDisponible() || esWebViewAndroid()) return 'Este teléfono todavía no lee chapitas NFC: usa el código a mano.';
-  if (esIphone()) return 'En iPhone la app no puede leer chapitas NFC (Apple no lo permite a las apps web): usa el código a mano.';
-  return 'Este navegador no lee chapitas NFC. Abre la app en Chrome de un Android con NFC, o usa el código a mano.';
+  if (fullyDisponible() || esWebViewAndroid()) return 'Este teléfono todavía no lee chapitas NFC: los puntos con chapita se marcan con Chrome en un Android con NFC.';
+  if (esIphone()) return 'En iPhone la app no puede leer chapitas NFC (Apple no lo permite a las apps web): los puntos con chapita se marcan con un Android con NFC.';
+  return 'Este navegador no lee chapitas NFC: abre la app en Chrome de un Android con NFC.';
 }
 
 // Qué le pasó al lector, en palabras del guardia. Los nombres de error son los
@@ -1113,15 +1132,15 @@ function sinLectorNfc() {
 function textoErrorNfc(err) {
   const nombre = err && err.name;
   if (nombre === 'NotAllowedError') {
-    return 'La app no tiene permiso para usar NFC. En Chrome: toca el candado junto a la dirección → Permisos → NFC → Permitir, y vuelve a intentar. Mientras tanto, usa el código a mano.';
+    return 'La app no tiene permiso para usar NFC. En Chrome: toca el candado junto a la dirección → Permisos → NFC → Permitir, y toca Reintentar.';
   }
   if (nombre === 'NotReadableError') {
     return 'El NFC del teléfono está apagado. Actívalo en Ajustes (busca "NFC") y toca Reintentar.';
   }
   if (nombre === 'NotSupportedError') {
-    return 'Este teléfono no tiene NFC, o Chrome no puede usarlo: usa el código a mano.';
+    return 'Este teléfono no tiene NFC, o Chrome no puede usarlo: los puntos con chapita se marcan con un Android con NFC.';
   }
-  return `No se pudo activar el lector NFC${nombre ? ` (${nombre})` : ''}. Toca Reintentar o usa el código a mano.`;
+  return `No se pudo activar el lector NFC${nombre ? ` (${nombre})` : ''}. Toca Reintentar.`;
 }
 
 // El texto RQR:… grabado en la chapita: el primer registro de texto NDEF.
@@ -1163,7 +1182,7 @@ function detenerLectorNfc() {
   lectorNfc = null;
 }
 
-function chapitaLeida(evento) {
+async function chapitaLeida(evento) {
   const texto = textoDeChapita(evento.message);
   if (!texto || !texto.trim().toUpperCase().startsWith('RQR:')) {
     aviso('Esa chapita no es de Rondas QR (está vacía o tiene otra cosa).', 'error');
@@ -1177,23 +1196,90 @@ function chapitaLeida(evento) {
   const clave = `${texto}|${serie}`;
   if (clave === ultimoCodigoLeido.valor && ahora - ultimoCodigoLeido.ts < 2500) return;
   ultimoCodigoLeido = { valor: clave, ts: ahora };
-  cerrarEscaner();
   cerrarPantallaNfc();
-  procesarCodigo(texto.trim(), ahora, { serie });
+  const huella = serie ? await huellaSerie(serie) : null;
+  procesarCodigo(texto.trim(), ahora, { serie, huella });
 }
 
-// "Escanear": la cámara, la pantalla de la chapita o las dos, según los puntos
-// que faltan (medioEscaner).
+// "Escanear": la cámara o la pantalla de la chapita, según los puntos que
+// faltan (medioEscaner). En una ronda mixta sin orden se pregunta primero.
 function escanear() {
   const medio = medioEscaner(rondaActual(), estado.ejecucion);
   if (medio === 'nfc') abrirPantallaNfc();
-  else abrirEscaner(medio === 'ambos');
+  else if (medio === 'elegir') $('modal-medio').classList.remove('oculta');
+  else abrirEscaner();
+}
+
+function elegirMedio(medio) {
+  $('modal-medio').classList.add('oculta');
+  // El toque en "Una chapita" es el gesto que Web NFC exige para leer.
+  if (medio === 'nfc') abrirPantallaNfc();
+  else abrirEscaner();
+}
+
+// Los puntos de chapita que el guardia puede estar intentando marcar: con
+// orden estricto, solo el próximo; si no, todos los de chapita pendientes.
+function puntosNfcPendientes() {
+  const ronda = rondaActual();
+  if (!ronda || !estado.ejecucion) return [];
+  const marcados = new Set(estado.ejecucion.escaneos.map(e => e.puntoId));
+  const pendientes = ronda.puntos.filter(p => !marcados.has(p.id));
+  if (ronda.ordenEstricto) return pendientes.length && pendientes[0].nfc ? [pendientes[0]] : [];
+  return pendientes.filter(p => p.nfc);
+}
+
+// "La chapita no lee": el guardia está en el punto y no hay cómo marcarlo
+// (chapita rota, despegada, o un teléfono que no lee NFC). El código a mano
+// no sirve en un punto con chapita —sería la puerta para marcar sin ir—, así
+// que el punto queda SIN marcar, y lo que sí queda es el aviso: viaja como un
+// rechazo con `reporte: 'chapita'` y el informe se lo dice al administrador.
+function reportarChapita() {
+  const candidatos = puntosNfcPendientes();
+  const lista = $('nfc-reporte');
+  if (!candidatos.length) { cerrarPantallaNfc(); return; }
+  if (candidatos.length === 1) { confirmarReporte(candidatos[0]); return; }
+  lista.innerHTML = '<p class="nota centrado">¿En qué punto estás?</p>'
+    + candidatos.map(p => `<button class="btn btn-borde" data-reportar="${esc(p.id)}">${esc(p.nombre)}</button>`).join('');
+  lista.classList.remove('oculta');
+  for (const btn of lista.querySelectorAll('[data-reportar]')) {
+    btn.addEventListener('click', () => confirmarReporte(candidatos.find(p => p.id === btn.dataset.reportar)));
+  }
+}
+
+function confirmarReporte(punto) {
+  if (!punto) return;
+  if (!confirm(`"${punto.nombre}" va a quedar SIN marcar y se le avisará al administrador que la chapita no leyó. ¿Avisar?`)) return;
+  registrarReporteChapita(punto);
+  cerrarPantallaNfc();
+}
+
+function registrarReporteChapita(punto) {
+  const ejecucion = estado.ejecucion;
+  if (!ejecucion || ejecucion.cerrada) return;
+  if (!ejecucion.reportados) ejecucion.reportados = [];
+  if (!ejecucion.reportados.includes(punto.id)) {
+    ejecucion.reportados.push(punto.id);
+    const sinLector = sinLectorNfc();
+    estado.cola.push({
+      tipo: 'rechazo',
+      ejecucionId: ejecucion.id,
+      puntoId: punto.id,
+      ts: new Date().toISOString(),
+      reporte: 'chapita',
+      motivo: sinLector ? `El teléfono no lee chapitas NFC (${sinLector})` : 'El guardia reportó que la chapita no leyó.'
+    });
+    guardarEstado();
+    sincronizar();
+  }
+  aviso(`"${punto.nombre}" quedó SIN marcar. Se le avisará al administrador que la chapita no leyó.`, 'error', 7000);
+  render();
 }
 
 function abrirPantallaNfc() {
   reengancharSiNegado();
   vigilarGps();
   $('modal-nfc').classList.remove('oculta');
+  $('nfc-reporte').classList.add('oculta');
   const texto = $('nfc-texto');
   const reintentar = $('btn-reintentar-nfc');
   reintentar.classList.add('oculta');
@@ -1590,7 +1676,8 @@ async function sincronizar() {
               distanciaM: evento.distanciaM,
               topeM: evento.topeM,
               acc: evento.acc,
-              edadMs: evento.edadMs
+              edadMs: evento.edadMs,
+              reporte: evento.reporte || null
             }
           });
         } else if (evento.tipo === 'cerrar') {
@@ -1714,9 +1801,7 @@ function mostrarAyudaEscaner(turno) {
   $('btn-escaner-manual').classList.remove('oculta');
 }
 
-// `conNfc`: ronda mixta (medioEscaner 'ambos'): mientras la cámara busca el QR,
-// el lector NFC escucha a la vez por si el punto es de chapita.
-async function abrirEscaner(conNfc = false) {
+async function abrirEscaner() {
   // Ya abierto: una segunda activación del botón de atrás (Enter de un teclado,
   // doble toque de TalkBack con el foco en el botón) no abre otro turno. Si lo
   // abriera, la cámara del primero quedaría encendida para siempre en un kiosco.
@@ -1731,19 +1816,6 @@ async function abrirEscaner(conNfc = false) {
   $('btn-linterna').classList.add('oculta');
   linternaEncendida = false;
   escaneando = true;
-  const pistaNfc = $('escaner-nfc');
-  if (pistaNfc) {
-    pistaNfc.textContent = 'o acerca la parte trasera del teléfono a la chapita';
-    pistaNfc.classList.toggle('oculta', !(conNfc && !sinLectorNfc()));
-  }
-  // Arranca en este mismo toque: Web NFC lo exige. Si falla, la cámara sigue y
-  // la línea de la chapita dice por qué.
-  if (conNfc && !sinLectorNfc()) {
-    iniciarLectorNfc(motivo => {
-      if (!turnoVivo(turno) || !pistaNfc) return;
-      pistaNfc.textContent = `Chapita: ${motivo}`;
-    });
-  }
   // Con el lector abierto hay una marca en juego: si el watch venía callado se
   // reengancha ya, y la lectura nueva llega mientras el guardia apunta.
   vigilarGps();
@@ -1793,9 +1865,6 @@ async function abrirEscaner(conNfc = false) {
 
 function cerrarEscaner() {
   escaneando = false;
-  // El lector NFC de la ronda mixta vive y muere con el escáner. La pantalla de
-  // la chapita tiene el suyo y no se toca acá.
-  if ($('modal-nfc') && $('modal-nfc').classList.contains('oculta')) detenerLectorNfc();
   clearTimeout(ayudaEscanerTimer);
   ayudaEscanerTimer = null;
   if (stream) {
@@ -2539,7 +2608,7 @@ function renderRonda() {
         <div>${esc(p.nombre)}</div>
         <div class="nota">${marca
           ? `Marcado ${esc(hora(marca.ts))}${MEDIOS[marca.medio] ? ` · ${MEDIOS[marca.medio]}` : ''}${marca.offline ? ' (sin señal)' : ''}`
-          : `Pendiente${p.nfc ? ' · 📶 chapita' : ''}`}</div>
+          : `Pendiente${p.nfc ? ' · 📶 chapita' : ''}${(ejecucion.reportados || []).includes(p.id) ? ' · ⚠️ avisaste que no lee' : ''}`}</div>
       </div>
       <div class="punto-check">${marca ? '✅' : '·'}</div>`;
     lista.appendChild(fila);
@@ -2662,10 +2731,25 @@ const HTML_MODAL_NFC = `
       <h2>Acerca la parte trasera del teléfono a la chapita</h2>
       <p id="nfc-texto" class="nota centrado" role="status"></p>
       <button id="btn-reintentar-nfc" class="btn btn-principal oculta">Reintentar</button>
+      <div id="nfc-reporte" class="oculta"></div>
       <div class="botonera-fila">
         <button id="btn-cancelar-nfc" class="btn btn-borde">Cancelar</button>
-        <button id="btn-nfc-manual" class="btn btn-borde">⌨️ Código a mano</button>
+        <button id="btn-nfc-reportar" class="btn btn-borde">⚠️ La chapita no lee</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Ronda con puntos de QR y de chapita, sin orden: la app no sabe frente a
+       cuál está el guardia, así que pregunta. Abre solo la cámara o solo el
+       lector de la chapita, nunca los dos. -->
+  <div id="modal-medio" class="modal modal-centrado oculta">
+    <div class="dialogo dialogo-nfc">
+      <h2>¿Qué hay en este punto?</h2>
+      <div class="botonera-fila">
+        <button id="btn-medio-qr" class="btn btn-principal">📷 Un QR</button>
+        <button id="btn-medio-nfc" class="btn btn-principal">📶 Una chapita</button>
+      </div>
+      <button id="btn-cancelar-medio" class="btn btn-borde">Cancelar</button>
     </div>
   </div>`;
 
@@ -2685,14 +2769,11 @@ function completarHtmlAnterior() {
           </div>
         </div>`);
     }
-    // v1.23: el botón ya no dice "QR" (abre la cámara o la chapita), la línea
-    // de la chapita en el escáner y la pantalla de la chapita (CU-28).
+    // v1.23: el botón ya no dice "QR" (abre la cámara o la chapita), y la
+    // pantalla de la chapita con la pregunta de la ronda mixta (CU-28).
     if (escanear && /QR/.test(escanear.textContent)) escanear.textContent = 'Escanear';
     if (!$('modal-nfc') && $('modal-manual')) $('modal-manual').insertAdjacentHTML('afterend', HTML_MODAL_NFC);
     const cancelar = $('btn-cancelar-escaner');
-    if (cancelar && !$('escaner-nfc')) {
-      cancelar.insertAdjacentHTML('beforebegin', '<p id="escaner-nfc" class="nota centrado oculta"></p>');
-    }
     if (cancelar && !$('escaner-texto')) {
       const texto = cancelar.parentNode.querySelector('p');
       if (texto) {
@@ -2774,7 +2855,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('eliminar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminarCuenta(); });
   $('btn-escanear').addEventListener('click', escanear);
   $('btn-cancelar-nfc').addEventListener('click', cerrarPantallaNfc);
-  $('btn-nfc-manual').addEventListener('click', () => { cerrarPantallaNfc(); abrirManual(); });
+  $('btn-nfc-reportar').addEventListener('click', reportarChapita);
+  $('btn-medio-qr').addEventListener('click', () => elegirMedio('qr'));
+  $('btn-medio-nfc').addEventListener('click', () => elegirMedio('nfc'));
+  $('btn-cancelar-medio').addEventListener('click', () => $('modal-medio').classList.add('oculta'));
   $('btn-reintentar-nfc').addEventListener('click', abrirPantallaNfc);
   $('btn-cancelar-escaner').addEventListener('click', cerrarEscaner);
   $('btn-linterna').addEventListener('click', alternarLinterna);
@@ -2801,6 +2885,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key !== 'Escape') return;
     if (!$('modal-escaner').classList.contains('oculta')) cerrarEscaner();
     if (!$('modal-nfc').classList.contains('oculta')) cerrarPantallaNfc();
+    if (!$('modal-medio').classList.contains('oculta')) $('modal-medio').classList.add('oculta');
     if (!$('modal-manual').classList.contains('oculta')) $('modal-manual').classList.add('oculta');
   });
 

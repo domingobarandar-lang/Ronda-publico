@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { normalizarSerie } = require('../lib/codigos');
+const { normalizarSerie, huellaSerie } = require('../lib/codigos');
 
 const publico = path.join(__dirname, '..', 'public');
 
@@ -30,12 +30,13 @@ function elementoFalso() {
   };
 }
 
-function cargarApp({ ventana = {}, userAgent = 'Mozilla/5.0 (Linux; Android 14) Chrome/140' } = {}) {
+function cargarApp({ ventana = {}, userAgent = 'Mozilla/5.0 (Linux; Android 14) Chrome/140', confirmar = () => true } = {}) {
   const elementos = new Map();
   const almacen = {};
   const ctx = {
     ...ventana,
-    TextDecoder, AbortController, DOMException,
+    TextDecoder, TextEncoder, AbortController, DOMException, crypto: globalThis.crypto,
+    confirm: confirmar,
     localStorage: {
       getItem: k => (k in almacen ? almacen[k] : null),
       setItem: (k, v) => { almacen[k] = v; },
@@ -49,7 +50,16 @@ function cargarApp({ ventana = {}, userAgent = 'Mozilla/5.0 (Linux; Android 14) 
       },
       querySelector: () => null,
       querySelectorAll: () => [],
-      createElement: () => elementoFalso(),
+      // Lo justo para esc(): textContent entra, innerHTML sale escapado.
+      createElement: () => {
+        const e = elementoFalso();
+        let html = '';
+        Object.defineProperties(e, {
+          textContent: { set(v) { html = String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }, get() { return html; } },
+          innerHTML: { set(v) { html = String(v); }, get() { return html; } }
+        });
+        return e;
+      },
       activeElement: null
     },
     navigator: { onLine: false, userAgent, vibrate: () => true, geolocation: { watchPosition: () => 1, clearWatch() {} } },
@@ -66,10 +76,13 @@ function cargarApp({ ventana = {}, userAgent = 'Mozilla/5.0 (Linux; Android 14) 
 }
 
 const SERIE = '04A23B4C5D6E80';
-const P_QR = { id: 'p1', nombre: 'Portería', codigoCorto: 'PRT234', payload: 'RQR:aromos:p1:PRT234', lat: null, lon: null, nfc: false, nfcSerie: null };
-const P_NFC = { id: 'p2', nombre: 'Sala de bombas', codigoCorto: 'BMB892', payload: 'RQR:aromos:p2:BMB892', lat: null, lon: null, nfc: true, nfcSerie: SERIE };
+const P_QR = { id: 'p1', nombre: 'Portería', codigoCorto: 'PRT234', payload: 'RQR:aromos:p1:PRT234', lat: null, lon: null, nfc: false, nfcHuella: null };
+const P_NFC = { id: 'p2', nombre: 'Sala de bombas', codigoCorto: 'BMB892', payload: 'RQR:aromos:p2:BMB892', lat: null, lon: null, nfc: true, nfcHuella: huellaSerie(SERIE) };
+const P_NFC2 = { id: 'p3', nombre: 'Subterráneo', codigoCorto: 'SUB234', payload: 'RQR:aromos:p3:SUB234', lat: null, lon: null, nfc: true, nfcHuella: huellaSerie('04112233445566') };
+// Deja correr lo asíncrono (la huella se calcula con crypto.subtle).
+const tick = () => new Promise(r => setTimeout(r, 30));
 
-function conRonda(app, { puntos = [P_QR, P_NFC], ordenEstricto = false, manualEnNfc = 'observacion' } = {}) {
+function conRonda(app, { puntos = [P_QR, P_NFC], ordenEstricto = false, manualEnNfc = 'rechazo' } = {}) {
   const paquete = { manualEnNfc, gps: null, rondas: [{ id: 'r1', nombre: 'Nocturna', ordenEstricto, puntos }] };
   app.correr(`estado.sesion = { token: 't' };
     estado.paquete = ${JSON.stringify(paquete)};
@@ -89,7 +102,7 @@ test('medioEscaner: qué abre "Escanear" según los puntos que faltan', () => {
     `medioEscaner(${JSON.stringify({ puntos, ordenEstricto })}, ${JSON.stringify({ escaneos: marcados.map(puntoId => ({ puntoId })) })})`);
   assert.equal(medio([P_QR], false), 'qr', 'ronda sin chapitas: la cámara, como siempre');
   assert.equal(medio([P_NFC], false), 'nfc');
-  assert.equal(medio([P_QR, P_NFC], false), 'ambos', 'mixta sin orden: cámara y lector a la vez');
+  assert.equal(medio([P_QR, P_NFC], false), 'elegir', 'mixta sin orden: se pregunta, nunca cámara y lector a la vez');
   assert.equal(medio([P_QR, P_NFC], false, ['p1']), 'nfc', 'solo falta la chapita');
   assert.equal(medio([P_QR, P_NFC], false, ['p2']), 'qr');
   assert.equal(medio([P_NFC, P_QR], true), 'nfc', 'orden estricto: el medio del próximo punto');
@@ -105,28 +118,41 @@ test('normalizarSerie de la app es la misma que la del servidor', () => {
   }
 });
 
+test('la huella de la serie de la app es la misma que la del servidor', async () => {
+  const app = cargarApp();
+  app.correr(`huellaSerie(${JSON.stringify(SERIE)}).then(h => { globalThis.__h = h; })`);
+  await tick();
+  assert.equal(app.ctx.__h, huellaSerie(SERIE));
+});
+
 test('motivoMedio: espejo de la regla del servidor', () => {
   const app = cargarApp();
   conRonda(app);
   const motivo = (punto, texto, nfc) => app.correr(`motivoMedio(${JSON.stringify(punto)}, ${JSON.stringify(texto)}, ${JSON.stringify(nfc)})`);
+  const lector = serie => ({ serie, huella: huellaSerie(serie) });
   assert.equal(motivo(P_QR, P_QR.payload, null), null, 'punto QR: igual que siempre');
   assert.equal(motivo(P_QR, 'PRT234', null), null);
   assert.match(motivo(P_NFC, P_NFC.payload, null), /^Este punto se marca con la chapita NFC/);
-  assert.match(motivo(P_NFC, P_NFC.payload, { serie: '04112233445566' }), /no es la registrada/);
+  assert.match(motivo(P_NFC, P_NFC.payload, lector('04112233445566')), /no es la registrada/);
   assert.match(motivo(P_NFC, P_NFC.payload, { serie: null }), /número de serie/);
-  assert.equal(motivo(P_NFC, P_NFC.payload, { serie: SERIE }), null);
-  assert.equal(motivo(P_NFC, 'BMB892', null), null, 'código a mano: entra (observado por el servidor)');
-  conRonda(app, { manualEnNfc: 'rechazo' });
-  assert.match(motivo(P_NFC, 'BMB892', null), /solo con la chapita/);
+  assert.equal(motivo(P_NFC, P_NFC.payload, lector(SERIE)), null);
+  assert.equal(motivo(P_NFC, P_NFC.payload, { serie: '04112233445566', huella: null }), null, 'sin huella decide el servidor');
+  assert.match(motivo(P_NFC, 'BMB892', null), /código a mano no sirve/, 'código a mano en punto NFC: no entra');
+  conRonda(app, { manualEnNfc: 'observacion' });
+  assert.equal(motivo(P_NFC, 'BMB892', null), null, 'la regla viaja en el paquete');
+  app.correr('delete estado.paquete.manualEnNfc');
+  assert.match(motivo(P_NFC, 'BMB892', null), /código a mano no sirve/, 'un paquete sin la regla aplica la de hoy');
 });
 
-test('la chapita correcta entra a la cola con su serie y medio nfc', () => {
+test('la chapita correcta entra a la cola con su serie y medio nfc', async () => {
   const app = cargarApp();
   conRonda(app);
   app.correr(`chapitaLeida(${JSON.stringify({})})`); // sin mensaje: no es de Rondas QR
+  await tick();
   assert.equal(app.correr('estado.cola.length'), 0);
   app.ctx.__lectura = lectura(P_NFC.payload);
   app.correr('chapitaLeida(__lectura)');
+  await tick();
   const evento = app.correr('estado.cola[0]');
   assert.equal(evento.tipo, 'escaneo');
   assert.equal(evento.codigo, P_NFC.payload);
@@ -134,31 +160,33 @@ test('la chapita correcta entra a la cola con su serie y medio nfc', () => {
   assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'nfc');
   // La misma chapita apoyada un instante después no es una lectura nueva.
   app.correr('chapitaLeida(__lectura)');
+  await tick();
   assert.equal(app.correr('estado.cola.length'), 1);
 });
 
-test('QR o chapita ajena en un punto NFC: rechazo registrado, nunca una marca', () => {
+test('QR, chapita ajena o código a mano en un punto NFC: rechazo registrado, nunca una marca', async () => {
   const app = cargarApp();
   conRonda(app);
   app.correr(`procesarCodigo(${JSON.stringify(P_NFC.payload)})`);
   app.ctx.__copia = lectura(P_NFC.payload, '04:11:22:33:44:55:66');
   app.correr('chapitaLeida(__copia)');
+  await tick();
+  app.correr('procesarCodigo("bmb892")');
   const cola = app.correr('estado.cola');
-  assert.deepEqual([...cola].map(e => e.tipo), ['rechazo', 'rechazo']);
+  assert.deepEqual([...cola].map(e => e.tipo), ['rechazo', 'rechazo', 'rechazo']);
   assert.match(cola[0].motivo, /chapita NFC/);
+  assert.match(cola[1].motivo, /no es la registrada/);
+  assert.match(cola[2].motivo, /código a mano no sirve/);
   assert.equal(app.correr('estado.ejecucion.escaneos.length'), 0);
-  // El punto QR de la misma ronda sigue funcionando con la cámara.
+  // El punto QR de la misma ronda sigue funcionando, con la cámara o a mano.
   app.correr(`procesarCodigo(${JSON.stringify(P_QR.payload)})`);
   assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'qr');
-  assert.equal(app.correr('estado.cola[2].nfc'), null);
-  // Y el código a mano en el punto NFC entra como manual.
-  app.correr('procesarCodigo("bmb892")');
-  assert.equal(app.correr('estado.ejecucion.escaneos[1].medio'), 'manual');
+  assert.equal(app.correr('estado.cola[3].nfc'), null);
 });
 
-test('sin Web NFC: cada teléfono recibe un mensaje claro y la salida a mano', () => {
+test('sin Web NFC: cada teléfono recibe un mensaje claro', () => {
   const fully = cargarApp({ ventana: { fully: { playSound() {} } } });
-  assert.match(fully.correr('sinLectorNfc()'), /^Este teléfono todavía no lee chapitas NFC: usa el código a mano/);
+  assert.match(fully.correr('sinLectorNfc()'), /^Este teléfono todavía no lee chapitas NFC/);
   const iphone = cargarApp({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' });
   assert.match(iphone.correr('sinLectorNfc()'), /iPhone/);
   const firefox = cargarApp({ userAgent: 'Mozilla/5.0 (Android 14; Mobile) Firefox/130' });
@@ -190,6 +218,7 @@ test('pantalla de la chapita: el lector arranca con el toque y se detiene al cer
   assert.ok(señal && !señal.aborted, 'el lector no arrancó con el toque');
   // La lectura entra por el mismo camino que el QR.
   lector.onreading(lectura(P_NFC.payload));
+  await tick();
   assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'nfc');
   assert.equal(señal.aborted, true, 'el lector siguió encendido después de leer');
   assert.equal(app.elementos.get('modal-nfc').classList.contains('oculta'), true);
@@ -208,4 +237,54 @@ test('pantalla de la chapita: el lector arranca con el toque y se detiene al cer
   otra.correr('abrirPantallaNfc()');
   otra.correr('cerrarPantallaNfc()');
   assert.equal(señal.aborted, true);
+});
+
+test('ronda mixta sin orden: "Escanear" pregunta, y abre solo la cámara o solo la chapita', async () => {
+  let escaneos = 0;
+  class NDEFReader { scan() { escaneos++; return Promise.resolve(); } }
+  let camaras = 0;
+  const app = cargarApp({ ventana: { NDEFReader } });
+  app.ctx.navigator.mediaDevices = { getUserMedia: () => { camaras++; return Promise.reject(new Error('sin cámara')); } };
+  conRonda(app);
+  app.correr('escanear()');
+  assert.equal(app.elementos.get('modal-medio').classList.contains('oculta'), false, 'no preguntó');
+  assert.equal(camaras + escaneos, 0, 'abrió algo antes de que el guardia eligiera');
+  app.correr("elegirMedio('nfc')");
+  assert.equal(escaneos, 1);
+  assert.equal(camaras, 0, 'con chapita no se abre la cámara');
+  assert.equal(app.elementos.get('modal-medio').classList.contains('oculta'), true);
+  app.correr('cerrarPantallaNfc()');
+  app.correr('escanear()');
+  app.correr("elegirMedio('qr')");
+  await tick();
+  assert.equal(camaras, 1);
+  assert.equal(escaneos, 1, 'con QR no se enciende el lector NFC');
+});
+
+test('"La chapita no lee": el punto queda sin marcar y el aviso viaja en la cola, una vez', () => {
+  const app = cargarApp();
+  conRonda(app, { puntos: [P_NFC, P_QR], ordenEstricto: true });
+  app.correr('reportarChapita()');
+  app.correr('reportarChapita()');
+  const cola = app.correr('estado.cola');
+  assert.equal(cola.length, 1, 'el mismo punto se avisa una sola vez por ronda');
+  assert.equal(cola[0].tipo, 'rechazo');
+  assert.equal(cola[0].reporte, 'chapita');
+  assert.equal(cola[0].puntoId, 'p2');
+  assert.equal(app.correr('estado.ejecucion.escaneos.length'), 0, 'avisar no es marcar');
+
+  // Ronda sin orden con dos chapitas pendientes: pregunta en cuál está.
+  const dos = cargarApp();
+  conRonda(dos, { puntos: [P_NFC, P_NFC2] });
+  dos.correr('reportarChapita()');
+  assert.equal(dos.correr('estado.cola.length'), 0);
+  assert.match(dos.elementos.get('nfc-reporte').innerHTML, /Sala de bombas[\s\S]*Subterráneo/);
+  dos.correr('confirmarReporte(rondaActual().puntos[1])');
+  assert.equal(dos.correr('estado.cola[0].puntoId'), 'p3');
+
+  // Si el guardia se arrepiente en la confirmación, no se avisa nada.
+  const no = cargarApp({ confirmar: () => false });
+  conRonda(no, { puntos: [P_NFC] });
+  no.correr('reportarChapita()');
+  assert.equal(no.correr('estado.cola.length'), 0);
 });

@@ -18,7 +18,7 @@ const path = require('path');
 
 const { crearApp } = require('../server');
 const { datosSemilla } = require('../seed');
-const { normalizarSerie } = require('../lib/codigos');
+const { normalizarSerie, huellaSerie } = require('../lib/codigos');
 
 let base;
 let servidor;
@@ -85,10 +85,10 @@ test('normalizarSerie: hex en mayúsculas sin separadores; lo demás no es serie
 test('punto sin chapita: idéntico a antes, y cada marca anota su medio', async () => {
   const guardia = await login('pedro', '2222');
   const paquete = await paqueteDe(guardia);
-  assert.equal(paquete.manualEnNfc, 'observacion');
+  assert.equal(paquete.manualEnNfc, 'rechazo');
   const porteria = puntoDe(paquete, 'ronda-express', 'p-porteria');
   assert.equal(porteria.nfc, false);
-  assert.equal(porteria.nfcSerie, null);
+  assert.equal(porteria.nfcHuella, null);
 
   const ej = await iniciar(guardia);
   const qr = await marcar(guardia, ej, { codigo: porteria.payload });
@@ -132,11 +132,14 @@ test('una chapita no puede pertenecer a dos puntos, tampoco de otro condominio',
   assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } })).status, 200);
 });
 
-test('el paquete del guardia lleva qué puntos son NFC y su serie', async () => {
+test('el paquete del guardia lleva qué puntos son NFC y la huella de la serie, no la serie', async () => {
   const guardia = await login('pedro', '2222');
-  const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
+  const paquete = await paqueteDe(guardia);
+  const piscina = puntoDe(paquete, 'ronda-express', 'p-piscina');
   assert.equal(piscina.nfc, true);
-  assert.equal(piscina.nfcSerie, SERIE);
+  assert.equal(piscina.nfcHuella, huellaSerie(SERIE));
+  assert.match(piscina.nfcHuella, /^[0-9a-f]{64}$/);
+  assert.ok(!JSON.stringify(paquete).includes(SERIE), 'la serie no puede viajar al teléfono del guardia');
   assert.ok(piscina.payload.startsWith('RQR:aromos:p-piscina:'), 'la chapita lleva el mismo texto del QR');
 });
 
@@ -173,32 +176,45 @@ test('punto con chapita: QR sin serie y chapita ajena → 422 y queda como recha
   assert.equal(reenvio.datos.duplicado, true);
 });
 
-test('punto con chapita: el código a mano entra como "manual" y el informe lo observa sin acusar', async () => {
+test('punto con chapita: el código a mano NO entra y queda como rechazo', async () => {
+  const guardia = await login('pedro', '2222');
+  const ej = await iniciar(guardia);
+  const r = await marcar(guardia, ej, { codigo: 'psc234', ts: '2026-10-28T11:00:00.000Z' });
+  assert.equal(r.status, 422);
+  assert.match(r.datos.error, /el código a mano no sirve/);
+  const ejecucion = store.ejecuciones.obtener(ej);
+  assert.equal(ejecucion.escaneos.length, 0);
+  assert.equal(ejecucion.rechazos.length, 1, 'el intento queda a la vista del administrador');
+  // En un punto sin chapita el código a mano sigue funcionando.
+  assert.equal((await marcar(guardia, ej, { codigo: 'QCH789' })).status, 200);
+});
+
+test('"La chapita no lee": el punto queda faltante y el informe dice por qué', async () => {
   const guardia = await login('pedro', '2222');
   const paquete = await paqueteDe(guardia);
   const ej = await iniciar(guardia);
-  // Cuatro marcas espaciadas: sin ráfaga, sin faltantes.
   const base = Date.now() - 20 * 60000;
   const ts = i => new Date(base + i * 4 * 60000).toISOString();
   assert.equal((await marcar(guardia, ej, { codigo: puntoDe(paquete, 'ronda-express', 'p-porteria').payload, ts: ts(0) })).status, 200);
   assert.equal((await marcar(guardia, ej, { codigo: 'QCH789', ts: ts(1) })).status, 200);
-  assert.equal((await marcar(guardia, ej, { codigo: 'psc234', ts: ts(2) })).status, 200, 'código a mano en el punto NFC');
+  const reporte = await api(`/api/ejecuciones/${ej}/rechazos`, {
+    metodo: 'POST', token: guardia,
+    cuerpo: { puntoId: 'p-piscina', ts: ts(2), reporte: 'chapita', motivo: 'El guardia reportó que la chapita no leyó.' }
+  });
+  assert.equal(reporte.status, 201);
+  // Un valor de reporte desconocido no se guarda como tal.
+  await api(`/api/ejecuciones/${ej}/rechazos`, { metodo: 'POST', token: guardia, cuerpo: { puntoId: 'p-piscina', ts: ts(2.5), reporte: 'otra-cosa' } });
+  assert.deepEqual(store.ejecuciones.obtener(ej).rechazos.map(r => r.reporte), ['chapita', undefined]);
   assert.equal((await marcar(guardia, ej, { codigo: puntoDe(paquete, 'ronda-express', 'p-trasero').payload, ts: ts(3) })).status, 200);
-  const marca = store.ejecuciones.obtener(ej).escaneos.find(e => e.puntoId === 'p-piscina');
-  assert.equal(marca.medio, 'manual');
-  assert.equal(marca.puntoNfc, true);
 
   const cierre = await api(`/api/ejecuciones/${ej}/cerrar`, { metodo: 'POST', token: guardia, cuerpo: { fin: ts(4) } });
-  assert.equal(cierre.status, 200);
-  assert.equal(cierre.datos.estado, 'completa_obs', 'observación, no sospecha');
-  assert.ok(cierre.datos.evaluacion.observaciones.some(o => /código a mano en puntos con chapita NFC: Piscina/.test(o)));
-  assert.deepEqual(cierre.datos.evaluacion.sospechas, []);
-  // El informe muestra con qué se marcó cada punto.
-  const medios = Object.fromEntries(cierre.datos.detalle.map(d => [d.puntoId, d.medio]));
-  assert.deepEqual(medios, { 'p-porteria': 'qr', 'p-quincho': 'manual', 'p-piscina': 'manual', 'p-trasero': 'qr' });
+  assert.equal(cierre.datos.estado, 'incompleta', 'el punto sin marcar es faltante: el aviso no lo marca');
+  assert.deepEqual(cierre.datos.evaluacion.faltantes, ['p-piscina']);
+  assert.ok(cierre.datos.evaluacion.observaciones.some(o => /avisó que la chapita no leyó en: Piscina \(\d\d:\d\d\)/.test(o)));
   const aviso = store.notificaciones.ultimas('aromos', 1)[0];
-  assert.match(aviso.texto, /Piscina — .*⌨️ a mano/);
+  assert.match(aviso.texto, /chapita no leyó en: Piscina/);
   assert.match(aviso.texto, /Portería — .*📷 QR/);
+  assert.match(aviso.texto, /Quincho — .*⌨️ a mano/);
 });
 
 test('el informe muestra 📶 NFC en la marca hecha con la chapita', async () => {

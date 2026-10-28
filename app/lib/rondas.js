@@ -2,6 +2,7 @@
 // Todas las operaciones son idempotentes para soportar el reenvío desde la
 // cola offline del teléfono (mismo evento dos veces = mismo resultado).
 const { id, interpretarCodigo, normalizarSerie } = require('./codigos');
+const { TZ } = require('./fechas-chile');
 
 // Verificación de presencia (CU-16 / CU-18): una marca sobre un punto con
 // ubicación fijada solo vale si el teléfono está dentro del radio. Además de
@@ -211,6 +212,12 @@ function limpiarGps(gps, cfg = configGps()) {
   };
 }
 
+// "21:05", en hora de Chile. Un ts que no se entiende sale como "—".
+function horaCorta(ts) {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('es-CL', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+
 function minutos(ms) {
   const min = Math.round(ms / 60000);
   return min >= 1 ? `${min} min` : `${Math.round(ms / 1000)} s`;
@@ -386,15 +393,17 @@ function limpiarTs(ts) {
 // cambiar. Por eso en un punto NFC la marca solo entra con la serie que
 // coincide. Un punto sin chapita funciona exactamente como antes.
 
-// Qué pasa con el código a mano en un punto con chapita. Es la salida cuando la
-// chapita se rompe o el teléfono no lee NFC, pero también es la puerta para
-// marcar sin estar ahí (el código está en la lámina QR vieja o en la memoria
-// del guardia). DECISIÓN PENDIENTE de José; una sola regla para cambiarla:
-//   'observacion'  entra, y el informe lo anota sin acusar (la de hoy)
+// Qué pasa con el código a mano en un punto con chapita. Decisión de José: NO
+// entra. El código a mano no prueba nada —se aprende una vez y se tipea desde
+// la caseta— y en los puntos bajo techo, que son justo los de chapita, tampoco
+// hay GPS que lo frene. Si la chapita no lee, el guardia toca "La chapita no
+// lee": el punto queda sin marcar y el informe le avisa al administrador.
+// Una sola regla para cambiarlo:
+//   'rechazo'      no entra: en un punto NFC solo vale la chapita (la de hoy)
+//   'observacion'  entra, y el informe lo anota sin acusar
 //   'sospecha'     entra, y la ronda queda SOSPECHOSA con aviso al administrador
-//   'rechazo'      no entra: en un punto NFC solo vale la chapita
 // Viaja en el paquete del guardia para que la app aplique la misma regla sin señal.
-const MANUAL_EN_PUNTO_NFC = 'observacion';
+const MANUAL_EN_PUNTO_NFC = 'rechazo';
 
 function esPuntoNfc(punto) {
   return Boolean(punto && punto.nfcSerie);
@@ -405,7 +414,7 @@ function esPuntoNfc(punto) {
 function medioDeLaMarca(punto, interpretado, nfc) {
   if (interpretado.tipo === 'manual') {
     if (esPuntoNfc(punto) && MANUAL_EN_PUNTO_NFC === 'rechazo') {
-      return { error: `"${punto.nombre}" se marca solo con la chapita NFC: acerca la parte trasera del teléfono a la chapita.` };
+      return { error: `En "${punto.nombre}" el código a mano no sirve: se marca con la chapita NFC. Si no lee, toca «La chapita no lee» para avisar al administrador.` };
     }
     return { medio: 'manual' };
   }
@@ -420,7 +429,7 @@ function medioDeLaMarca(punto, interpretado, nfc) {
     return { error: `Este punto se marca con la chapita NFC: acerca la parte trasera del teléfono a la chapita de "${punto.nombre}".` };
   }
   if (serie !== punto.nfcSerie) {
-    return { error: `Esta chapita no es la registrada para "${punto.nombre}". Si la cambiaron, avisa al administrador; mientras tanto usa el código a mano.` };
+    return { error: `Esta chapita no es la registrada para "${punto.nombre}". Si la cambiaron, avisa al administrador.` };
   }
   return { medio: 'nfc' };
 }
@@ -683,6 +692,19 @@ function evaluar(db, ejecucion, ronda) {
     if (MANUAL_EN_PUNTO_NFC === 'sospecha') {
       sospechas.push(`Código a mano en vez de la chapita NFC: ${nombres(db, manualEnNfc)}`);
     }
+  }
+
+  // "La chapita no lee" (CU-28): el guardia avisó desde el punto que no pudo
+  // marcarlo. El punto ya sale como faltante; esto dice por qué, para que el
+  // administrador revise o reemplace la chapita. Llega como rechazo con
+  // `reporte: 'chapita'`, antes del cierre en la cola del teléfono.
+  const reportadas = (ejecucion.rechazos || []).filter(r => r.reporte === 'chapita');
+  if (reportadas.length) {
+    const detalle = reportadas.map(r => {
+      const sinNfc = /no lee chapitas/.test(r.motivo || '') ? ', teléfono sin lector NFC' : '';
+      return `${nombres(db, [r.puntoId])} (${horaCorta(r.ts)}${sinNfc})`;
+    }).join(', ');
+    observaciones.push(`📶 El guardia avisó que la chapita no leyó en: ${detalle}. Revisar o reemplazar la chapita.`);
   }
 
   // Ráfaga: varios puntos marcados en segundos (posible escaneo desde fotos).

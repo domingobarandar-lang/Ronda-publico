@@ -508,7 +508,7 @@ async function cargarPuntos() {
   const filas = puntosCache.map(p => `
     <tr>
       <td>${esc(p.nombre)}${chapitaTexto(p)}</td>
-      <td><code>${esc(p.codigoCorto)}</code></td>
+      <td><code>${esc(p.codigoCorto)}</code>${p.nfcSerie ? '<br><span class="nota">no sirve a mano: este punto se marca con la chapita</span>' : ''}</td>
       <td>${verificacionTexto(p)}</td>
       <td>
         <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 ${p.lat != null && p.verificacion !== 'anclaje' ? 'Volver a medir' : 'Fijar aquí'}</button>

@@ -89,7 +89,17 @@ Lo que se descartó: que el servidor le mande la orden a Fully por su **API REST
 
 La app lee las chapitas NFC con **Web NFC** (`NDEFReader`), que existe solo en Chrome de Android. El WebView de Fully no lo tiene. Fully trae su propio lector NFC en la interfaz JavaScript (`fully.nfcScanStart` y los eventos `onNdefDiscovered` / `onNfcTagDiscovered`, según su documentación), pero **no se pudo verificar** cómo entrega el texto y el número de serie del tag (el sitio de Fully estaba bloqueado desde la sesión de desarrollo). Sin la serie, la marca no valdría en un punto con chapita (ver CU-28).
 
-Mientras tanto, en Fully la app detecta el entorno y en un punto con chapita dice **«Este teléfono todavía no lee chapitas NFC: usa el código a mano»**. La marca entra como «⌨️ a mano» y el informe la anota como observación.
+Mientras tanto, en Fully la app detecta el entorno y en un punto con chapita dice **«Este teléfono todavía no lee chapitas NFC»**. Desde que el código a mano no sirve en los puntos con chapita, **un teléfono con Fully no puede marcar puntos NFC**: el guardia solo puede avisar «La chapita no lee». Para condominios con chapitas, ver las alternativas de abajo.
+
+### Alternativas a Fully que sí leen chapitas
+
+Web NFC solo existe en **Chrome** de Android. Cualquier modo kiosco que muestre la app dentro de Chrome (no dentro de un WebView propio, como Fully) puede leer chapitas. De más simple a más completo:
+
+1. **Fijar la app (función de Android, gratis).** Instalar la app del guardia desde Chrome («Agregar a pantalla de inicio» → queda instalada como app), activar en Ajustes → Seguridad → «Fijar aplicaciones» (el nombre cambia según la marca) con «Pedir PIN para desfijar», y fijarla. El guardia no puede salir sin el PIN del teléfono. No enciende la pantalla sola ni se recupera si alguien la desfija con el PIN; la alarma de ronda llega por Web Push, como en cualquier Chrome.
+2. **Un MDM con modo kiosco de Android Enterprise** («dispositivo dedicado» / *lock task mode*): Google Android Management API, o productos como Scalefusion, Hexnode, ManageEngine, 42Gears SureLock, Esper. El teléfono queda inscrito como dispositivo de la empresa (se resetea de fábrica para inscribirlo) y solo puede abrir las apps permitidas: Chrome con la app del guardia instalada. Se administra a distancia (forzar NFC encendido, actualizaciones, pantalla). Cobran por equipo al mes.
+3. **Envolver la app como app de Android (Trusted Web Activity)** y publicarla en Google Play o instalarla por MDM. Por dentro sigue siendo Chrome, así que Web NFC funciona, y se combina con (1) o (2).
+
+**Antes de elegir, probar en el teléfono real** que la chapita se lee con la app instalada y fijada: lo que se sabe (Web NFC es de Chrome; la app instalada y las TWA corren en Chrome) indica que funciona, pero no se pudo comprobar desde la sesión de desarrollo. La prueba está en `entrega/PRUEBAS-NFC.md`.
 
 Para hacerlo:
 1. Confirmar en la documentación de la interfaz JavaScript de Fully los nombres exactos (`nfcScanStart`/`nfcScanStop`, cómo se registra el evento con `fully.bind`) y qué datos trae cada evento: el texto NDEF y el UID del tag, y en qué formato.
