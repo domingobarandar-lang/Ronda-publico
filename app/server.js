@@ -635,8 +635,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     do { codigo = codigoCorto(); } while (db.puntos.some(p => p.codigoCorto === codigo));
     const punto = { id: id(), condominioId: miCondominio(req), nombre, codigoCorto: codigo };
     // "Con chapita NFC" (CU-28): el punto nace esperando que le graben la
-    // chapita en terreno. Es solo un recordatorio para el panel: hasta que la
-    // chapita quede registrada el punto se marca con QR, como cualquier otro.
+    // chapita en terreno. No sale en la hoja de QR, y hasta que la chapita
+    // quede registrada el servidor lo trata como un punto sin chapita: se
+    // marca con el código a mano (lo da el administrador).
     if ((req.body || {}).medio === 'nfc') punto.nfcPendiente = true;
     db.puntos.push(punto);
     store.guardar();
@@ -1090,9 +1091,11 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     const hoja = [];
     for (const p of puntos) {
       // Un punto con chapita no lleva QR: imprimirlo sería dejar pegada al lado
-      // de la chapita una lámina que el servidor rechaza (CU-28).
-      if (motor.esPuntoNfc(p)) {
-        hoja.push({ id: p.id, nombre: p.nombre, codigoCorto: p.codigoCorto, nfc: true, dataUrl: null });
+      // de la chapita una lámina que el servidor rechaza (CU-28). Tampoco uno
+      // creado "con chapita" que todavía no la tiene: el administrador eligió
+      // NFC para ese lugar, y una lámina pegada ahí se quedaría para siempre.
+      if (motor.esPuntoNfc(p) || p.nfcPendiente) {
+        hoja.push({ id: p.id, nombre: p.nombre, nfc: true, pendiente: !motor.esPuntoNfc(p), dataUrl: null });
         continue;
       }
       hoja.push({

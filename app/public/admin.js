@@ -492,14 +492,18 @@ async function cargarPuntos() {
       : `📍 <strong>Exacta</strong> · ${p.radioM || 20} m`;
     return `${cabecera}<br><span class="nota">${mapa} · ${calidadTexto(p)}</span>`;
   };
-  // Chapita NFC (CU-28): con serie el punto se marca con la chapita; pendiente
-  // es un punto que se creó "con chapita" y todavía se marca con QR.
+  // Con qué se marca cada punto (CU-28), siempre a la vista: el administrador
+  // tiene que saber de un vistazo cuál es cuál y qué falta. Pendiente es un
+  // punto creado "con chapita" que todavía no la tiene grabada: no sale en la
+  // hoja de QR y, mientras, se marca con el código a mano.
+  const serieCorta = s => (s.length > 8 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
   const chapitaTexto = p => {
     if (p.nfcSerie) {
-      return `<br><span class="nota">📶 chapita ${p.nfcBloqueada ? '🔒 bloqueada' : '<span class="rojo">sin bloquear</span>'}`
-        + ` · serie ${esc(p.nfcSerie)}</span>`;
+      return `<br><span class="nota">📶 NFC · chapita grabada · ${esc(serieCorta(p.nfcSerie))}`
+        + ` · ${p.nfcBloqueada ? '🔒 bloqueada' : '<span class="rojo">sin bloquear</span>'}</span>`;
     }
-    return p.nfcPendiente ? '<br><span class="nota rojo">📶 falta grabar la chapita (mientras, se marca con QR)</span>' : '';
+    if (p.nfcPendiente) return '<br><span class="nota rojo">📶 NFC · falta grabar la chapita</span>';
+    return '<br><span class="nota">📷 QR</span>';
   };
   const filas = puntosCache.map(p => `
     <tr>
@@ -1301,10 +1305,10 @@ document.addEventListener('DOMContentLoaded', () => {
       $('punto-nombre').value = '';
       await cargarPuntos();
       if (medio === 'nfc') {
-        aviso('Punto creado. Ahora grábale la chapita en terreno.');
+        aviso('Punto creado. Ve al lugar y aprieta 📶 Grabar chapita.');
         abrirGrabacion(puntosCache.find(p => p.id === punto.id));
       } else {
-        aviso('Punto creado. Reimprime la hoja de QR para pegarlo.');
+        aviso('Punto creado. Ya aparece en 🖨️ Imprimir hoja de QR.');
       }
     } catch (err) { aviso(err.message, 'error'); }
   });

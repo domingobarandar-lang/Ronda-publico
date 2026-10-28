@@ -235,7 +235,7 @@ test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   await api('/api/admin/puntos/p-quincho/chapita', { metodo: 'DELETE', token: admin });
 });
 
-test('agregar un punto "con chapita" lo deja pendiente y se marca con QR hasta grabarla', async () => {
+test('agregar un punto "con chapita" lo deja pendiente, fuera de la hoja de QR, y se marca a mano hasta grabarla', async () => {
   const admin = await login('marta', '1111');
   const creado = await api('/api/admin/puntos', { metodo: 'POST', token: admin, cuerpo: { nombre: 'Sala de calderas', medio: 'nfc' } });
   assert.equal(creado.status, 201);
@@ -243,6 +243,17 @@ test('agregar un punto "con chapita" lo deja pendiente y se marca con QR hasta g
   assert.equal(creado.datos.nfcSerie, undefined);
   const qr = await api('/api/admin/puntos', { metodo: 'POST', token: admin, cuerpo: { nombre: 'Jardín' } });
   assert.equal(qr.datos.nfcPendiente, undefined, 'el alta de siempre no cambia');
+  const hoja = (await api('/api/admin/hoja-qr', { token: admin })).datos.puntos;
+  const pendiente = hoja.find(p => p.id === creado.datos.id);
+  assert.deepEqual([pendiente.nfc, pendiente.pendiente, pendiente.dataUrl], [true, true, null], 'el punto elegido NFC no se imprime como QR');
+  assert.ok(hoja.find(p => p.id === qr.datos.id).dataUrl.startsWith('data:image/png'));
+  // Mientras no tenga chapita, el código a mano lo marca (y no es "a mano en punto NFC").
+  const ronda = await api('/api/admin/rondas', { metodo: 'POST', token: admin, cuerpo: { nombre: 'Prueba NFC', puntoIds: [creado.datos.id] } });
+  const guardia = await login('pedro', '2222');
+  const ej = await iniciar(guardia, ronda.datos.id);
+  assert.equal((await marcar(guardia, ej, { codigo: creado.datos.codigoCorto })).status, 200);
+  assert.equal(store.ejecuciones.obtener(ej).escaneos[0].puntoNfc, undefined);
+  await api(`/api/admin/rondas/${ronda.datos.id}`, { metodo: 'DELETE', token: admin });
   const grabado = await api(`/api/admin/puntos/${creado.datos.id}/chapita`, { metodo: 'PUT', token: admin, cuerpo: { serie: '04:99:88:77:66:55:44' } });
   assert.equal(grabado.datos.nfcPendiente, undefined, 'con la chapita grabada deja de estar pendiente');
   for (const id of [creado.datos.id, qr.datos.id]) await api(`/api/admin/puntos/${id}`, { metodo: 'DELETE', token: admin });

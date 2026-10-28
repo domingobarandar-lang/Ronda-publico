@@ -63,7 +63,7 @@ Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa 
 ### 1. Agregar el punto en el panel
 
 1. Panel → **Puntos** → «Agregar punto»: escribir el nombre y elegir **📶 con chapita NFC** (o «📷 con QR» para uno normal).
-2. El punto queda con el aviso «📶 falta grabar la chapita (mientras, se marca con QR)». Hasta que se grabe, funciona como un punto QR: nunca queda un punto sin forma de marcarse.
+2. Cada punto muestra en la tabla con qué se marca: **📷 QR**, **📶 NFC · falta grabar la chapita** o **📶 NFC · chapita grabada** (con la serie abreviada y si está 🔒 bloqueada). Un punto recién creado con chapita queda «falta grabar la chapita»: **no sale en la hoja de QR** y, mientras tanto, el guardia lo marca con el **código a mano** (la columna «Código» del panel).
 3. Un punto que ya existe también se pasa a chapita: en su fila, **📶 Grabar chapita**.
 
 ### 2. Instalar y grabar la chapita (en terreno)
@@ -80,7 +80,7 @@ Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa 
    - **guarda** la serie en el servidor: «✅ Chapita lista y bloqueada».
 6. Si algo falla antes del final (se movió el teléfono, NFC apagado, permiso negado), el punto queda **como estaba**: tocar **Reintentar**.
 7. **Bajo techo:** si el punto está en un subterráneo o una sala cerrada, **no le fijes ubicación GPS** (ni 📍 ni 🏠): la chapita ya prueba que el guardia estuvo ahí, y una ubicación exacta bajo techo haría rechazar la marca por falta de señal. Si el punto ya tenía ubicación, **Quitar 📍**.
-8. Desde ese momento ese punto **ya no sale como QR** en la hoja de QR (sale marcado «Chapita NFC — no lleva QR»). Retirar la lámina QR vieja de ese punto, si había una.
+8. Un punto con chapita (grabada o por grabar) **no sale como QR** en la hoja de QR: sale marcado «Chapita NFC — no lleva QR». Si el punto antes era QR, retirar su lámina vieja.
 9. Los guardias reciben el cambio al tocar «Actualizar rondas» (o al volver a entrar).
 
 **Volver a QR:** en la fila del punto, **Volver a QR**. La chapita deja de valer; reimprimir la hoja de QR y pegar la lámina.

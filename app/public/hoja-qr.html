@@ -38,7 +38,7 @@
         <div class="tarjeta-qr tarjeta-nfc">
           <div class="chapita-nfc">📶</div>
           <div class="nombre">${p.nombre.replace(/</g, '&lt;')}</div>
-          <div class="nota">Chapita NFC — no lleva QR</div>
+          <div class="nota">${p.pendiente ? 'Chapita NFC por grabar' : 'Chapita NFC'} — no lleva QR</div>
         </div>` : `
         <div class="tarjeta-qr">
           <img src="${p.dataUrl}" alt="QR ${p.nombre}">
