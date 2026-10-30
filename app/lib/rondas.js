@@ -698,7 +698,10 @@ function evaluar(db, ejecucion, ronda) {
   // marcarlo. El punto ya sale como faltante; esto dice por qué, para que el
   // administrador revise o reemplace la chapita. Llega como rechazo con
   // `reporte: 'chapita'`, antes del cierre en la cola del teléfono.
-  const reportadas = (ejecucion.rechazos || []).filter(r => r.reporte === 'chapita');
+  // Una vez por punto, y no si al final el guardia sí lo pudo marcar.
+  const reportadas = (ejecucion.rechazos || [])
+    .filter(r => r.reporte === 'chapita' && !escaneados.has(r.puntoId))
+    .filter((r, i, todas) => todas.findIndex(x => x.puntoId === r.puntoId) === i);
   if (reportadas.length) {
     const detalle = reportadas.map(r => {
       const sinNfc = /no lee chapitas/.test(r.motivo || '') ? ', teléfono sin lector NFC' : '';

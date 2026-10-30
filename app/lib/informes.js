@@ -20,6 +20,12 @@ function armarInforme(db, ejecucion) {
   const escaneosPorPunto = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
 
   const lejosIds = new Set(((ejecucion.evaluacion || {}).gpsLejos || []).map(l => l.puntoId));
+  // Con qué se marcó cada punto (CU-28) solo se muestra cuando la ronda tiene
+  // que ver con chapitas: un punto de la ronda la tiene, o alguna marca se hizo
+  // con una (el punto pudo volver a QR después). En un condominio de puros QR,
+  // el informe y el aviso quedan iguales que antes de la v1.24.
+  const conChapitas = (ronda.puntoIds || []).some(pid => (db.puntos.find(p => p.id === pid) || {}).nfcSerie)
+    || ejecucion.escaneos.some(e => e.medio === 'nfc' || e.puntoNfc);
   const detalle = (ronda.puntoIds || []).map((pid, i) => {
     const punto = db.puntos.find(p => p.id === pid) || { id: pid, nombre: '(punto eliminado)' };
     const esc = escaneosPorPunto.get(pid);
@@ -36,9 +42,8 @@ function armarInforme(db, ejecucion) {
       // verificación es "pasó por la entrada", no "estuvo en el punto".
       anclado: Boolean(esc && esc.anclado),
       edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
-      // Con qué se marcó (CU-28). Las marcas de antes de la v1.24 no lo
-      // guardaban y todas eran de QR o a mano: se dejan sin etiqueta.
-      medio: esc ? esc.medio || null : null,
+      // Las marcas de antes de la v1.24 no lo guardaban: quedan sin etiqueta.
+      medio: conChapitas && esc ? esc.medio || null : null,
       lejos: lejosIds.has(pid),
       faltante: !esc
     };

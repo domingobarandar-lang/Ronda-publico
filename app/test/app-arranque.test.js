@@ -225,6 +225,15 @@ test('estilos de otra versión se detectan por su marca aunque la página sea nu
   }
 });
 
+test('si las pantallas de la chapita no se pudieran agregar, la app arranca igual', async () => {
+  // Sin el modal del código a mano no hay dónde colgarlas: los botones nuevos
+  // quedan sin cablear, pero un condominio de QR tiene que seguir andando.
+  const sinAncla = htmlV1202.replace(/id="modal-manual"/, 'id="modal-manual-x"');
+  const { ventana, dom } = await arrancar(sinAncla, estilosV1202);
+  assert.equal(ventana.__appLista, true, 'la app no arrancó: un botón de la chapita la tumbó');
+  assert.ok(!dom.porId.has('modal-nfc'));
+});
+
 test('con la página de v1.20.2 el lector abre y cierra sin reventar', async () => {
   const { enApp, dom } = await arrancar(htmlV1202, estilosV1202);
   await enApp('abrirEscaner()');

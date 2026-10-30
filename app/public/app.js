@@ -1310,7 +1310,7 @@ function avisarRetenidaSoltada(punto) {
   if (!punto) return;
   const el = $('aviso');
   const previo = el && !el.classList.contains('oculta') && el.textContent ? `${el.textContent} · ` : '';
-  aviso(`${previo}"${punto.nombre}" quedó SIN marcar: vuelve a escanearlo.`, 'error', 7000);
+  aviso(`${previo}"${punto.nombre}" quedó SIN marcar: ${volverALeer(punto)}.`, 'error', 7000);
 }
 
 // ¿Esperar unos segundos puede cambiar este veredicto? Sí cuando el problema es
@@ -1449,6 +1449,12 @@ function descartarRetenida() {
 //
 // Ningún título lleva ✓: "QR leído" no es "punto marcado", y confundirlos es
 // justo cómo un guardia se va del punto creyendo que quedó hecho.
+// Qué tiene que volver a hacer el guardia con un punto que quedó sin marcar.
+// En un punto QR, el mismo texto de siempre.
+function volverALeer(punto) {
+  return punto && punto.nfc ? 'vuelve a acercar el teléfono a su chapita' : 'vuelve a escanear su QR';
+}
+
 // "QR de X leído" o "Chapita de X leída", para la marca en espera o retenida.
 function lecturaDe(marca) {
   return marca.nfc ? `Chapita de "${marca.punto.nombre}" leída` : `QR de "${marca.punto.nombre}" leído`;
@@ -1462,14 +1468,14 @@ function pintarMarca() {
     // termina como faltante sin que el guardia sepa por qué.
     const vencida = marcaRetenida;
     marcaRetenida = null;
-    aviso(`Se acabó el plazo para "${vencida.punto.nombre}": vuelve a escanearlo.`, 'error', 6000);
+    aviso(`Se acabó el plazo para "${vencida.punto.nombre}": ${volverALeer(vencida.punto)}.`, 'error', 6000);
     navigator.vibrate && navigator.vibrate([80, 60, 80]);
   }
   const acciones = $('marca-acciones');
   if (marcaPendiente) {
     const restanteS = Math.max(0, Math.ceil((limitePendiente(marcaPendiente) - Date.now()) / 1000));
     $('marca-titulo').textContent = `${lecturaDe(marcaPendiente)} · afinando ubicación… ${restanteS} s`;
-    $('marca-detalle').textContent = 'Quédate quieto junto al punto: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.';
+    $('marca-detalle').textContent = `Quédate quieto junto ${marcaPendiente.nfc ? 'a la chapita' : 'al QR'}: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.`;
     acciones.classList.add('oculta');
     el.classList.remove('oculta');
   } else if (marcaRetenida) {
@@ -1485,7 +1491,7 @@ function pintarMarca() {
     if (listo) queHacer = 'La señal ya alcanza: toca Reintentar';
     else if (gpsPermisoNegado) queHacer = 'Activa la ubicación del teléfono para esta app y toca Reintentar';
     else if (anclado) queHacer = 'Este punto se verifica por la entrada: sal a donde haya señal, pasa por la entrada del recinto y toca Reintentar';
-    else queHacer = 'Espera unos segundos junto al punto y toca Reintentar';
+    else queHacer = `Espera unos segundos junto ${marcaRetenida.nfc ? 'a la chapita' : 'al QR'} y toca Reintentar`;
     $('marca-detalle').textContent = `${listo ? '' : `${textoRetenida(ahora, anclado)} `}${queHacer}. No hace falta escanear de nuevo.`;
     acciones.classList.remove('oculta');
     el.classList.remove('oculta');
@@ -1543,7 +1549,7 @@ function rechazarMarca(punto, presencia, codigo, leidoMs, nfc = null) {
   } else if (retenida) {
     // La espera terminó justo donde vencía el plazo de la lectura: retenerla
     // sería decir "toca Reintentar" y en el mismo instante "se acabó el plazo".
-    aviso(`Se acabó el plazo para "${punto.nombre}": vuelve a escanearlo.`, 'error', 6000);
+    aviso(`Se acabó el plazo para "${punto.nombre}": ${volverALeer(punto)}.`, 'error', 6000);
   } else {
     aviso(presencia.motivo || 'No se pudo confirmar tu ubicación.', 'error', 6000);
   }
@@ -2596,6 +2602,9 @@ function renderRonda() {
   const lista = $('lista-puntos');
   lista.innerHTML = '';
   const marcados = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
+  // Con qué se marcó cada punto solo se muestra en una ronda con chapitas: en
+  // una ronda de puros QR la pantalla queda igual que antes de la v1.24.
+  const conChapitas = ronda.puntos.some(p => p.nfc);
   ronda.puntos.forEach((p, i) => {
     // `marca`, no `esc`: esta variable se llamaba igual que el helper de
     // escapado y lo dejaba tapado justo donde hace falta.
@@ -2607,7 +2616,7 @@ function renderRonda() {
       <div class="punto-texto">
         <div>${esc(p.nombre)}</div>
         <div class="nota">${marca
-          ? `Marcado ${esc(hora(marca.ts))}${MEDIOS[marca.medio] ? ` · ${MEDIOS[marca.medio]}` : ''}${marca.offline ? ' (sin señal)' : ''}`
+          ? `Marcado ${esc(hora(marca.ts))}${conChapitas && MEDIOS[marca.medio] ? ` · ${MEDIOS[marca.medio]}` : ''}${marca.offline ? ' (sin señal)' : ''}`
           : `Pendiente${p.nfc ? ' · 📶 chapita' : ''}${(ejecucion.reportados || []).includes(p.id) ? ' · ⚠️ avisaste que no lee' : ''}`}</div>
       </div>
       <div class="punto-check">${marca ? '✅' : '·'}</div>`;
@@ -2854,12 +2863,16 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-confirmar-eliminar').addEventListener('click', eliminarCuenta);
   $('eliminar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminarCuenta(); });
   $('btn-escanear').addEventListener('click', escanear);
-  $('btn-cancelar-nfc').addEventListener('click', cerrarPantallaNfc);
-  $('btn-nfc-reportar').addEventListener('click', reportarChapita);
-  $('btn-medio-qr').addEventListener('click', () => elegirMedio('qr'));
-  $('btn-medio-nfc').addEventListener('click', () => elegirMedio('nfc'));
-  $('btn-cancelar-medio').addEventListener('click', () => $('modal-medio').classList.add('oculta'));
-  $('btn-reintentar-nfc').addEventListener('click', abrirPantallaNfc);
+  // Los botones de la chapita (v1.24) se cablean sin poder tumbar el arranque:
+  // si una página vieja quedara sin ellos, los puntos QR tienen que seguir
+  // funcionando igual. Lo mismo en la tecla Escape, más abajo.
+  const alTocar = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  alTocar('btn-cancelar-nfc', cerrarPantallaNfc);
+  alTocar('btn-nfc-reportar', reportarChapita);
+  alTocar('btn-medio-qr', () => elegirMedio('qr'));
+  alTocar('btn-medio-nfc', () => elegirMedio('nfc'));
+  alTocar('btn-cancelar-medio', () => $('modal-medio').classList.add('oculta'));
+  alTocar('btn-reintentar-nfc', abrirPantallaNfc);
   $('btn-cancelar-escaner').addEventListener('click', cerrarEscaner);
   $('btn-linterna').addEventListener('click', alternarLinterna);
   $('btn-escaner-manual').addEventListener('click', () => { cerrarEscaner(); abrirManual(); });
@@ -2884,8 +2897,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     if (!$('modal-escaner').classList.contains('oculta')) cerrarEscaner();
-    if (!$('modal-nfc').classList.contains('oculta')) cerrarPantallaNfc();
-    if (!$('modal-medio').classList.contains('oculta')) $('modal-medio').classList.add('oculta');
+    if ($('modal-nfc') && !$('modal-nfc').classList.contains('oculta')) cerrarPantallaNfc();
+    if ($('modal-medio') && !$('modal-medio').classList.contains('oculta')) $('modal-medio').classList.add('oculta');
     if (!$('modal-manual').classList.contains('oculta')) $('modal-manual').classList.add('oculta');
   });
 

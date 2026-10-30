@@ -4,7 +4,7 @@ Las pruebas automáticas (`npm test`) y la simulación cubren la lógica: qué a
 
 ## 1. Hoy, sin chapitas ni teléfono con NFC (en el computador)
 
-1. `cd app && npm test` — 300+ pruebas, incluidas `test/chapita-nfc.test.js` (servidor) y `test/app-nfc.test.js` (app con un lector simulado).
+1. `cd app && npm test` — 300+ pruebas, incluidas `test/chapita-nfc.test.js` (servidor), `test/app-nfc.test.js` (app con un lector simulado) y `test/compat-qr.test.js`, que comprueba que un condominio de puros QR ve exactamente lo mismo que con la v1.22.0 (respuestas, avisos, informes, informe semanal, hoja de QR y la app del guardia).
 2. `node scripts/probar-nfc-simulado.js` (necesita Playwright) — levanta una demo, graba una chapita de mentira desde el panel y la marca desde la app del guardia en Chromium. Revisa que la foto del QR, el código a mano y una chapita copiada se rechacen, y que la chapita verdadera marque y llegue al servidor. Deja capturas de pantalla.
 
 ## 2. Con el teléfono, todavía sin chapitas

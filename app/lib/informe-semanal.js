@@ -501,10 +501,11 @@ function tablaGuardias(guardias) {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: [2200, 1100, 1550, 1150, 1400, 1960], borders: { top: hairline(LINE), bottom: hairline(LINE), insideHorizontal: hairline(LINE), left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }, rows });
 }
 
-// "📶 5 · ⌨️ 1": con qué se marcó el punto en la semana. Solo cuando hubo NFC o
-// código a mano: en un condominio que marca todo con QR no agrega nada.
+// "📶 5 · ⌨️ 1": con qué se marcó el punto en la semana. Solo cuando hubo marcas
+// con chapita: en un condominio de puros QR (con o sin código a mano) la tabla
+// queda igual que antes de la v1.24.
 function textoMedios(medios = {}) {
-  if (!medios.nfc && !medios.manual) return '';
+  if (!medios.nfc) return '';
   return [['nfc', '📶'], ['qr', '📷'], ['manual', '⌨️']]
     .filter(([m]) => medios[m]).map(([m, icono]) => `${icono} ${medios[m]}`).join(' · ');
 }

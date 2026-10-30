@@ -236,6 +236,50 @@ test('hoja de QR: el punto con chapita sale marcado y sin QR', async () => {
   assert.ok(datos.puntos.filter(p => p.id !== 'p-piscina').every(p => p.dataUrl.startsWith('data:image/png')));
 });
 
+test('un rechazo en un punto con chapita no reabre una ronda que el sistema cerró solo', async () => {
+  const guardia = await login('pedro', '2222');
+  const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
+  const ej = await iniciar(guardia);
+  // Así la deja cerrarAbandonadas(): cerrada por el sistema, reabrible.
+  const ejecucion = store.ejecuciones.obtener(ej);
+  Object.assign(ejecucion, { estado: 'incompleta', fin: new Date().toISOString(), cierreAutomatico: true, evaluacion: { faltantes: [], observaciones: [], sospechas: [] } });
+  store.ejecuciones.guardar(ejecucion);
+  const foto = await marcar(guardia, ej, { codigo: piscina.payload });
+  assert.equal(foto.status, 422);
+  const despues = store.ejecuciones.obtener(ej);
+  assert.equal(despues.estado, 'incompleta', 'una marca que no entró no puede reabrir la ronda');
+  assert.equal(despues.cierreAutomatico, true);
+  // Y con la chapita de verdad sí se reabre y entra, como cualquier marca.
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE } })).status, 200);
+  assert.equal(store.ejecuciones.obtener(ej).estado, 'en_curso');
+});
+
+test('"La chapita no lee" no queda en el informe si al final el guardia sí marcó el punto', async () => {
+  const guardia = await login('pedro', '2222');
+  const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
+  const ej = await iniciar(guardia);
+  for (const ts of ['2026-10-28T12:00:00.000Z', '2026-10-28T12:00:30.000Z']) {
+    await api(`/api/ejecuciones/${ej}/rechazos`, { metodo: 'POST', token: guardia, cuerpo: { puntoId: 'p-piscina', ts, reporte: 'chapita' } });
+  }
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE } })).status, 200);
+  const cierre = await api(`/api/ejecuciones/${ej}/cerrar`, { metodo: 'POST', token: guardia });
+  assert.ok(!cierre.datos.evaluacion.observaciones.some(o => /chapita no leyó/.test(o)));
+});
+
+test('rondas guardadas antes de la v1.24 (sin medio) se informan igual que antes', async () => {
+  const { armarInforme, informeTexto } = require('../lib/informes');
+  const db = store.db;
+  const vieja = {
+    id: 'e-vieja', rondaId: 'ronda-nocturna', condominioId: 'aromos', guardiaId: 'u-pedro',
+    inicio: '2026-09-01T03:00:00.000Z', fin: '2026-09-01T03:40:00.000Z', estado: 'completa',
+    escaneos: [{ puntoId: 'p-porteria', ts: '2026-09-01T03:01:00.000Z', offline: false, gps: null }],
+    evaluacion: { faltantes: [], observaciones: [], sospechas: [], duracionMin: 40 }
+  };
+  const inf = armarInforme(db, vieja);
+  assert.equal(inf.detalle[0].medio, null, 'una marca vieja no inventa con qué se hizo');
+  assert.doesNotMatch(informeTexto(inf), /📷|📶|⌨️/);
+});
+
 test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   const admin = await login('marta', '1111');
   const r = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'DELETE', token: admin });

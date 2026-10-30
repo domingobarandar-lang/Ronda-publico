@@ -514,7 +514,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     // Un QR (o una chapita ajena) en un punto con chapita NFC: queda en el
     // registro de rechazos igual que los del GPS. La app ya lo rechaza sin
     // encolar; llega acá desde una app vieja o un cliente que no es la app.
-    if (r.error && r.rechazoMedio && anotarRechazo(ejecucion, { puntoId: r.punto.id, ts, motivo: r.error })) {
+    // Si esta petición reabrió una ronda cerrada por el sistema, no se guarda:
+    // la reapertura vale solo cuando la marca entra (ver arriba).
+    if (r.error && r.rechazoMedio && !reabierta && anotarRechazo(ejecucion, { puntoId: r.punto.id, ts, motivo: r.error })) {
       store.ejecuciones.guardar(ejecucion);
     }
     // presencia: cuando el rechazo es por GPS viaja el detalle (distancia y tope)

@@ -1,0 +1,3201 @@
+{
+ "version": "1.22.0",
+ "servidor": {
+  "pasos": [
+   {
+    "paso": "login PIN malo",
+    "status": 401,
+    "datos": {
+     "error": "Usuario o PIN incorrectos."
+    }
+   },
+   {
+    "paso": "login pedro",
+    "status": 200,
+    "datos": {
+     "token": "<variable>",
+     "rol": "guardia",
+     "nombre": "Pedro Soto",
+     "usuario": "pedro",
+     "condominio": {
+      "id": "aromos",
+      "nombre": "Condominio Los Aromos"
+     }
+    }
+   },
+   {
+    "paso": "login marta",
+    "status": 200,
+    "datos": {
+     "token": "<variable>",
+     "rol": "admin",
+     "nombre": "Marta (administradora)",
+     "usuario": "marta",
+     "condominio": {
+      "id": "aromos",
+      "nombre": "Condominio Los Aromos"
+     }
+    }
+   },
+   {
+    "paso": "login jorge",
+    "status": 200,
+    "datos": {
+     "token": "<variable>",
+     "rol": "guardia",
+     "nombre": "Jorge Díaz",
+     "usuario": "jorge",
+     "condominio": {
+      "id": "mirador",
+      "nombre": "Condominio Mirador del Valle"
+     }
+    }
+   },
+   {
+    "paso": "admin puntos",
+    "status": 200,
+    "datos": [
+     {
+      "id": "p-porteria",
+      "condominioId": "aromos",
+      "nombre": "Portería",
+      "codigoCorto": "PRT234"
+     },
+     {
+      "id": "p-estacionamiento",
+      "condominioId": "aromos",
+      "nombre": "Estacionamiento A",
+      "codigoCorto": "EST456"
+     },
+     {
+      "id": "p-quincho",
+      "condominioId": "aromos",
+      "nombre": "Quincho",
+      "codigoCorto": "QCH789"
+     },
+     {
+      "id": "p-piscina",
+      "condominioId": "aromos",
+      "nombre": "Piscina",
+      "codigoCorto": "PSC234"
+     },
+     {
+      "id": "p-bodega",
+      "condominioId": "aromos",
+      "nombre": "Bodega",
+      "codigoCorto": "BDG567"
+     },
+     {
+      "id": "p-bombas",
+      "condominioId": "aromos",
+      "nombre": "Sala de bombas",
+      "codigoCorto": "BMB892"
+     },
+     {
+      "id": "p-trasero",
+      "condominioId": "aromos",
+      "nombre": "Acceso trasero",
+      "codigoCorto": "TRS345"
+     },
+     {
+      "id": "p-sede",
+      "condominioId": "aromos",
+      "nombre": "Sede social",
+      "codigoCorto": "SDS678"
+     }
+    ]
+   },
+   {
+    "paso": "admin agrega punto",
+    "status": 201,
+    "datos": {
+     "id": "<id-1>",
+     "condominioId": "aromos",
+     "nombre": "Jardín",
+     "codigoCorto": "<codigo-1>"
+    }
+   },
+   {
+    "paso": "admin agrega punto sin nombre",
+    "status": 422,
+    "datos": {
+     "error": "El punto necesita un nombre."
+    }
+   },
+   {
+    "paso": "admin renombra",
+    "status": 200,
+    "datos": {
+     "id": "<id-1>",
+     "condominioId": "aromos",
+     "nombre": "Jardín norte",
+     "codigoCorto": "<codigo-1>"
+    }
+   },
+   {
+    "paso": "admin fija Portería",
+    "status": 200,
+    "datos": {
+     "id": "p-porteria",
+     "condominioId": "aromos",
+     "nombre": "Portería",
+     "codigoCorto": "PRT234",
+     "lat": -33.4489,
+     "lon": -70.6693,
+     "precisionM": 5,
+     "muestras": 40,
+     "dispersionM": 3,
+     "precisionDeclaradaM": 6,
+     "medidoConVersion": "compat"
+    }
+   },
+   {
+    "paso": "admin fija entrada Bodega",
+    "status": 200,
+    "datos": {
+     "id": "p-bodega",
+     "condominioId": "aromos",
+     "nombre": "Bodega",
+     "codigoCorto": "BDG567",
+     "lat": -33.447900000000004,
+     "lon": -70.6693,
+     "precisionM": 8,
+     "verificacion": "anclaje"
+    }
+   },
+   {
+    "paso": "admin ubicación inválida",
+    "status": 422,
+    "datos": {
+     "error": "Ubicación inválida."
+    }
+   },
+   {
+    "paso": "admin ajusta radio",
+    "status": 200,
+    "datos": {
+     "id": "p-porteria",
+     "condominioId": "aromos",
+     "nombre": "Portería",
+     "codigoCorto": "PRT234",
+     "lat": -33.4489,
+     "lon": -70.6693,
+     "precisionM": 5,
+     "muestras": 40,
+     "dispersionM": 3,
+     "precisionDeclaradaM": 6,
+     "medidoConVersion": "compat",
+     "radioM": 25
+    }
+   },
+   {
+    "paso": "admin puntos después",
+    "status": 200,
+    "datos": [
+     {
+      "id": "p-porteria",
+      "condominioId": "aromos",
+      "nombre": "Portería",
+      "codigoCorto": "PRT234",
+      "lat": -33.4489,
+      "lon": -70.6693,
+      "precisionM": 5,
+      "muestras": 40,
+      "dispersionM": 3,
+      "precisionDeclaradaM": 6,
+      "medidoConVersion": "compat",
+      "radioM": 25
+     },
+     {
+      "id": "p-estacionamiento",
+      "condominioId": "aromos",
+      "nombre": "Estacionamiento A",
+      "codigoCorto": "EST456"
+     },
+     {
+      "id": "p-quincho",
+      "condominioId": "aromos",
+      "nombre": "Quincho",
+      "codigoCorto": "QCH789"
+     },
+     {
+      "id": "p-piscina",
+      "condominioId": "aromos",
+      "nombre": "Piscina",
+      "codigoCorto": "PSC234"
+     },
+     {
+      "id": "p-bodega",
+      "condominioId": "aromos",
+      "nombre": "Bodega",
+      "codigoCorto": "BDG567",
+      "lat": -33.447900000000004,
+      "lon": -70.6693,
+      "precisionM": 8,
+      "verificacion": "anclaje"
+     },
+     {
+      "id": "p-bombas",
+      "condominioId": "aromos",
+      "nombre": "Sala de bombas",
+      "codigoCorto": "BMB892"
+     },
+     {
+      "id": "p-trasero",
+      "condominioId": "aromos",
+      "nombre": "Acceso trasero",
+      "codigoCorto": "TRS345"
+     },
+     {
+      "id": "p-sede",
+      "condominioId": "aromos",
+      "nombre": "Sede social",
+      "codigoCorto": "SDS678"
+     },
+     {
+      "id": "<id-1>",
+      "condominioId": "aromos",
+      "nombre": "Jardín norte",
+      "codigoCorto": "<codigo-1>"
+     }
+    ]
+   },
+   {
+    "paso": "hoja de QR",
+    "status": 200,
+    "datos": {
+     "condominio": "Condominio Los Aromos",
+     "puntos": [
+      {
+       "id": "p-porteria",
+       "nombre": "Portería",
+       "codigoCorto": "PRT234",
+       "dataUrl": "bc1fb889e700dd4625eddfcb656eceb541c69787426593c0f9e7011e4f871536"
+      },
+      {
+       "id": "p-estacionamiento",
+       "nombre": "Estacionamiento A",
+       "codigoCorto": "EST456",
+       "dataUrl": "cbf20d7364e6567eae993de3b3ef598eceaa472eeafcd6b31a0b2b02f2114213"
+      },
+      {
+       "id": "p-quincho",
+       "nombre": "Quincho",
+       "codigoCorto": "QCH789",
+       "dataUrl": "765fb331b1d136588af7cb6077a3fc0c5e193b2090cd2c0fe08e839fb8e64870"
+      },
+      {
+       "id": "p-piscina",
+       "nombre": "Piscina",
+       "codigoCorto": "PSC234",
+       "dataUrl": "e5a722039bf060fe8590bed0da7b1501b17c105c283b975a31247049a6516d69"
+      },
+      {
+       "id": "p-bodega",
+       "nombre": "Bodega",
+       "codigoCorto": "BDG567",
+       "dataUrl": "6989d225f9cce57bee1d2ac5dcc8b1cb70986ce76ebc9b839d28402708dee1a6"
+      },
+      {
+       "id": "p-bombas",
+       "nombre": "Sala de bombas",
+       "codigoCorto": "BMB892",
+       "dataUrl": "63127f45077a2cb324392af6d077ef0395f35ce6527d63e880f52d8310bb3382"
+      },
+      {
+       "id": "p-trasero",
+       "nombre": "Acceso trasero",
+       "codigoCorto": "TRS345",
+       "dataUrl": "060a81ef689688f7fcdb8b67bb45a7075e681627cdecb1c632d28bec47fb18e2"
+      },
+      {
+       "id": "p-sede",
+       "nombre": "Sede social",
+       "codigoCorto": "SDS678",
+       "dataUrl": "3e75b9c2ede76c259e0e1c5973a883bea1d6491f151bbe96e3a1e42297ad98ad"
+      },
+      {
+       "id": "<id-1>",
+       "nombre": "Jardín norte",
+       "codigoCorto": "<codigo-1>",
+       "dataUrl": "<qr-del-punto-nuevo>"
+      }
+     ]
+    }
+   },
+   {
+    "paso": "admin elimina punto",
+    "status": 200,
+    "datos": {
+     "ok": true
+    }
+   },
+   {
+    "paso": "admin elimina punto inexistente",
+    "status": 404,
+    "datos": {
+     "error": "El punto no existe."
+    }
+   },
+   {
+    "paso": "paquete pedro",
+    "status": 200,
+    "datos": {
+     "generado": "<variable>",
+     "condominio": {
+      "id": "aromos",
+      "nombre": "Condominio Los Aromos"
+     },
+     "gps": {
+      "radioOkM": 20,
+      "margenMaxM": 40,
+      "precisionMaxM": 100,
+      "precisionSupuestaM": 15,
+      "precisionMinM": 3,
+      "frescoMs": 20000,
+      "anclaRadioM": 40,
+      "anclaVentanaMin": 15,
+      "bloquea": true
+     },
+     "alarmaMin": 0,
+     "rondas": [
+      {
+       "id": "ronda-nocturna",
+       "nombre": "Nocturna completa",
+       "ordenEstricto": true,
+       "duracionMaxMin": 45,
+       "puntos": [
+        {
+         "id": "p-porteria",
+         "nombre": "Portería",
+         "codigoCorto": "PRT234",
+         "payload": "RQR:aromos:p-porteria:PRT234",
+         "lat": -33.4489,
+         "lon": -70.6693,
+         "verificacion": "gps",
+         "radioM": 25,
+         "ventanaMs": 20000,
+         "precisionM": 5,
+         "anclado": false
+        },
+        {
+         "id": "p-estacionamiento",
+         "nombre": "Estacionamiento A",
+         "codigoCorto": "EST456",
+         "payload": "RQR:aromos:p-estacionamiento:EST456",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-quincho",
+         "nombre": "Quincho",
+         "codigoCorto": "QCH789",
+         "payload": "RQR:aromos:p-quincho:QCH789",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-piscina",
+         "nombre": "Piscina",
+         "codigoCorto": "PSC234",
+         "payload": "RQR:aromos:p-piscina:PSC234",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-bodega",
+         "nombre": "Bodega",
+         "codigoCorto": "BDG567",
+         "payload": "RQR:aromos:p-bodega:BDG567",
+         "lat": -33.447900000000004,
+         "lon": -70.6693,
+         "verificacion": "anclaje",
+         "radioM": 40,
+         "ventanaMs": 900000,
+         "precisionM": 8,
+         "anclado": true
+        },
+        {
+         "id": "p-bombas",
+         "nombre": "Sala de bombas",
+         "codigoCorto": "BMB892",
+         "payload": "RQR:aromos:p-bombas:BMB892",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-trasero",
+         "nombre": "Acceso trasero",
+         "codigoCorto": "TRS345",
+         "payload": "RQR:aromos:p-trasero:TRS345",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-sede",
+         "nombre": "Sede social",
+         "codigoCorto": "SDS678",
+         "payload": "RQR:aromos:p-sede:SDS678",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        }
+       ]
+      },
+      {
+       "id": "ronda-express",
+       "nombre": "Perimetral express",
+       "ordenEstricto": false,
+       "duracionMaxMin": 20,
+       "puntos": [
+        {
+         "id": "p-porteria",
+         "nombre": "Portería",
+         "codigoCorto": "PRT234",
+         "payload": "RQR:aromos:p-porteria:PRT234",
+         "lat": -33.4489,
+         "lon": -70.6693,
+         "verificacion": "gps",
+         "radioM": 25,
+         "ventanaMs": 20000,
+         "precisionM": 5,
+         "anclado": false
+        },
+        {
+         "id": "p-quincho",
+         "nombre": "Quincho",
+         "codigoCorto": "QCH789",
+         "payload": "RQR:aromos:p-quincho:QCH789",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-piscina",
+         "nombre": "Piscina",
+         "codigoCorto": "PSC234",
+         "payload": "RQR:aromos:p-piscina:PSC234",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-trasero",
+         "nombre": "Acceso trasero",
+         "codigoCorto": "TRS345",
+         "payload": "RQR:aromos:p-trasero:TRS345",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "paso": "paquete jorge",
+    "status": 200,
+    "datos": {
+     "generado": "<variable>",
+     "condominio": {
+      "id": "mirador",
+      "nombre": "Condominio Mirador del Valle"
+     },
+     "gps": {
+      "radioOkM": 20,
+      "margenMaxM": 40,
+      "precisionMaxM": 100,
+      "precisionSupuestaM": 15,
+      "precisionMinM": 3,
+      "frescoMs": 20000,
+      "anclaRadioM": 40,
+      "anclaVentanaMin": 15,
+      "bloquea": true
+     },
+     "alarmaMin": 0,
+     "rondas": [
+      {
+       "id": "ronda-mirador",
+       "nombre": "Ronda general",
+       "ordenEstricto": true,
+       "duracionMaxMin": 15,
+       "puntos": [
+        {
+         "id": "p-m-acceso",
+         "nombre": "Acceso principal",
+         "codigoCorto": "MAP234",
+         "payload": "RQR:mirador:p-m-acceso:MAP234",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-m-terraza",
+         "nombre": "Terraza",
+         "codigoCorto": "MTR567",
+         "payload": "RQR:mirador:p-m-terraza:MTR567",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        },
+        {
+         "id": "p-m-subterraneo",
+         "nombre": "Subterráneo",
+         "codigoCorto": "MSB892",
+         "payload": "RQR:mirador:p-m-subterraneo:MSB892",
+         "lat": null,
+         "lon": null,
+         "verificacion": "ninguna",
+         "radioM": null,
+         "ventanaMs": null,
+         "precisionM": null,
+         "anclado": false
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "paso": "inicia nocturna",
+    "status": 201,
+    "datos": {
+     "id": "e-compat-0001",
+     "rondaId": "ronda-nocturna",
+     "condominioId": "aromos",
+     "guardiaId": "u-pedro",
+     "inicio": "2026-10-21T03:00:00.000Z",
+     "fin": null,
+     "estado": "en_curso",
+     "escaneos": [],
+     "evaluacion": null
+    }
+   },
+   {
+    "paso": "inicia nocturna (reenvío)",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0001",
+     "rondaId": "ronda-nocturna",
+     "condominioId": "aromos",
+     "guardiaId": "u-pedro",
+     "inicio": "2026-10-21T03:00:00.000Z",
+     "fin": null,
+     "estado": "en_curso",
+     "escaneos": [],
+     "evaluacion": null
+    }
+   },
+   {
+    "paso": "Portería lejos",
+    "status": 422,
+    "datos": {
+     "error": "Estás a 1112 m de \"Portería\" y el máximo para marcar es 36 m (señal ±6 m). Acércate al punto y vuelve a escanear.",
+     "presencia": {
+      "ok": false,
+      "modo": "gps",
+      "sinGps": false,
+      "distanciaM": 1112,
+      "topeM": 36,
+      "margenM": 11,
+      "edadMs": 2000,
+      "precisionM": 6,
+      "motivo": "Estás a 1112 m de \"Portería\" y el máximo para marcar es 36 m (señal ±6 m). Acércate al punto y vuelve a escanear."
+     }
+    }
+   },
+   {
+    "paso": "Portería sin GPS",
+    "status": 422,
+    "datos": {
+     "error": "Sin señal GPS: no se puede confirmar que estás en \"Portería\". Activa la ubicación del teléfono, espera unos segundos a cielo abierto y vuelve a escanear.",
+     "presencia": {
+      "ok": false,
+      "modo": "gps",
+      "sinGps": true,
+      "distanciaM": null,
+      "topeM": 25,
+      "motivo": "Sin señal GPS: no se puede confirmar que estás en \"Portería\". Activa la ubicación del teléfono, espera unos segundos a cielo abierto y vuelve a escanear."
+     }
+    }
+   },
+   {
+    "paso": "rechazo GPS",
+    "status": 201,
+    "datos": {
+     "ok": true,
+     "repetido": false
+    }
+   },
+   {
+    "paso": "rechazo GPS (reenvío)",
+    "status": 200,
+    "datos": {
+     "ok": true,
+     "repetido": true
+    }
+   },
+   {
+    "paso": "rechazo de otro condominio",
+    "status": 422,
+    "datos": {
+     "error": "Ese punto no es de esta ronda."
+    }
+   },
+   {
+    "paso": "Portería cerca",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-porteria",
+      "nombre": "Portería"
+     },
+     "avance": {
+      "hechos": 1,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Portería duplicada",
+    "status": 200,
+    "datos": {
+     "duplicado": true,
+     "punto": {
+      "id": "p-porteria",
+      "nombre": "Portería"
+     },
+     "avance": {
+      "hechos": 1,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "código inventado",
+    "status": 422,
+    "datos": {
+     "error": "Ese código no corresponde a ningún punto de control.",
+     "presencia": null
+    }
+   },
+   {
+    "paso": "texto basura",
+    "status": 422,
+    "datos": {
+     "error": "Código no reconocido.",
+     "presencia": null
+    }
+   },
+   {
+    "paso": "QR forjado (código malo)",
+    "status": 422,
+    "datos": {
+     "error": "Ese código no corresponde a ningún punto de control.",
+     "presencia": null
+    }
+   },
+   {
+    "paso": "QR de otro condominio",
+    "status": 422,
+    "datos": {
+     "error": "Ese punto es de otro condominio.",
+     "presencia": null
+    }
+   },
+   {
+    "paso": "Estacionamiento a mano sin señal",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-estacionamiento",
+      "nombre": "Estacionamiento A"
+     },
+     "avance": {
+      "hechos": 2,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Piscina (saltando Quincho)",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-piscina",
+      "nombre": "Piscina"
+     },
+     "avance": {
+      "hechos": 3,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Quincho fuera de orden",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-quincho",
+      "nombre": "Quincho"
+     },
+     "avance": {
+      "hechos": 4,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Bodega anclada, pasó por la entrada",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-bodega",
+      "nombre": "Bodega"
+     },
+     "avance": {
+      "hechos": 5,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Sala de bombas",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-bombas",
+      "nombre": "Sala de bombas"
+     },
+     "avance": {
+      "hechos": 6,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "Acceso trasero",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-trasero",
+      "nombre": "Acceso trasero"
+     },
+     "avance": {
+      "hechos": 7,
+      "total": 8
+     }
+    }
+   },
+   {
+    "paso": "guardia de otro condominio",
+    "status": 403,
+    "datos": {
+     "error": "Esta ronda no te pertenece."
+    }
+   },
+   {
+    "paso": "cierra nocturna",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0001",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Nocturna completa",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T03:00:00.000Z",
+     "fin": "2026-10-21T03:50:00.000Z",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-sede"
+      ],
+      "fueraDeOrden": [
+       "p-quincho"
+      ],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 0,
+      "duracionMin": 50,
+      "observaciones": [
+       "Orden de la ronda no respetado en: Quincho.",
+       "La ronda tomó 50 min (máximo definido: 45 min)."
+      ],
+      "sospechas": []
+     },
+     "comentario": "Luminaria apagada",
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": "2026-10-21T03:02:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.44885,
+        "lon": -70.6693,
+        "acc": 6,
+        "edadMs": 2000
+       },
+       "distanciaM": 6,
+       "anclado": false,
+       "edadGpsMs": 2000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-estacionamiento",
+       "nombre": "Estacionamiento A",
+       "hora": "2026-10-21T03:08:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T03:18:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": "2026-10-21T03:14:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 5,
+       "puntoId": "p-bodega",
+       "nombre": "Bodega",
+       "hora": "2026-10-21T03:22:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.447900000000004,
+        "lon": -70.6693,
+        "acc": 8,
+        "edadMs": 300000
+       },
+       "distanciaM": 0,
+       "anclado": true,
+       "edadGpsMs": 300000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 6,
+       "puntoId": "p-bombas",
+       "nombre": "Sala de bombas",
+       "hora": "2026-10-21T03:27:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 7,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": "2026-10-21T03:33:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 8,
+       "puntoId": "p-sede",
+       "nombre": "Sede social",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      }
+     ]
+    }
+   },
+   {
+    "paso": "marca con la ronda cerrada",
+    "status": 409,
+    "datos": {
+     "error": "La ronda ya está cerrada.",
+     "presencia": null
+    }
+   },
+   {
+    "paso": "cierra nocturna (reenvío)",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0001",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Nocturna completa",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T03:00:00.000Z",
+     "fin": "2026-10-21T03:50:00.000Z",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-sede"
+      ],
+      "fueraDeOrden": [
+       "p-quincho"
+      ],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 0,
+      "duracionMin": 50,
+      "observaciones": [
+       "Orden de la ronda no respetado en: Quincho.",
+       "La ronda tomó 50 min (máximo definido: 45 min)."
+      ],
+      "sospechas": []
+     },
+     "comentario": "Luminaria apagada",
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": "2026-10-21T03:02:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.44885,
+        "lon": -70.6693,
+        "acc": 6,
+        "edadMs": 2000
+       },
+       "distanciaM": 6,
+       "anclado": false,
+       "edadGpsMs": 2000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-estacionamiento",
+       "nombre": "Estacionamiento A",
+       "hora": "2026-10-21T03:08:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T03:18:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": "2026-10-21T03:14:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 5,
+       "puntoId": "p-bodega",
+       "nombre": "Bodega",
+       "hora": "2026-10-21T03:22:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.447900000000004,
+        "lon": -70.6693,
+        "acc": 8,
+        "edadMs": 300000
+       },
+       "distanciaM": 0,
+       "anclado": true,
+       "edadGpsMs": 300000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 6,
+       "puntoId": "p-bombas",
+       "nombre": "Sala de bombas",
+       "hora": "2026-10-21T03:27:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 7,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": "2026-10-21T03:33:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 8,
+       "puntoId": "p-sede",
+       "nombre": "Sede social",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      }
+     ]
+    }
+   },
+   {
+    "paso": "inicia express",
+    "status": 201,
+    "datos": {
+     "id": "e-compat-0002",
+     "rondaId": "ronda-express",
+     "condominioId": "aromos",
+     "guardiaId": "u-pedro",
+     "inicio": "2026-10-21T04:00:00.000Z",
+     "fin": null,
+     "estado": "en_curso",
+     "escaneos": [],
+     "evaluacion": null
+    }
+   },
+   {
+    "paso": "express p-quincho",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-quincho",
+      "nombre": "Quincho"
+     },
+     "avance": {
+      "hechos": 1,
+      "total": 4
+     }
+    }
+   },
+   {
+    "paso": "express p-piscina",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-piscina",
+      "nombre": "Piscina"
+     },
+     "avance": {
+      "hechos": 2,
+      "total": 4
+     }
+    }
+   },
+   {
+    "paso": "express p-trasero",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-trasero",
+      "nombre": "Acceso trasero"
+     },
+     "avance": {
+      "hechos": 3,
+      "total": 4
+     }
+    }
+   },
+   {
+    "paso": "cierra express",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0002",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Perimetral express",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T04:00:00.000Z",
+     "fin": "2026-10-21T04:01:00.000Z",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-porteria"
+      ],
+      "fueraDeOrden": [],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 2,
+      "duracionMin": 1,
+      "observaciones": [
+       "⚡ Varias marcas hechas en segundos (ráfaga): posible escaneo desde fotos."
+      ],
+      "sospechas": [
+       "Varios puntos marcados en segundos (posible escaneo desde fotos)"
+      ]
+     },
+     "comentario": null,
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T04:00:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": "2026-10-21T04:00:03.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": "2026-10-21T04:00:06.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      }
+     ]
+    }
+   },
+   {
+    "paso": "inicia olvidada",
+    "status": 201,
+    "datos": {
+     "id": "e-compat-0003",
+     "rondaId": "ronda-express",
+     "condominioId": "aromos",
+     "guardiaId": "u-pedro",
+     "inicio": "2026-10-21T04:30:00.000Z",
+     "fin": null,
+     "estado": "en_curso",
+     "escaneos": [],
+     "evaluacion": null
+    }
+   },
+   {
+    "paso": "olvidada Quincho",
+    "status": 200,
+    "datos": {
+     "duplicado": false,
+     "punto": {
+      "id": "p-quincho",
+      "nombre": "Quincho"
+     },
+     "avance": {
+      "hechos": 1,
+      "total": 4
+     }
+    }
+   },
+   {
+    "paso": "guardia ajeno no la cierra",
+    "status": 403,
+    "datos": {
+     "error": "Esta ronda no te pertenece."
+    }
+   },
+   {
+    "paso": "admin cierra olvidada",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0003",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Perimetral express",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T04:30:00.000Z",
+     "fin": "<hora-del-servidor>",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-porteria",
+       "p-piscina",
+       "p-trasero"
+      ],
+      "fueraDeOrden": [],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 0,
+      "duracionMin": "<variable>",
+      "observaciones": [
+       "La ronda tomó <variable> min (máximo definido: 20 min)."
+      ],
+      "sospechas": []
+     },
+     "comentario": null,
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T04:35:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      }
+     ]
+    }
+   },
+   {
+    "paso": "informe e-compat-0001",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0001",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Nocturna completa",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T03:00:00.000Z",
+     "fin": "2026-10-21T03:50:00.000Z",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-sede"
+      ],
+      "fueraDeOrden": [
+       "p-quincho"
+      ],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 0,
+      "duracionMin": 50,
+      "observaciones": [
+       "Orden de la ronda no respetado en: Quincho.",
+       "La ronda tomó 50 min (máximo definido: 45 min)."
+      ],
+      "sospechas": []
+     },
+     "comentario": "Luminaria apagada",
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": "2026-10-21T03:02:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.44885,
+        "lon": -70.6693,
+        "acc": 6,
+        "edadMs": 2000
+       },
+       "distanciaM": 6,
+       "anclado": false,
+       "edadGpsMs": 2000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-estacionamiento",
+       "nombre": "Estacionamiento A",
+       "hora": "2026-10-21T03:08:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T03:18:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": "2026-10-21T03:14:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 5,
+       "puntoId": "p-bodega",
+       "nombre": "Bodega",
+       "hora": "2026-10-21T03:22:00.000Z",
+       "offline": false,
+       "gps": {
+        "lat": -33.447900000000004,
+        "lon": -70.6693,
+        "acc": 8,
+        "edadMs": 300000
+       },
+       "distanciaM": 0,
+       "anclado": true,
+       "edadGpsMs": 300000,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 6,
+       "puntoId": "p-bombas",
+       "nombre": "Sala de bombas",
+       "hora": "2026-10-21T03:27:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 7,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": "2026-10-21T03:33:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 8,
+       "puntoId": "p-sede",
+       "nombre": "Sede social",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      }
+     ]
+    }
+   },
+   {
+    "paso": "informe e-compat-0002",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0002",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Perimetral express",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T04:00:00.000Z",
+     "fin": "2026-10-21T04:01:00.000Z",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-porteria"
+      ],
+      "fueraDeOrden": [],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 2,
+      "duracionMin": 1,
+      "observaciones": [
+       "⚡ Varias marcas hechas en segundos (ráfaga): posible escaneo desde fotos."
+      ],
+      "sospechas": [
+       "Varios puntos marcados en segundos (posible escaneo desde fotos)"
+      ]
+     },
+     "comentario": null,
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T04:00:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": "2026-10-21T04:00:03.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": "2026-10-21T04:00:06.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      }
+     ]
+    }
+   },
+   {
+    "paso": "informe e-compat-0003",
+    "status": 200,
+    "datos": {
+     "id": "e-compat-0003",
+     "condominio": "Condominio Los Aromos",
+     "ronda": "Perimetral express",
+     "guardia": "Pedro Soto",
+     "inicio": "2026-10-21T04:30:00.000Z",
+     "fin": "<hora-del-servidor>",
+     "estado": "incompleta",
+     "etiqueta": "INCOMPLETA",
+     "evaluacion": {
+      "faltantes": [
+       "p-porteria",
+       "p-piscina",
+       "p-trasero"
+      ],
+      "fueraDeOrden": [],
+      "gpsLejos": [],
+      "sinGps": [],
+      "gpsImpreciso": [],
+      "rafaga": 0,
+      "duracionMin": "<variable>",
+      "observaciones": [
+       "La ronda tomó <variable> min (máximo definido: 20 min)."
+      ],
+      "sospechas": []
+     },
+     "comentario": null,
+     "detalle": [
+      {
+       "orden": 1,
+       "puntoId": "p-porteria",
+       "nombre": "Portería",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 2,
+       "puntoId": "p-quincho",
+       "nombre": "Quincho",
+       "hora": "2026-10-21T04:35:00.000Z",
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": false
+      },
+      {
+       "orden": 3,
+       "puntoId": "p-piscina",
+       "nombre": "Piscina",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      },
+      {
+       "orden": 4,
+       "puntoId": "p-trasero",
+       "nombre": "Acceso trasero",
+       "hora": null,
+       "offline": false,
+       "gps": null,
+       "distanciaM": null,
+       "anclado": false,
+       "edadGpsMs": null,
+       "lejos": false,
+       "faltante": true
+      }
+     ]
+    }
+   },
+   {
+    "paso": "listado de rondas",
+    "status": 200,
+    "datos": [
+     {
+      "id": "e-compat-0003",
+      "ronda": "Perimetral express",
+      "guardia": "Pedro Soto",
+      "inicio": "2026-10-21T04:30:00.000Z",
+      "fin": "<hora-del-servidor>",
+      "estado": "incompleta",
+      "hechos": 1,
+      "total": 4,
+      "faltantes": 3
+     },
+     {
+      "id": "e-compat-0002",
+      "ronda": "Perimetral express",
+      "guardia": "Pedro Soto",
+      "inicio": "2026-10-21T04:00:00.000Z",
+      "fin": "2026-10-21T04:01:00.000Z",
+      "estado": "incompleta",
+      "hechos": 3,
+      "total": 4,
+      "faltantes": 1
+     },
+     {
+      "id": "e-compat-0001",
+      "ronda": "Nocturna completa",
+      "guardia": "Pedro Soto",
+      "inicio": "2026-10-21T03:00:00.000Z",
+      "fin": "2026-10-21T03:50:00.000Z",
+      "estado": "incompleta",
+      "hechos": 7,
+      "total": 8,
+      "faltantes": 1
+     }
+    ]
+   }
+  ],
+  "avisos": [
+   {
+    "texto": "⚠️ ALERTA: ronda con puntos sin marcar\n\n(cerrada por el administrador)\n🛡️ Ronda \"Perimetral express\" — Condominio Los Aromos\nGuardia: Pedro Soto\nEstado: INCOMPLETA\nInicio: 21/10, 04:30 a. m. · Fin: <variable> · Duración: <variable>\n\n❌ 1. Portería — FALTANTE\n✅ 2. Quincho — 21/10, 04:35 a. m.\n❌ 3. Piscina — FALTANTE\n❌ 4. Acceso trasero — FALTANTE\n\nObservaciones:\n• La ronda tomó <variable> min (máximo definido: 20 min).",
+    "medio": "registro",
+    "enviada": true
+   },
+   {
+    "texto": "⚠️ ALERTA: ronda con puntos sin marcar\n\n🛡️ Ronda \"Perimetral express\" — Condominio Los Aromos\nGuardia: Pedro Soto\nEstado: INCOMPLETA\nInicio: 21/10, 04:00 a. m. · Fin: 21/10, 04:01 a. m. · Duración: 1 min\n\n❌ 1. Portería — FALTANTE\n✅ 2. Quincho — 21/10, 04:00 a. m.\n✅ 3. Piscina — 21/10, 04:00 a. m.\n✅ 4. Acceso trasero — 21/10, 04:00 a. m.\n\nObservaciones:\n• ⚡ Varias marcas hechas en segundos (ráfaga): posible escaneo desde fotos.",
+    "medio": "registro",
+    "enviada": true
+   },
+   {
+    "texto": "⚠️ ALERTA: ronda con puntos sin marcar\n\n🛡️ Ronda \"Nocturna completa\" — Condominio Los Aromos\nGuardia: Pedro Soto\nEstado: INCOMPLETA\nInicio: 21/10, 03:00 a. m. · Fin: 21/10, 03:50 a. m. · Duración: 50 min\n\n✅ 1. Portería — 21/10, 03:02 a. m.\n✅ 2. Estacionamiento A — 21/10, 03:08 a. m.\n✅ 3. Quincho — 21/10, 03:18 a. m.\n✅ 4. Piscina — 21/10, 03:14 a. m.\n✅ 5. Bodega — 21/10, 03:22 a. m. 📍 por entrada\n✅ 6. Sala de bombas — 21/10, 03:27 a. m.\n✅ 7. Acceso trasero — 21/10, 03:33 a. m.\n❌ 8. Sede social — FALTANTE\n\nObservaciones:\n• Orden de la ronda no respetado en: Quincho.\n• La ronda tomó 50 min (máximo definido: 45 min).\n\nComentario del guardia: Luminaria apagada",
+    "medio": "registro",
+    "enviada": true
+   }
+  ],
+  "guardadas": [
+   {
+    "id": "e-compat-0001",
+    "rondaId": "ronda-nocturna",
+    "condominioId": "aromos",
+    "guardiaId": "u-pedro",
+    "inicio": "2026-10-21T03:00:00.000Z",
+    "fin": "2026-10-21T03:50:00.000Z",
+    "estado": "incompleta",
+    "escaneos": [
+     {
+      "puntoId": "p-porteria",
+      "ts": "2026-10-21T03:02:00.000Z",
+      "offline": false,
+      "gps": {
+       "lat": -33.44885,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 2000
+      },
+      "anclado": false,
+      "distanciaM": 6,
+      "edadGpsMs": 2000
+     },
+     {
+      "puntoId": "p-estacionamiento",
+      "ts": "2026-10-21T03:08:00.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "puntoId": "p-piscina",
+      "ts": "2026-10-21T03:14:00.000Z",
+      "offline": false,
+      "gps": null
+     },
+     {
+      "puntoId": "p-quincho",
+      "ts": "2026-10-21T03:18:00.000Z",
+      "offline": false,
+      "gps": null
+     },
+     {
+      "puntoId": "p-bodega",
+      "ts": "2026-10-21T03:22:00.000Z",
+      "offline": false,
+      "gps": {
+       "lat": -33.447900000000004,
+       "lon": -70.6693,
+       "acc": 8,
+       "edadMs": 300000
+      },
+      "anclado": true,
+      "distanciaM": 0,
+      "edadGpsMs": 300000
+     },
+     {
+      "puntoId": "p-bombas",
+      "ts": "2026-10-21T03:27:00.000Z",
+      "offline": false,
+      "gps": null
+     },
+     {
+      "puntoId": "p-trasero",
+      "ts": "2026-10-21T03:33:00.000Z",
+      "offline": false,
+      "gps": null
+     }
+    ],
+    "evaluacion": {
+     "faltantes": [
+      "p-sede"
+     ],
+     "fueraDeOrden": [
+      "p-quincho"
+     ],
+     "gpsLejos": [],
+     "sinGps": [],
+     "gpsImpreciso": [],
+     "rafaga": 0,
+     "duracionMin": 50,
+     "observaciones": [
+      "Orden de la ronda no respetado en: Quincho.",
+      "La ronda tomó 50 min (máximo definido: 45 min)."
+     ],
+     "sospechas": []
+    },
+    "rechazos": [
+     {
+      "puntoId": "p-porteria",
+      "ts": "2026-10-21T03:01:00.000Z",
+      "motivo": "lejos",
+      "distanciaM": 1100,
+      "topeM": 36,
+      "acc": 6,
+      "edadMs": 2000
+     }
+    ],
+    "comentario": "Luminaria apagada"
+   },
+   {
+    "id": "e-compat-0002",
+    "rondaId": "ronda-express",
+    "condominioId": "aromos",
+    "guardiaId": "u-pedro",
+    "inicio": "2026-10-21T04:00:00.000Z",
+    "fin": "2026-10-21T04:01:00.000Z",
+    "estado": "incompleta",
+    "escaneos": [
+     {
+      "puntoId": "p-quincho",
+      "ts": "2026-10-21T04:00:00.000Z",
+      "offline": false,
+      "gps": null
+     },
+     {
+      "puntoId": "p-piscina",
+      "ts": "2026-10-21T04:00:03.000Z",
+      "offline": false,
+      "gps": null
+     },
+     {
+      "puntoId": "p-trasero",
+      "ts": "2026-10-21T04:00:06.000Z",
+      "offline": false,
+      "gps": null
+     }
+    ],
+    "evaluacion": {
+     "faltantes": [
+      "p-porteria"
+     ],
+     "fueraDeOrden": [],
+     "gpsLejos": [],
+     "sinGps": [],
+     "gpsImpreciso": [],
+     "rafaga": 2,
+     "duracionMin": 1,
+     "observaciones": [
+      "⚡ Varias marcas hechas en segundos (ráfaga): posible escaneo desde fotos."
+     ],
+     "sospechas": [
+      "Varios puntos marcados en segundos (posible escaneo desde fotos)"
+     ]
+    }
+   },
+   {
+    "id": "e-compat-0003",
+    "rondaId": "ronda-express",
+    "condominioId": "aromos",
+    "guardiaId": "u-pedro",
+    "inicio": "2026-10-21T04:30:00.000Z",
+    "fin": "<hora-del-servidor>",
+    "estado": "incompleta",
+    "escaneos": [
+     {
+      "puntoId": "p-quincho",
+      "ts": "2026-10-21T04:35:00.000Z",
+      "offline": false,
+      "gps": null
+     }
+    ],
+    "evaluacion": {
+     "faltantes": [
+      "p-porteria",
+      "p-piscina",
+      "p-trasero"
+     ],
+     "fueraDeOrden": [],
+     "gpsLejos": [],
+     "sinGps": [],
+     "gpsImpreciso": [],
+     "rafaga": 0,
+     "duracionMin": "<variable>",
+     "observaciones": [
+      "La ronda tomó <variable> min (máximo definido: 20 min)."
+     ],
+     "sospechas": []
+    }
+   }
+  ],
+  "semanal": {
+   "condominio": "Condominio Los Aromos",
+   "desde": "2026-10-19",
+   "hasta": "2026-10-25",
+   "rango": "Semana del 19 al 25 de octubre de 2026",
+   "total": 11,
+   "promedioDiario": 1.6,
+   "rondasTotal": 3,
+   "completas": 0,
+   "incompletas": 3,
+   "sospechosas": 0,
+   "pct": {
+    "completas": 0,
+    "incompletas": 100,
+    "sospechosas": 0
+   },
+   "cumplimiento": 0,
+   "sinIdentificar": 0,
+   "dias": [
+    [
+     "Lun",
+     0
+    ],
+    [
+     "Mar",
+     0
+    ],
+    [
+     "Mié",
+     11
+    ],
+    [
+     "Jue",
+     0
+    ],
+    [
+     "Vie",
+     0
+    ],
+    [
+     "Sáb",
+     0
+    ],
+    [
+     "Dom",
+     0
+    ]
+   ],
+   "turno": {
+    "dia": {
+     "marc": 0,
+     "pct": 0
+    },
+    "noche": {
+     "marc": 11,
+     "pct": 100
+    }
+   },
+   "guardias": [
+    {
+     "clave": "u-pedro",
+     "nombre": "Pedro Soto",
+     "turno": "Noche",
+     "rondasDia": 0,
+     "rondasNoche": 3,
+     "marcaciones": 11,
+     "rondas": 3,
+     "completas": 0,
+     "incidencias": "3 incompletas",
+     "color": "B07D2B"
+    }
+   ],
+   "puntos": [
+    {
+     "nombre": "Sede social",
+     "marcadas": 0,
+     "esperadas": 1,
+     "omitidas": 1,
+     "pct": 0
+    },
+    {
+     "nombre": "Portería",
+     "marcadas": 1,
+     "esperadas": 3,
+     "omitidas": 2,
+     "pct": 33
+    },
+    {
+     "nombre": "Acceso trasero",
+     "marcadas": 2,
+     "esperadas": 3,
+     "omitidas": 1,
+     "pct": 67
+    },
+    {
+     "nombre": "Piscina",
+     "marcadas": 2,
+     "esperadas": 3,
+     "omitidas": 1,
+     "pct": 67
+    },
+    {
+     "nombre": "Bodega",
+     "marcadas": 1,
+     "esperadas": 1,
+     "omitidas": 0,
+     "pct": 100
+    },
+    {
+     "nombre": "Estacionamiento A",
+     "marcadas": 1,
+     "esperadas": 1,
+     "omitidas": 0,
+     "pct": 100
+    },
+    {
+     "nombre": "Quincho",
+     "marcadas": 3,
+     "esperadas": 3,
+     "omitidas": 0,
+     "pct": 100
+    },
+    {
+     "nombre": "Sala de bombas",
+     "marcadas": 1,
+     "esperadas": 1,
+     "omitidas": 0,
+     "pct": 100
+    }
+   ],
+   "puntosSinRonda": [],
+   "incidencias": [
+    {
+     "fecha": "Mié 21/10 · 00:00",
+     "guardia": "Pedro Soto",
+     "tipo": "Incompleta",
+     "tipoColor": "B07D2B",
+     "detalle": "Faltó marcar: Sede social."
+    },
+    {
+     "fecha": "Mié 21/10 · 01:00",
+     "guardia": "Pedro Soto",
+     "tipo": "Incompleta",
+     "tipoColor": "B07D2B",
+     "detalle": "Faltó marcar: Portería."
+    },
+    {
+     "fecha": "Mié 21/10 · 01:30",
+     "guardia": "Pedro Soto",
+     "tipo": "Incompleta",
+     "tipoColor": "B07D2B",
+     "detalle": "Faltó marcar: Portería, Piscina, Acceso trasero."
+    }
+   ],
+   "resumenIncidencias": {
+    "incompletas": [
+     {
+      "nombre": "Pedro Soto",
+      "n": 3
+     }
+    ],
+    "sospechosas": []
+   },
+   "comentarios": [
+    {
+     "fecha": "Mié 21/10 · 00:00",
+     "guardia": "Pedro Soto",
+     "estado": "Incompleta",
+     "estadoColor": "B07D2B",
+     "texto": "Luminaria apagada"
+    }
+   ],
+   "rondasPorDia": [
+    {
+     "dia": "Lun",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    },
+    {
+     "dia": "Mar",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    },
+    {
+     "dia": "Mié",
+     "total": 3,
+     "porGuardia": [
+      3
+     ]
+    },
+    {
+     "dia": "Jue",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    },
+    {
+     "dia": "Vie",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    },
+    {
+     "dia": "Sáb",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    },
+    {
+     "dia": "Dom",
+     "total": 0,
+     "porGuardia": [
+      0
+     ]
+    }
+   ],
+   "lecturaPuntos": "4 puntos quedaron sin marcar alguna vez: Portería (2 veces), Acceso trasero (1 vez), Piscina (1 vez) y Sede social (1 vez). Los otros 4 tuvieron cobertura completa.",
+   "conclusion": "El periodo cerró con 3 rondas: 0 completas (0% de cumplimiento) y ninguna marcación sin identificar. Hubo 3 incompletas que conviene revisar (resumen en la sección 5). 4 puntos quedaron sin marcar alguna vez (detalle en la sección 4). Los guardias dejaron 1 comentario (sección 6)."
+  },
+  "push": []
+ },
+ "app": {
+  "errorArranque": null,
+  "pasos": [
+   {
+    "paso": "inicia ronda",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "",
+    "marcaDetalle": "",
+    "escaner": false,
+    "camaras": 0
+   },
+   {
+    "paso": "toca Escanear",
+    "avisos": [
+     "No se pudo abrir la cámara. Usa el código manual."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "",
+    "marcaDetalle": "",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "Portería sin señal",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "Portería con señal",
+    "avisos": [
+     "✅ Portería (1/3)"
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "Portería otra vez",
+    "avisos": [
+     "\"Portería\" ya estaba marcado."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "código inventado",
+    "avisos": [
+     "Código no reconocido para esta ronda."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "QR de otro condominio",
+    "avisos": [
+     "Ese QR no es de este condominio o no existe."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "QR forjado",
+    "avisos": [
+     "Ese QR no es de este condominio o no existe."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "Quincho a mano",
+    "avisos": [
+     "✅ Quincho (2/3)"
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "qch789",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "puntoId": "p2",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Marcado 03:01 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "2/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "Piscina por la cámara",
+    "avisos": [
+     "✅ Piscina (3/3)"
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "qch789",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p3:PSC234",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "puntoId": "p2",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "puntoId": "p3",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Marcado 03:01 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Marcado 03:02 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>",
+    "progreso": "3/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "pantalla de la ronda",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "qch789",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p3:PSC234",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "puntoId": "p2",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "puntoId": "p3",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Marcado 03:01 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Marcado 03:02 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>",
+    "progreso": "3/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "termina la ronda",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-1",
+      "rondaId": "r1",
+      "inicio": "2026-10-21T03:00:00.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p1:PRT234",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "qch789",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-1",
+      "codigo": "RQR:aromos:p3:PSC234",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "tipo": "cerrar",
+      "ejecucionId": "e-app-1",
+      "fin": "2026-10-21T03:03:03.000Z",
+      "comentario": "todo en orden"
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:00:03.000Z",
+      "offline": true,
+      "gps": {
+       "lat": -33.4489,
+       "lon": -70.6693,
+       "acc": 6,
+       "edadMs": 0
+      }
+     },
+     {
+      "puntoId": "p2",
+      "ts": "2026-10-21T03:01:03.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "puntoId": "p3",
+      "ts": "2026-10-21T03:02:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": true,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Marcado 03:00 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Marcado 03:01 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Marcado 03:02 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>",
+    "progreso": "3/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 1
+   },
+   {
+    "paso": "ronda sin orden: toca Escanear",
+    "avisos": [
+     "No se pudo abrir la cámara. Usa el código manual."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-2",
+      "rondaId": "r2",
+      "inicio": "2026-10-21T03:03:03.000Z"
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/2",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "ronda sin orden: Piscina",
+    "avisos": [
+     "✅ Piscina (1/2)"
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-2",
+      "rondaId": "r2",
+      "inicio": "2026-10-21T03:03:03.000Z"
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-2",
+      "codigo": "RQR:aromos:p3:PSC234",
+      "ts": "2026-10-21T03:03:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p3",
+      "ts": "2026-10-21T03:03:03.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Piscina</div>\n        <div class=\"nota\">Marcado 03:03 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>",
+    "progreso": "1/2",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Portería sin señal: espera",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Portería: no llegó la señal, queda retenida",
+    "avisos": [
+     "\"Portería\" todavía NO está marcado: falta la ubicación. Toca Reintentar."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · todavía NO está marcado",
+    "marcaDetalle": "El teléfono todavía no tiene ubicación (buscando señal). Espera unos segundos junto al QR y toca Reintentar. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Portería: Reintentar sin señal",
+    "avisos": [],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Portería\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Estacionamiento suelta a Portería",
+    "avisos": [
+     "\"Portería\" todavía NO está marcado: falta la ubicación. Toca Reintentar.",
+     "\"Portería\" todavía NO está marcado: falta la ubicación. Toca Reintentar. · \"Portería\" quedó SIN marcar: vuelve a escanear su QR."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:35.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Estacionamiento\" leído · afinando ubicación… 15 s",
+    "marcaDetalle": "Quédate quieto junto al QR: si la señal entra, la marca se registra sola. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Estacionamiento retenida",
+    "avisos": [
+     "\"Estacionamiento\" todavía NO está marcado: falta la ubicación. Toca Reintentar."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:35.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p4",
+      "ts": "2026-10-21T03:33:51.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Estacionamiento\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Estacionamiento\" leído · todavía NO está marcado",
+    "marcaDetalle": "El teléfono todavía no tiene ubicación (buscando señal). Espera unos segundos junto al QR y toca Reintentar. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "Estacionamiento: vence el plazo",
+    "avisos": [
+     "Se acabó el plazo para \"Estacionamiento\": vuelve a escanear su QR."
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:35.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p4",
+      "ts": "2026-10-21T03:33:51.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Estacionamiento\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     }
+    ],
+    "escaneos": [],
+    "cerrada": false,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>",
+    "progreso": "0/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Estacionamiento\" leído · todavía NO está marcado",
+    "marcaDetalle": "El teléfono todavía no tiene ubicación (buscando señal). Espera unos segundos junto al QR y toca Reintentar. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   },
+   {
+    "paso": "termina con faltantes",
+    "avisos": [
+     "✅ Quincho (1/3)"
+    ],
+    "cola": [
+     {
+      "tipo": "iniciar",
+      "ejecucionId": "e-app-3",
+      "rondaId": "r3",
+      "inicio": "2026-10-21T03:33:03.000Z"
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:19.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p1",
+      "ts": "2026-10-21T03:33:35.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Portería\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "rechazo",
+      "ejecucionId": "e-app-3",
+      "puntoId": "p4",
+      "ts": "2026-10-21T03:33:51.000Z",
+      "motivo": "📍 Sin ubicación (buscando señal): \"Estacionamiento\" no se puede marcar hasta confirmar que estás ahí.",
+      "distanciaM": null,
+      "topeM": null,
+      "acc": null,
+      "edadMs": null
+     },
+     {
+      "tipo": "escaneo",
+      "ejecucionId": "e-app-3",
+      "codigo": "QCH789",
+      "ts": "2026-10-21T03:36:51.000Z",
+      "offline": true,
+      "gps": null
+     },
+     {
+      "tipo": "cerrar",
+      "ejecucionId": "e-app-3",
+      "fin": "2026-10-21T03:36:51.000Z",
+      "comentario": ""
+     }
+    ],
+    "escaneos": [
+     {
+      "puntoId": "p2",
+      "ts": "2026-10-21T03:36:51.000Z",
+      "offline": true,
+      "gps": null
+     }
+    ],
+    "cerrada": true,
+    "lista": "\n      <div class=\"punto-numero\">1</div>\n      <div class=\"punto-texto\">\n        <div>Portería</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">2</div>\n      <div class=\"punto-texto\">\n        <div>Estacionamiento</div>\n        <div class=\"nota\">Pendiente</div>\n      </div>\n      <div class=\"punto-check\">·</div>\n      <div class=\"punto-numero\">3</div>\n      <div class=\"punto-texto\">\n        <div>Quincho</div>\n        <div class=\"nota\">Marcado 03:36 a. m. (sin señal)</div>\n      </div>\n      <div class=\"punto-check\">✅</div>",
+    "progreso": "1/3",
+    "boton": "",
+    "marcaTitulo": "QR de \"Estacionamiento\" leído · todavía NO está marcado",
+    "marcaDetalle": "El teléfono todavía no tiene ubicación (buscando señal). Espera unos segundos junto al QR y toca Reintentar. No hace falta escanear de nuevo.",
+    "escaner": false,
+    "camaras": 2
+   }
+  ]
+ }
+}
