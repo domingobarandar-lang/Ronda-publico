@@ -75,8 +75,42 @@ function revisar(nombre, ok, detalle = '') {
   await panel.evaluate(() => window.__tocar()); // alejar y acercar: verificación
   await espera(600);
   const grabada = await panel.textContent('#chapita-estado');
-  revisar('El panel graba, verifica y bloquea la chapita', /Chapita lista y bloqueada/.test(grabada), grabada.trim());
+  revisar('El panel graba y verifica la chapita, sin bloquearla', /Chapita grabada \(sin bloquear\)/.test(grabada), grabada.trim());
+  revisar('La chapita quedó sin bloquear', !(await panel.evaluate(() => window.__chapita.bloqueada)));
+  await panel.waitForSelector('[data-bloquear="p-bombas"]');
+  const fila = panel.locator('tr', { has: panel.locator('[data-bloquear="p-bombas"]') });
+  revisar('El punto con chapita ofrece "🔒 Bloquear chapita" y no los botones de ubicación',
+    (await fila.locator('[data-ubicar]').count()) === 0 && (await fila.locator('[data-bloquear]').count()) === 1);
   await panel.screenshot({ path: path.join(capturas, '1-panel-chapita-grabada.png') });
+
+  // Bloquear: primero se acerca otra chapita (no se bloquea), después la buena.
+  await panel.click('[data-bloquear="p-bombas"]');
+  await panel.click('#btn-empezar-chapita');
+  await espera(200);
+  await panel.evaluate(() => window.__tocar('RQR:aromos:p-bombas:BMB892', '04:11:22:33:44:55:66'));
+  await espera(300);
+  const otraEstado = await panel.textContent('#chapita-estado');
+  revisar('Bloquear con otra chapita no bloquea nada', /no es la chapita registrada/.test(otraEstado)
+    && !(await panel.evaluate(() => window.__chapita.bloqueada)), otraEstado.trim());
+  await panel.click('#btn-empezar-chapita'); // Reintentar
+  await espera(200);
+  await panel.evaluate(() => window.__tocar());
+  await espera(600);
+  const bloqueada = await panel.textContent('#chapita-estado');
+  revisar('Con la chapita correcta, queda bloqueada', /bloqueada/.test(bloqueada) && (await panel.evaluate(() => window.__chapita.bloqueada)), bloqueada.trim());
+  await panel.waitForSelector('[data-chapita="p-bombas"]');
+  revisar('Ya bloqueada, el botón "🔒 Bloquear chapita" desaparece', (await panel.locator('[data-bloquear="p-bombas"]').count()) === 0);
+  await panel.screenshot({ path: path.join(capturas, '1b-panel-chapita-bloqueada.png') });
+
+  // Grabar en otro punto una chapita que ya es de "Sala de bombas": se detiene y lo dice.
+  await panel.click('[data-chapita="p-sede"]');
+  await panel.click('#btn-empezar-chapita');
+  await espera(200);
+  await panel.evaluate(() => window.__tocar());
+  await espera(300);
+  const repetida = await panel.textContent('#chapita-estado');
+  revisar('Una chapita de otro punto no se graba, y el panel dice por qué', /ya está registrada en "Sala de bombas"/.test(repetida), repetida.trim());
+  await panel.click('#btn-cerrar-chapita');
 
   // 2. Guardia: ronda nocturna (orden estricto) hasta la sala de bombas.
   const guardia = await ctx.newPage();

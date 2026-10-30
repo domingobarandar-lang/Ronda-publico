@@ -774,9 +774,31 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     }
     punto.nfcSerie = serie;
     punto.nfcGrabada = new Date().toISOString();
+    // El panel graba sin bloquear: el bloqueo es un paso aparte (abajo), para
+    // poder probar la chapita antes de dejarla para siempre.
     punto.nfcBloqueada = Boolean((req.body || {}).bloqueada);
+    delete punto.nfcBloqueadaEn;
     delete punto.nfcPendiente;
     store.guardar();
+    res.json(punto);
+  });
+
+  // "🔒 Bloquear chapita": el panel ya leyó la chapita, comprobó que es la
+  // registrada y que tiene el código del punto, y la dejó de solo lectura
+  // (makeReadOnly). Acá solo se anota. La serie tiene que ser la del punto:
+  // así no se anota bloqueada una chapita que no es la que el punto exige.
+  app.put('/api/admin/puntos/:id/chapita/bloqueo', ...admin, (req, res) => {
+    const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
+    if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
+    if (!punto.nfcSerie) return res.status(409).json({ error: 'Este punto no tiene chapita: primero hay que grabarla.' });
+    if (normalizarSerie((req.body || {}).serie) !== punto.nfcSerie) {
+      return res.status(422).json({ error: `Esa no es la chapita registrada para "${punto.nombre}".` });
+    }
+    if (!punto.nfcBloqueada) {
+      punto.nfcBloqueada = true;
+      punto.nfcBloqueadaEn = new Date().toISOString();
+      store.guardar();
+    }
     res.json(punto);
   });
 
@@ -787,6 +809,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     delete punto.nfcSerie;
     delete punto.nfcGrabada;
     delete punto.nfcBloqueada;
+    delete punto.nfcBloqueadaEn;
     delete punto.nfcPendiente;
     store.guardar();
     res.json(punto);

@@ -21,7 +21,7 @@ Sirve para saber si el teléfono sirve, antes de comprar nada.
 
 ## 3. Con chapitas de prueba (un paquete de stickers NTAG213)
 
-Comprar un paquete chico de stickers **NTAG213** (no «NTAG215/216» ni «MIFARE Classic», que son otra cosa). Para estas pruebas **desmarcar «Bloquear chapita»**: así una misma chapita sirve para probar muchas veces.
+Comprar un paquete chico de stickers **NTAG213** (no «NTAG215/216» ni «MIFARE Classic», que son otra cosa). El panel graba **sin bloquear**: así una misma chapita sirve para probar muchas veces. No toques «🔒 Bloquear chapita» en las chapitas de prueba que quieras reusar.
 
 1. En un condominio de prueba, crear un punto «con chapita NFC», grabarla desde el panel y marcarla con la app.
 2. **Sin señal:** activar modo avión (en la mayoría de los Android el NFC sigue encendido; si no, volver a activarlo en Ajustes), marcar la chapita y volver a encender los datos: la marca tiene que llegar sola.
@@ -30,7 +30,8 @@ Comprar un paquete chico de stickers **NTAG213** (no «NTAG215/216» ni «MIFARE
 5. **Código a mano:** tipear el código del punto: tiene que rechazarlo.
 6. **«La chapita no lee»:** tocarlo, terminar la ronda y revisar en el panel que el informe diga «El guardia avisó que la chapita no leyó en …» y que el punto salga faltante.
 7. **Reemplazo:** reemplazar la chapita en el panel con otro sticker. En el teléfono del guardia **sin** tocar «Actualizar rondas», marcar con la chapita nueva: la app la va a rechazar porque tiene la información vieja. Tocar «Actualizar rondas» y volver a marcar: tiene que entrar. → Regla de operación: después de reemplazar una chapita, los guardias actualizan rondas.
-8. **Bloqueo:** con un sticker que se pueda gastar, grabar con «Bloquear chapita» marcado y luego intentar regrabarlo con «NFC Tools»: no debe dejar.
+8. **Bloqueo:** con un sticker que se pueda gastar, grabarlo, tocar «🔒 Bloquear chapita» y acercar **otra** chapita: no debe bloquear y tiene que decir por qué. Después acercar la correcta: queda bloqueada. Intentar regrabarla con «NFC Tools»: no debe dejar.
+9. **Reusar en otro condominio:** grabar una chapita (sin bloquear) en un punto de un condominio de prueba, «Volver a QR» ahí, y grabarla en un punto de otro condominio: el panel avisa que trae otro punto y la graba encima. Sin el «Volver a QR» primero, tiene que negarse («ya pertenece a un punto de otro condominio»).
 
 ## 4. Situaciones de todos los días que solo se ven en terreno
 

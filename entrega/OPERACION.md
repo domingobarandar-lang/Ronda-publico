@@ -70,20 +70,24 @@ Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa 
 
 1. **Instalar primero**: pegar la carcasa con la chapita en el lugar del punto. Se graba **a través del plástico**, ya instalada.
 2. Parado junto a la chapita, con el **NFC del teléfono encendido** (Ajustes → buscar «NFC»), abrir el panel (`https://<servidor>/panel`) en **Chrome**, entrar, ir a **Puntos** y tocar **📶 Grabar chapita** en ese punto. (Para cambiar una chapita rota: **Reemplazar chapita**.)
-3. Revisar la casilla **«Bloquear chapita (permanente: nadie la podrá reescribir)»**. Viene marcada: impide que alguien le grabe otro punto encima. **Es para siempre**: una chapita bloqueada ya no se puede regrabar ni usar en otro punto. Desmarcarla solo para pruebas.
-4. Tocar **Empezar** y **acercar la parte trasera del teléfono a la chapita** (la antena suele estar al centro o arriba de la espalda del teléfono). La primera vez Chrome pide permiso para usar NFC: permitir.
-5. El panel va diciendo qué hace:
+3. Tocar **Empezar** y **acercar la parte trasera del teléfono a la chapita** (la antena suele estar al centro o arriba de la espalda del teléfono). La primera vez Chrome pide permiso para usar NFC: permitir.
+4. El panel va diciendo qué hace:
    - lee el **número de serie** de la chapita. Si la chapita ya tiene grabado otro punto, pregunta antes de seguir; si ya está registrada en otro punto, se detiene;
    - **graba** el punto («no muevas el teléfono»);
    - pide **alejar el teléfono y volver a acercarlo** para **verificar** que quedó bien;
-   - la **bloquea** si la casilla estaba marcada («mantén el teléfono sobre la chapita»);
-   - **guarda** la serie en el servidor: «✅ Chapita lista y bloqueada».
-6. Si algo falla antes del final (se movió el teléfono, NFC apagado, permiso negado), el punto queda **como estaba**: tocar **Reintentar**.
-7. **Bajo techo:** si el punto está en un subterráneo o una sala cerrada, **no le fijes ubicación GPS** (ni 📍 ni 🏠): la chapita ya prueba que el guardia estuvo ahí, y una ubicación exacta bajo techo haría rechazar la marca por falta de señal. Si el punto ya tenía ubicación, **Quitar 📍**.
-8. Un punto con chapita (grabada o por grabar) **no sale como QR** en la hoja de QR: sale marcado «Chapita NFC — no lleva QR». Si el punto antes era QR, retirar su lámina vieja.
-9. Los guardias reciben el cambio al tocar «Actualizar rondas» (o al volver a entrar).
+   - **guarda** la serie en el servidor: «✅ Chapita grabada (sin bloquear)».
+5. Si algo falla antes del final (se movió el teléfono, NFC apagado, permiso negado), el punto queda **como estaba**: el panel dice qué pasó y se toca **Reintentar**.
+6. **La chapita queda sin bloquear**: se puede volver a grabar o usar en otro punto. **Pruébala** con la app del guardia (una ronda de prueba con ese punto).
+7. **🔒 Bloquear chapita** — cuando ya es la definitiva. En la fila del punto aparece el botón (donde antes estaban los de ubicación). Junto a la chapita, tocarlo, leer el aviso y tocar **«Sí, bloquear para siempre»**, y acercar el teléfono. Antes de bloquear, el panel comprueba que sea **la chapita registrada para ese punto** y que tenga **su código**; si no, no bloquea y lo dice. Bloquearla impide que alguien le grabe otro punto encima. **Es para siempre**: después no se puede regrabar ni usar en otro punto ni en otro condominio. La tabla muestra «sin bloquear» en rojo hasta que se haga.
+8. **Bajo techo:** si el punto está en un subterráneo o una sala cerrada, **no le fijes ubicación GPS** (ni 📍 ni 🏠): la chapita ya prueba que el guardia estuvo ahí, y una ubicación exacta bajo techo haría rechazar la marca por falta de señal. Si el punto ya tenía ubicación, **Quitar 📍**.
+9. Un punto con chapita (grabada o por grabar) **no sale como QR** en la hoja de QR: sale marcado «Chapita NFC — no lleva QR». Si el punto antes era QR, retirar su lámina vieja.
+10. Los guardias reciben el cambio al tocar «Actualizar rondas» (o al volver a entrar).
 
-**Volver a QR:** en la fila del punto, **Volver a QR**. La chapita deja de valer; reimprimir la hoja de QR y pegar la lámina.
+En la fila de un punto con chapita **no aparecen los botones de ubicación** (📍 Fijar aquí, 🏠 Fijar entrada, Ajustar): la chapita es la que prueba la presencia. Si el punto ya tenía una ubicación de antes, queda solo **Quitar 📍**, para sacársela si está bajo techo.
+
+**Volver a QR:** en la fila del punto, **Volver a QR**. La chapita deja de valer; reimprimir la hoja de QR y pegar la lámina. Si la chapita **no estaba bloqueada**, queda libre para grabarla en otro punto u otro condominio.
+
+**Probar una chapita en un condominio y después usarla en otro:** grabarla en el de prueba **sin bloquearla**; al terminar, **Volver a QR** (o eliminar el punto) en el de prueba —si no, el panel no deja usarla en otro lugar: una chapita no puede estar en dos puntos—; en el definitivo, **📶 Grabar chapita** (el panel avisa que trae otro punto y pregunta si grabar encima) y recién ahí **🔒 Bloquear chapita**.
 
 ### 3. Cómo marca el guardia
 

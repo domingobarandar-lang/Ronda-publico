@@ -117,6 +117,33 @@ test('grabar chapita: valida la serie, la normaliza y la guarda', async () => {
   assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
 });
 
+test('bloquear la chapita es un paso aparte, y solo con la chapita registrada', async () => {
+  const marta = await login('marta', '1111');
+  // Se graba sin bloquear (como lo hace el panel).
+  const grabada = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } });
+  assert.equal(grabada.datos.nfcBloqueada, false);
+  const bloqueo = cuerpo => api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: marta, cuerpo });
+  assert.equal((await bloqueo({ serie: '04:11:22:33:44:55:66' })).status, 422, 'otra chapita no se anota bloqueada');
+  assert.equal((await bloqueo({})).status, 422);
+  assert.equal((await api('/api/admin/puntos/p-quincho/chapita/bloqueo', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } })).status, 409, 'un punto sin chapita no se bloquea');
+  const guardia = await login('pedro', '2222');
+  assert.equal((await api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
+  const ok = await bloqueo({ serie: SERIE_WEB });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.datos.nfcBloqueada, true);
+  assert.ok(ok.datos.nfcBloqueadaEn);
+  // Repetir no cambia nada.
+  const otraVez = await bloqueo({ serie: SERIE });
+  assert.equal(otraVez.datos.nfcBloqueadaEn, ok.datos.nfcBloqueadaEn);
+  // Un administrador de otro condominio no lo ve.
+  const carmen = await login('carmen', '4444');
+  assert.equal((await api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: carmen, cuerpo: { serie: SERIE } })).status, 404);
+  // Bloquear no cambia cómo se marca: la misma chapita sigue valiendo.
+  const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
+  const ej = await iniciar(guardia);
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE } })).status, 200);
+});
+
 test('una chapita no puede pertenecer a dos puntos, tampoco de otro condominio', async () => {
   const marta = await login('marta', '1111');
   const otro = await api('/api/admin/puntos/p-quincho/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } });

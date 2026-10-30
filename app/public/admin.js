@@ -505,16 +505,29 @@ async function cargarPuntos() {
     if (p.nfcPendiente) return '<br><span class="nota rojo">📶 NFC · falta grabar la chapita</span>';
     return '<br><span class="nota">📷 QR</span>';
   };
+  // En un punto con chapita la presencia la prueba la chapita: no se ofrecen
+  // los botones de ubicación. Si el punto ya traía una, queda "Quitar 📍",
+  // porque bajo techo esa ubicación haría rechazar las marcas por falta de GPS.
+  const verificacionDe = p => (p.nfcSerie
+    ? `📶 <strong>La chapita</strong> prueba que el guardia estuvo ahí${p.lat != null
+      ? `<br><span class="nota rojo">Además tiene ubicación GPS: si el punto está bajo techo, quítasela.</span>` : ''}`
+    : verificacionTexto(p));
+  const botonesUbicacion = p => {
+    if (p.nfcSerie) return p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : '';
+    return `
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 ${p.lat != null && p.verificacion !== 'anclaje' ? 'Volver a medir' : 'Fijar aquí'}</button>
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="anclaje">🏠 Fijar entrada</button>
+        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-ajustar="${p.id}">Ajustar</button>` : ''}
+        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : ''}`;
+  };
   const filas = puntosCache.map(p => `
     <tr>
       <td>${esc(p.nombre)}${chapitaTexto(p)}</td>
       <td><code>${esc(p.codigoCorto)}</code>${p.nfcSerie ? '<br><span class="nota">no sirve a mano: este punto se marca con la chapita</span>' : ''}</td>
-      <td>${verificacionTexto(p)}</td>
+      <td>${verificacionDe(p)}</td>
       <td>
-        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="gps">📍 ${p.lat != null && p.verificacion !== 'anclaje' ? 'Volver a medir' : 'Fijar aquí'}</button>
-        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}" data-modo="anclaje">🏠 Fijar entrada</button>
-        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-ajustar="${p.id}">Ajustar</button>` : ''}
-        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : ''}
+        ${botonesUbicacion(p)}
+        ${p.nfcSerie && !p.nfcBloqueada ? `<button class="btn btn-borde btn-chico" data-bloquear="${p.id}">🔒 Bloquear chapita</button>` : ''}
         <button class="btn btn-borde btn-chico" data-chapita="${p.id}">📶 ${p.nfcSerie ? 'Reemplazar chapita' : 'Grabar chapita'}</button>
         ${p.nfcSerie ? `<button class="btn btn-borde btn-chico" data-volver-qr="${p.id}">Volver a QR</button>` : ''}
         <button class="btn btn-borde btn-chico" data-renombrar="${p.id}">Renombrar</button>
@@ -535,11 +548,15 @@ async function cargarPuntos() {
   for (const btn of $('tabla-puntos').querySelectorAll('[data-chapita]')) {
     btn.addEventListener('click', () => abrirGrabacion(puntosCache.find(p => p.id === btn.dataset.chapita)));
   }
+  for (const btn of $('tabla-puntos').querySelectorAll('[data-bloquear]')) {
+    btn.addEventListener('click', () => abrirBloqueo(puntosCache.find(p => p.id === btn.dataset.bloquear)));
+  }
   for (const btn of $('tabla-puntos').querySelectorAll('[data-volver-qr]')) {
     btn.addEventListener('click', async () => {
       const punto = puntosCache.find(p => p.id === btn.dataset.volverQr);
       if (!confirm(`¿Volver "${punto.nombre}" a QR?\n\nLa chapita deja de valer y el punto se marca otra vez con el QR: `
-        + 'reimprime la hoja de QR y pega su lámina.')) return;
+        + 'reimprime la hoja de QR y pega su lámina.'
+        + (punto.nfcBloqueada ? '' : '\n\nLa chapita queda libre: se puede grabar en otro punto o en otro condominio.'))) return;
       try {
         await api(`/api/admin/puntos/${punto.id}/chapita`, { metodo: 'DELETE' });
         aviso(`"${punto.nombre}" vuelve a marcarse con QR. Los guardias lo reciben al actualizar rondas.`);
@@ -790,9 +807,11 @@ function pintarEditorRonda() {
 //   1. leer la serie de fábrica (y avisar si ya tiene grabado otro punto)
 //   2. escribir el texto del QR del punto (registro NDEF de texto)
 //   3. volver a leerla para verificar que quedó bien
-//   4. bloquearla para siempre, si se pidió (makeReadOnly)
-//   5. guardar la serie en el servidor: desde ahí el punto solo acepta ESTA chapita
-// Si algo falla antes del paso 5 el punto queda como estaba.
+//   4. guardar la serie en el servidor: desde ahí el punto solo acepta ESTA chapita
+// Si algo falla antes del paso 4 el punto queda como estaba. La chapita queda
+// SIN bloquear: se prueba con la app del guardia y, cuando es la definitiva,
+// "🔒 Bloquear chapita" la deja de solo lectura para siempre (abrirBloqueo),
+// después de comprobar que es la registrada y que tiene el código del punto.
 
 // El mismo texto que lleva el QR (payloadQR en lib/codigos.js).
 function payloadDe(punto) {
@@ -867,9 +886,9 @@ function abrirGrabacion(punto) {
     <strong>📶 ${punto.nfcSerie ? 'Reemplazar' : 'Grabar'} chapita — ${esc(punto.nombre)}</strong>
     <p class="nota">Párate junto a la chapita ya instalada, con el NFC del teléfono encendido. Al tocar “Empezar”,
     acerca la parte trasera del teléfono a la chapita y no lo muevas hasta que el panel lo diga. La primera vez Chrome pide permiso para usar NFC.</p>
-    <label class="check"><input type="checkbox" id="chapita-bloquear" checked>
-      Bloquear chapita (permanente: nadie la podrá reescribir)</label>
-    <p class="nota">Bloquearla impide que alguien le grabe otro punto encima. Es <strong>para siempre</strong>: después no se puede regrabar ni reutilizar en otro punto.</p>
+    ${punto.nfcBloqueada ? '<p class="nota rojo">La chapita actual de este punto está bloqueada y no se puede regrabar: para reemplazarla usa una chapita nueva.</p>' : ''}
+    <p class="nota">La chapita queda grabada <strong>sin bloquear</strong>: se puede regrabar o usar en otro punto.
+    Pruébala con la app del guardia y, cuando sea la definitiva, toca “🔒 Bloquear chapita” en este punto.</p>
     <p class="nota">${esc(bajoTecho)}</p>
     <p id="chapita-estado" class="nota"></p>
     <div class="fila-form">
@@ -878,20 +897,32 @@ function abrirGrabacion(punto) {
     </div>`;
   $('btn-cerrar-chapita').addEventListener('click', cerrarGrabacion);
   // Web NFC exige un toque: la grabación arranca con "Empezar", nunca sola.
-  $('btn-empezar-chapita').addEventListener('click', () => grabarChapita(punto, $('chapita-bloquear').checked));
+  $('btn-empezar-chapita').addEventListener('click', () => grabarChapita(punto));
 }
 
-async function grabarChapita(punto, bloquear) {
+// Final de una grabación o de un bloqueo que salió bien: "Empezar" desaparece
+// (si quedara, otro toque volvería a arrancar el lector) y "Cancelar" pasa a
+// "Cerrar".
+function terminarCaja(texto, aviso = false) {
+  const estadoEl = $('chapita-estado');
+  estadoEl.textContent = texto;
+  estadoEl.className = aviso ? 'nota rojo' : 'nota';
+  $('btn-empezar-chapita').classList.add('oculta');
+  $('btn-cerrar-chapita').textContent = 'Cerrar';
+}
+
+async function grabarChapita(punto) {
   if (grabacionNfc) grabacionNfc.abort();
   const control = new AbortController();
   grabacionNfc = control;
   const { signal } = control;
   const estadoEl = $('chapita-estado');
-  const pintar = (texto, tipo) => {
-    if (grabacionNfc !== control) return;
+  const mostrar = (texto, tipo) => {
     estadoEl.textContent = texto;
     estadoEl.className = tipo === 'error' ? 'nota rojo' : 'nota';
   };
+  // Mientras corre: solo si esta grabación sigue siendo la vigente.
+  const pintar = (texto, tipo) => { if (grabacionNfc === control) mostrar(texto, tipo); };
   const empezar = $('btn-empezar-chapita');
   empezar.disabled = true;
   const payload = payloadDe(punto);
@@ -936,35 +967,14 @@ async function grabarChapita(punto, bloquear) {
       break;
     }
 
-    // 4. Bloquear (opcional y permanente). Si no se puede, la chapita igual
-    //    sirve: queda grabada y se dice que no está bloqueada.
-    let bloqueada = false;
-    let avisoBloqueo = '';
-    if (bloquear) {
-      if (typeof lector.makeReadOnly !== 'function') {
-        avisoBloqueo = ' No se pudo bloquear: este Chrome es antiguo (actualízalo y usa "Reemplazar chapita" para bloquearla).';
-      } else {
-        pintar('Verificada. Bloqueando… mantén el teléfono sobre la chapita.');
-        try {
-          await lector.makeReadOnly({ signal });
-          bloqueada = true;
-        } catch (err) {
-          if (err && err.name === 'AbortError') throw err;
-          avisoBloqueo = ` No se pudo bloquear (${textoErrorNfc(err)}) Quedó grabada pero se puede reescribir.`;
-        }
-      }
-    }
     control.abort(); // se apaga el lector antes de hablar con el servidor
 
-    // 5. Desde acá el punto solo acepta esta chapita.
+    // 4. Desde acá el punto solo acepta esta chapita.
     pintar('Guardando…');
-    await api(`/api/admin/puntos/${punto.id}/chapita`, { metodo: 'PUT', cuerpo: { serie, bloqueada } });
+    await api(`/api/admin/puntos/${punto.id}/chapita`, { metodo: 'PUT', cuerpo: { serie } });
     grabacionNfc = null;
-    estadoEl.textContent = `✅ Chapita lista${bloqueada ? ' y bloqueada' : ''}. "${punto.nombre}" ahora se marca con la chapita; los guardias lo reciben al actualizar rondas.${avisoBloqueo}`;
-    estadoEl.className = avisoBloqueo ? 'nota rojo' : 'nota';
-    empezar.textContent = 'Listo';
-    empezar.disabled = false;
-    empezar.onclick = () => { cerrarGrabacion(); };
+    terminarCaja(`✅ Chapita grabada (sin bloquear). "${punto.nombre}" ahora se marca con la chapita; los guardias lo reciben al actualizar rondas. `
+      + 'Pruébala y, cuando sea la definitiva, toca “🔒 Bloquear chapita”.');
     cargarPuntos();
   } catch (err) {
     if (grabacionNfc !== control) return; // cancelada o reemplazada: nadie mira
@@ -972,8 +982,91 @@ async function grabarChapita(punto, bloquear) {
     grabacionNfc = null;
     empezar.disabled = false;
     empezar.textContent = 'Reintentar';
-    if (err && err.name === 'AbortError') { pintar('Cancelado. El punto quedó como estaba.'); return; }
-    pintar(err instanceof DOMException ? textoErrorNfc(err) : err.message, 'error');
+    // `mostrar`, no `pintar`: la grabación ya se soltó (grabacionNfc = null).
+    if (err && err.name === 'AbortError') { mostrar('Cancelado. El punto quedó como estaba.'); return; }
+    mostrar(err instanceof DOMException ? textoErrorNfc(err) : err.message, 'error');
+  }
+}
+
+// "🔒 Bloquear chapita": deja la chapita de solo lectura para siempre. Antes
+// la lee y comprueba que sea la registrada para el punto (la serie) y que
+// tenga su código (el texto): bloquear una chapita equivocada o mal grabada la
+// dejaría inservible para siempre.
+function abrirBloqueo(punto) {
+  if (!punto) return;
+  cerrarGrabacion();
+  const caja = $('caja-chapita');
+  caja.classList.remove('oculta');
+  if (caja.scrollIntoView) caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!('NDEFReader' in window)) {
+    caja.innerHTML = `
+      <strong>🔒 Bloquear chapita — ${esc(punto.nombre)}</strong>
+      <p class="nota">Se bloquea en terreno, junto a la chapita, desde <strong>Chrome en un teléfono Android con NFC</strong>:
+      abre este panel en ese teléfono, ve a Puntos y toca “🔒 Bloquear chapita” en este punto.</p>
+      <button type="button" class="btn btn-borde btn-chico" id="btn-cerrar-chapita">Cerrar</button>`;
+    $('btn-cerrar-chapita').addEventListener('click', cerrarGrabacion);
+    return;
+  }
+  caja.innerHTML = `
+    <strong>🔒 Bloquear chapita — ${esc(punto.nombre)}</strong>
+    <p class="nota">Bloquearla impide que alguien le grabe otro punto encima. <strong>Es para siempre</strong>:
+    después no se puede regrabar, ni usar en otro punto, ni en otro condominio. Hazlo cuando ya la probaste con la app del guardia.</p>
+    <p class="nota">Antes de bloquear, el panel comprueba que sea la chapita de este punto y que tenga su código.</p>
+    <p id="chapita-estado" class="nota"></p>
+    <div class="fila-form">
+      <button type="button" class="btn btn-peligro" id="btn-empezar-chapita">Sí, bloquear para siempre</button>
+      <button type="button" class="btn btn-borde" id="btn-cerrar-chapita">Cancelar</button>
+    </div>`;
+  $('btn-cerrar-chapita').addEventListener('click', cerrarGrabacion);
+  $('btn-empezar-chapita').addEventListener('click', () => bloquearChapita(punto));
+}
+
+async function bloquearChapita(punto) {
+  if (grabacionNfc) grabacionNfc.abort();
+  const control = new AbortController();
+  grabacionNfc = control;
+  const { signal } = control;
+  const estadoEl = $('chapita-estado');
+  const mostrar = (texto, tipo) => {
+    estadoEl.textContent = texto;
+    estadoEl.className = tipo === 'error' ? 'nota rojo' : 'nota';
+  };
+  // Mientras corre: solo si esta grabación sigue siendo la vigente.
+  const pintar = (texto, tipo) => { if (grabacionNfc === control) mostrar(texto, tipo); };
+  const empezar = $('btn-empezar-chapita');
+  empezar.disabled = true;
+  try {
+    const lector = new NDEFReader();
+    if (typeof lector.makeReadOnly !== 'function') {
+      throw new Error('Este Chrome es antiguo y no puede bloquear chapitas: actualízalo y vuelve a intentar.');
+    }
+    await lector.scan({ signal });
+    pintar('Acerca la parte trasera del teléfono a la chapita…');
+    const lectura = await proximaLectura(lector, signal, () => pintar('No se pudo leer: mantén el teléfono quieto sobre la chapita.', 'error'));
+    const serie = normalizarSerie(lectura.serialNumber);
+    if (serie !== punto.nfcSerie) {
+      throw new Error(`Esta no es la chapita registrada para "${punto.nombre}": no se bloqueó. Acerca la chapita de este punto.`);
+    }
+    if (textoDeChapita(lectura.message) !== payloadDe(punto)) {
+      throw new Error(`La chapita no tiene el código de "${punto.nombre}": no se bloqueó. Vuelve a grabarla ("Reemplazar chapita") y después bloquéala.`);
+    }
+    pintar('Es la chapita correcta. Bloqueando… mantén el teléfono sobre ella.');
+    lector.onreading = null;
+    await lector.makeReadOnly({ signal });
+    control.abort();
+    pintar('Guardando…');
+    await api(`/api/admin/puntos/${punto.id}/chapita/bloqueo`, { metodo: 'PUT', cuerpo: { serie } });
+    grabacionNfc = null;
+    terminarCaja(`🔒 Chapita de "${punto.nombre}" bloqueada. Ya nadie la puede reescribir.`);
+    cargarPuntos();
+  } catch (err) {
+    if (grabacionNfc !== control) return;
+    control.abort();
+    grabacionNfc = null;
+    empezar.disabled = false;
+    empezar.textContent = 'Reintentar';
+    if (err && err.name === 'AbortError') { mostrar('Cancelado. La chapita no se bloqueó.'); return; }
+    mostrar(err instanceof DOMException ? textoErrorNfc(err) : err.message, 'error');
   }
 }
 
