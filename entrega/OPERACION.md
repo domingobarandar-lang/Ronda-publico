@@ -91,7 +91,7 @@ En la fila de un punto con chapita **no aparecen los botones de ubicación** (�
 
 ### 3. Cómo marca el guardia
 
-1. En la ronda toca **Escanear** (el mismo botón de siempre).
+1. En la ronda toca el botón de siempre: en una ronda que tiene puntos con chapita dice **«Escanear»**; en una ronda sin chapitas sigue diciendo **«📷 Escanear QR»**, como antes.
 2. Si el punto que toca es de chapita, en vez de la cámara aparece **«Acerca la parte trasera del teléfono a la chapita»**. Acerca el teléfono y lo deja quieto hasta que vibre: el punto queda ✅ con «📶 NFC». Si el punto es de QR, se abre solo la cámara. **Nunca se abren las dos cosas a la vez.**
    - En una ronda **con orden**, la app sabe cuál es el próximo punto y abre su medio directo.
    - En una ronda **sin orden** que mezcla puntos con QR y con chapita, la app no sabe frente a cuál está el guardia, así que pregunta **«¿Qué hay en este punto?»**: **📷 Un QR** o **📶 Una chapita**. Si la ronda es toda de chapitas o toda de QR, no pregunta.

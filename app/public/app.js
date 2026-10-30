@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.24.0';
+const VERSION_APP = 'v1.24.1';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -2594,6 +2594,11 @@ function renderRonda() {
   const hechos = ejecucion.escaneos.length;
   $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}`;
   $('ronda-progreso').textContent = `${hechos}/${ronda.puntos.length}`;
+  // En una ronda de puros QR todo queda como antes de las chapitas, también el
+  // botón: los guardias de un condominio sin chapitas no tienen por qué
+  // enterarse de que existen. "Escanear" a secas solo donde hay alguna.
+  const conChapitas = ronda.puntos.some(p => p.nfc);
+  $('btn-escanear').textContent = conChapitas ? 'Escanear' : '📷 Escanear QR';
   // Sin pisar lo que el guardia está escribiendo: renderRonda corre con cada marca.
   const comentario = $('ronda-comentario');
   if (document.activeElement !== comentario) comentario.value = ejecucion.comentario || '';
@@ -2602,9 +2607,8 @@ function renderRonda() {
   const lista = $('lista-puntos');
   lista.innerHTML = '';
   const marcados = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
-  // Con qué se marcó cada punto solo se muestra en una ronda con chapitas: en
-  // una ronda de puros QR la pantalla queda igual que antes de la v1.24.
-  const conChapitas = ronda.puntos.some(p => p.nfc);
+  // Con qué se marcó cada punto solo se muestra en una ronda con chapitas
+  // (conChapitas, arriba): en una ronda de puros QR la pantalla queda igual.
   ronda.puntos.forEach((p, i) => {
     // `marca`, no `esc`: esta variable se llamaba igual que el helper de
     // escapado y lo dejaba tapado justo donde hace falta.
@@ -2778,9 +2782,8 @@ function completarHtmlAnterior() {
           </div>
         </div>`);
     }
-    // v1.24: el botón ya no dice "QR" (abre la cámara o la chapita), y la
-    // pantalla de la chapita con la pregunta de la ronda mixta (CU-28).
-    if (escanear && /QR/.test(escanear.textContent)) escanear.textContent = 'Escanear';
+    // v1.24: la pantalla de la chapita y la pregunta de la ronda mixta
+    // (CU-28). El texto del botón lo pone renderRonda() según la ronda.
     if (!$('modal-nfc') && $('modal-manual')) $('modal-manual').insertAdjacentHTML('afterend', HTML_MODAL_NFC);
     const cancelar = $('btn-cancelar-escaner');
     if (cancelar && !$('escaner-texto')) {
