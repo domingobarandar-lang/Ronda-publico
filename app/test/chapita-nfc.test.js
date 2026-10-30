@@ -280,6 +280,29 @@ test('rondas guardadas antes de la v1.24 (sin medio) se informan igual que antes
   assert.doesNotMatch(informeTexto(inf), /📷|📶|⌨️/);
 });
 
+test('mover un punto con chapita a otro lugar de la ronda no obliga a regrabarla', async () => {
+  const admin = await login('marta', '1111');
+  const ronda = (await api('/api/admin/rondas', { token: admin })).datos.find(r => r.id === 'ronda-express');
+  // Piscina (con chapita) pasa del puesto 3 al 1, en una ronda con orden.
+  const orden = ['p-piscina', ...ronda.puntoIds.filter(id => id !== 'p-piscina')];
+  const cambio = await api('/api/admin/rondas/ronda-express', {
+    metodo: 'PUT', token: admin,
+    cuerpo: { nombre: ronda.nombre, puntoIds: orden, ordenEstricto: true, duracionMaxMin: ronda.duracionMaxMin }
+  });
+  assert.equal(cambio.status, 200);
+  const guardia = await login('pedro', '2222');
+  const express = (await paqueteDe(guardia)).rondas.find(r => r.id === 'ronda-express');
+  assert.deepEqual(express.puntos.map(p => p.id), orden, 'el guardia recibe el orden nuevo');
+  const piscina = express.puntos[0];
+  assert.equal(piscina.nfc, true);
+  const ej = await iniciar(guardia);
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE } })).status, 200, 'la misma chapita sigue valiendo');
+  await api('/api/admin/rondas/ronda-express', {
+    metodo: 'PUT', token: admin,
+    cuerpo: { nombre: ronda.nombre, puntoIds: ronda.puntoIds, ordenEstricto: ronda.ordenEstricto, duracionMaxMin: ronda.duracionMaxMin }
+  });
+});
+
 test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   const admin = await login('marta', '1111');
   const r = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'DELETE', token: admin });

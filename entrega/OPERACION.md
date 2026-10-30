@@ -51,7 +51,7 @@ Todo se hace en `https://<servidor>/panel` con su usuario y PIN. Es una app apar
   - **El teléfono del guardia mantiene la pantalla encendida durante la ronda** (Wake Lock): con la pantalla apagada el navegador mata el GPS y el guardia llega al punto sin ubicación. Si el teléfono no lo permite, la app lo dice en la línea de estado. Cuesta batería: en rondas largas conviene que el guardia salga con el teléfono cargado.
 - **Chapitas NFC** *(v1.24, CU-28)*: un punto puede marcarse con una chapita en vez de QR. Ver la guía completa más abajo, «Puntos con chapita NFC».
 - **Guardias**: crear usuario + PIN (4-8 dígitos). "Nuevo PIN" si se le olvidó. Eliminar corta el acceso de inmediato.
-- **Rondas**: armar la secuencia tocando los puntos en orden. "El orden importa" hace que marcar desordenado quede como observación. La duración máxima genera observación si se excede. Los guardias ven los cambios al tocar "Actualizar rondas".
+- **Rondas**: armar la secuencia tocando los puntos en orden; con las flechas **↑ ↓** un punto se cambia de lugar (v1.24). Mover un punto no toca su QR ni su chapita: no hay que reimprimir ni regrabar nada. "El orden importa" hace que marcar desordenado quede como observación. La duración máxima genera observación si se excede. Los guardias ven los cambios al tocar "Actualizar rondas".
 - **Avisos**: historial de notificaciones enviadas.
 
 ## Puntos con chapita NFC *(v1.24, CU-28)*

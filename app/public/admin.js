@@ -739,6 +739,18 @@ async function cargarRondas() {
 
 // Los puntos se escriben a mano: el atajo de "puntos ya creados" solo aparece
 // cuando queda alguno del condominio fuera de la secuencia.
+// Cambia de lugar el punto `i` de la secuencia: delta -1 lo sube, +1 lo baja.
+// Fuera de los bordes no hace nada. Puro: devuelve la secuencia nueva.
+// Mover un punto no toca su QR ni su chapita: están amarrados al punto, no a
+// su posición en la ronda.
+function moverEnSecuencia(lista, i, delta) {
+  const j = i + delta;
+  if (i < 0 || i >= lista.length || j < 0 || j >= lista.length) return lista;
+  const nueva = [...lista];
+  [nueva[i], nueva[j]] = [nueva[j], nueva[i]];
+  return nueva;
+}
+
 function pintarEditorRonda() {
   const disponibles = $('puntos-disponibles');
   const restantes = puntosCache.filter(p => !secuencia.includes(p.id));
@@ -757,7 +769,13 @@ function pintarEditorRonda() {
   secuencia.forEach((pid, i) => {
     const p = puntosCache.find(x => x.id === pid);
     const li = document.createElement('li');
-    li.innerHTML = `${esc(p ? p.nombre : pid)} <button type="button" class="quitar" title="Quitar">✕</button>`;
+    li.innerHTML = `${esc(p ? p.nombre : pid)}
+      <button type="button" class="mover" data-delta="-1" title="Subir" aria-label="Subir ${esc(p ? p.nombre : '')}"${i === 0 ? ' disabled' : ''}>↑</button>
+      <button type="button" class="mover" data-delta="1" title="Bajar" aria-label="Bajar ${esc(p ? p.nombre : '')}"${i === secuencia.length - 1 ? ' disabled' : ''}>↓</button>
+      <button type="button" class="quitar" title="Quitar">✕</button>`;
+    for (const btn of li.querySelectorAll('.mover')) {
+      btn.addEventListener('click', () => { secuencia = moverEnSecuencia(secuencia, i, Number(btn.dataset.delta)); pintarEditorRonda(); });
+    }
     li.querySelector('.quitar').addEventListener('click', () => { secuencia.splice(i, 1); pintarEditorRonda(); });
     ol.appendChild(li);
   });

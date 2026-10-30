@@ -258,6 +258,17 @@ td { font-variant-numeric: tabular-nums; }
 #secuencia { padding-left: 22px; }
 #secuencia li { margin: 6px 0; font-size: var(--texto-m); }
 #secuencia .vacio { list-style: none; margin-left: -22px; }
+.mover {
+  border: 1px solid var(--borde);
+  background: none;
+  color: var(--texto);
+  border-radius: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: var(--texto-s);
+}
+.mover:disabled { opacity: 0.3; cursor: default; }
 .quitar {
   border: none;
   background: none;
