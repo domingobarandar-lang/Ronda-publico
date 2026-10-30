@@ -79,6 +79,12 @@ test('la app arranca igual que la v1.22', () => {
   assert.equal(hoy.app.errorArranque, null);
 });
 
+test('el botón de escanear de la página es el mismo de la v1.22', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  assert.match(html, /<button id="btn-escanear" class="btn btn-principal btn-gigante">📷 Escanear QR<\/button>/);
+  assert.ok(hoy.app.pasos.some(p => p.boton === '📷 Escanear QR'), 'renderRonda no puso el texto del botón');
+});
+
 test('API: cada respuesta es la misma que en la v1.22 (salvo los campos nuevos, neutros)', () => {
   const nuevos = [];
   const pasos = sinCamposNuevos(hoy.servidor.pasos, 'pasos', nuevos);
@@ -122,6 +128,11 @@ test('app del guardia: mismos avisos, misma cola, misma pantalla, misma cámara'
     assert.equal(p.marcaTitulo, antes.marcaTitulo, `"${p.paso}": cambió el panel de la marca`);
     assert.equal(p.marcaDetalle, antes.marcaDetalle, `"${p.paso}": cambió el panel de la marca`);
     assert.equal(p.camaras, antes.camaras, `"${p.paso}": "Escanear" no abrió la cámara como antes`);
+    // El navegador de mentira no carga index.html: en la v1.22 el botón
+    // conservaba su texto de la página ("📷 Escanear QR", que la referencia ve
+    // vacío). Desde la v1.24.1 lo pone renderRonda(), y en una ronda de puros
+    // QR tiene que ser ese mismo texto.
+    assert.ok(p.boton === antes.boton || p.boton === '📷 Escanear QR', `"${p.paso}": el botón dice "${p.boton}"`);
     assert.equal(p.escaner, antes.escaner);
     assert.equal(p.progreso, antes.progreso);
     assert.equal(p.cerrada, antes.cerrada);

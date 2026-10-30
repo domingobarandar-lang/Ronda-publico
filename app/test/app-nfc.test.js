@@ -96,6 +96,23 @@ function lectura(texto, serie = '04:a2:3b:4c:5d:6e:80') {
   return { serialNumber: serie, message: { records: [{ recordType: 'text', encoding: 'utf-8', data: new DataView(bytes.buffer) }] } };
 }
 
+test('el botón dice "📷 Escanear QR" en una ronda sin chapitas, y "Escanear" donde hay alguna', () => {
+  const app = cargarApp();
+  conRonda(app, { puntos: [P_QR] });
+  app.correr('renderRonda()');
+  assert.equal(app.elementos.get('btn-escanear').textContent, '📷 Escanear QR', 'un condominio sin chapitas ve el botón de siempre');
+  conRonda(app, { puntos: [P_QR, P_NFC] });
+  app.correr('renderRonda()');
+  assert.equal(app.elementos.get('btn-escanear').textContent, 'Escanear');
+  conRonda(app, { puntos: [P_NFC] });
+  app.correr('renderRonda()');
+  assert.equal(app.elementos.get('btn-escanear').textContent, 'Escanear');
+  // Una ronda de un paquete viejo (sin el campo nfc) es de puros QR.
+  conRonda(app, { puntos: [{ ...P_QR, nfc: undefined }] });
+  app.correr('renderRonda()');
+  assert.equal(app.elementos.get('btn-escanear').textContent, '📷 Escanear QR');
+});
+
 test('medioEscaner: qué abre "Escanear" según los puntos que faltan', () => {
   const app = cargarApp();
   const medio = (puntos, ordenEstricto, marcados = []) => app.correr(

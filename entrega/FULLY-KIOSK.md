@@ -109,12 +109,12 @@ Para hacerlo:
 ## 6. Prueba de 5 minutos en cada teléfono Fully (antes de dar por buena la versión)
 
 1. Abrir la app e iniciar sesión. A cielo abierto, la línea de GPS de la pantalla de inicio pasa a "Señal lista" en menos de un minuto.
-2. Iniciar una ronda de prueba, abrir **Escanear** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
-3. Con la ronda de prueba, tocar **Escanear**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
+2. Iniciar una ronda de prueba, abrir **📷 Escanear QR** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
+3. Con la ronda de prueba, tocar **📷 Escanear QR**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
-7. En el panel → Guardias, la versión de ese teléfono dice **v1.24.0** y "al día".
+7. En el panel → Guardias, la versión de ese teléfono dice **v1.24.1** y "al día".
 8. **Alarma de ronda** (solo en el teléfono que la tiene que recibir), con la ronda de prueba ya terminada: bajo el botón de la alarma **no** debe decir «falta activar su interfaz JavaScript». Tocar **Activar alarma de ronda en este teléfono**; en el panel → Avisos aparece ese teléfono como «conectado». Tocar **Hacerla sonar ahora** en el panel: en menos de un minuto el teléfono pita, vibra, muestra la notificación y el aviso con **Entendido**, que corta el sonido. Repetirlo con el protector de pantalla puesto: tiene que salir del protector y sonar.
 
 ## Fuentes
