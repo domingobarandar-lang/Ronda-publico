@@ -327,15 +327,15 @@ test('QR retenido: reintentar pasa por el mismo control que escanear', () => {
   // La garantía del cambio: no hay camino nuevo hacia registrarMarca(). El
   // reintento vuelve a entrar por procesarCodigo(), con su verificación.
   const cuerpo = extraer('reintentarRetenida');
-  assert.match(cuerpo, /procesarCodigo\(retenida\.codigo, retenida\.desde\)/);
+  assert.match(cuerpo, /procesarCodigo\(retenida\.codigo, retenida\.desde, retenida\.nfc \|\| null\)/);
   assert.ok(!/registrarMarca/.test(cuerpo), 'el reintento registra la marca sin verificar');
 });
 
 test('QR retenido: el plazo se cuenta desde la LECTURA y no se renueva al reintentar', () => {
   // Si cada Reintentar fallido lo renovara, el plazo anunciado no existiría y la
   // lectura del QR y la marca podrían quedar separadas por media ronda.
-  assert.match(extraer('procesarCodigo'), /dejarPendiente\(punto, limpio, presencia, leidoMs\)/);
-  assert.match(extraer('revisarPendiente'), /pendiente\.codigo, pendiente\.leidoMs\)/);
+  assert.match(extraer('procesarCodigo'), /dejarPendiente\(punto, limpio, presencia, leidoMs, nfc\)/);
+  assert.match(extraer('revisarPendiente'), /pendiente\.codigo, pendiente\.leidoMs, pendiente\.nfc\)/);
   assert.match(extraer('rechazarMarca'), /desde: leidoMs != null \? leidoMs : Date\.now\(\)/);
 });
 

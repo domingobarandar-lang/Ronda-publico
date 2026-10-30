@@ -85,15 +85,36 @@ Lo que se descartó: que el servidor le mande la orden a Fully por su **API REST
 - **Linterna en el lector de la app:** aparece si la cámara que el teléfono eligió declara flash (mismo código que Chrome). Comprobarlo en cada modelo con la prueba de abajo.
 - Fully trae su **propio lector de QR** (`fully.scanQrCode`, con opción de linterna; requiere "Enable JavaScript Interface" y "Enable QR Code Scanner", PLUS) ✅. La app no lo usa.
 
+## 5b. Chapitas NFC en Fully — PENDIENTE (v1.24)
+
+La app lee las chapitas NFC con **Web NFC** (`NDEFReader`), que existe solo en Chrome de Android. El WebView de Fully no lo tiene. Fully trae su propio lector NFC en la interfaz JavaScript (`fully.nfcScanStart` y los eventos `onNdefDiscovered` / `onNfcTagDiscovered`, según su documentación), pero **no se pudo verificar** cómo entrega el texto y el número de serie del tag (el sitio de Fully estaba bloqueado desde la sesión de desarrollo). Sin la serie, la marca no valdría en un punto con chapita (ver CU-28).
+
+Mientras tanto, en Fully la app detecta el entorno y en un punto con chapita dice **«Este teléfono todavía no lee chapitas NFC»**. Desde que el código a mano no sirve en los puntos con chapita, **un teléfono con Fully no puede marcar puntos NFC**: el guardia solo puede avisar «La chapita no lee». Para condominios con chapitas, ver las alternativas de abajo.
+
+### Alternativas a Fully que sí leen chapitas
+
+Web NFC solo existe en **Chrome** de Android. Cualquier modo kiosco que muestre la app dentro de Chrome (no dentro de un WebView propio, como Fully) puede leer chapitas. De más simple a más completo:
+
+1. **Fijar la app (función de Android, gratis).** Instalar la app del guardia desde Chrome («Agregar a pantalla de inicio» → queda instalada como app), activar en Ajustes → Seguridad → «Fijar aplicaciones» (el nombre cambia según la marca) con «Pedir PIN para desfijar», y fijarla. El guardia no puede salir sin el PIN del teléfono. No enciende la pantalla sola ni se recupera si alguien la desfija con el PIN; la alarma de ronda llega por Web Push, como en cualquier Chrome.
+2. **Un MDM con modo kiosco de Android Enterprise** («dispositivo dedicado» / *lock task mode*): Google Android Management API, o productos como Scalefusion, Hexnode, ManageEngine, 42Gears SureLock, Esper. El teléfono queda inscrito como dispositivo de la empresa (se resetea de fábrica para inscribirlo) y solo puede abrir las apps permitidas: Chrome con la app del guardia instalada. Se administra a distancia (forzar NFC encendido, actualizaciones, pantalla). Cobran por equipo al mes.
+3. **Envolver la app como app de Android (Trusted Web Activity)** y publicarla en Google Play o instalarla por MDM. Por dentro sigue siendo Chrome, así que Web NFC funciona, y se combina con (1) o (2).
+
+**Antes de elegir, probar en el teléfono real** que la chapita se lee con la app instalada y fijada: lo que se sabe (Web NFC es de Chrome; la app instalada y las TWA corren en Chrome) indica que funciona, pero no se pudo comprobar desde la sesión de desarrollo. La prueba está en `entrega/PRUEBAS-NFC.md`.
+
+Para hacerlo:
+1. Confirmar en la documentación de la interfaz JavaScript de Fully los nombres exactos (`nfcScanStart`/`nfcScanStop`, cómo se registra el evento con `fully.bind`) y qué datos trae cada evento: el texto NDEF y el UID del tag, y en qué formato.
+2. Probar en un teléfono con Fully PLUS y NFC qué llega al acercar una chapita grabada por el panel.
+3. En `app.js`, una segunda fuente de lecturas que llame a `chapitaLeida()` con el mismo `{ message, serialNumber }`; `sinLectorNfc()` deja de devolver el aviso cuando `fully.nfcScanStart` exista.
+
 ## 6. Prueba de 5 minutos en cada teléfono Fully (antes de dar por buena la versión)
 
 1. Abrir la app e iniciar sesión. A cielo abierto, la línea de GPS de la pantalla de inicio pasa a "Señal lista" en menos de un minuto.
-2. Iniciar una ronda de prueba, abrir **Escanear QR** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
-3. Con la ronda de prueba, tocar **Escanear QR**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
+2. Iniciar una ronda de prueba, abrir **Escanear** y dejar el teléfono **quieto un minuto bajo techo** con el lector abierto (es cuando la app vuelve a pedir la ubicación si el GPS se calla): no debe aparecer ningún diálogo de ubicación, y al cerrar el lector la línea de GPS no debe decir "falta el permiso de ubicación".
+3. Con la ronda de prueba, tocar **Escanear**: la cámara abre. Si el teléfono tiene flash, aparece **Encender luz** y enciende.
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
-7. En el panel → Guardias, la versión de ese teléfono dice **v1.22.0** y "al día".
+7. En el panel → Guardias, la versión de ese teléfono dice **v1.24.0** y "al día".
 8. **Alarma de ronda** (solo en el teléfono que la tiene que recibir), con la ronda de prueba ya terminada: bajo el botón de la alarma **no** debe decir «falta activar su interfaz JavaScript». Tocar **Activar alarma de ronda en este teléfono**; en el panel → Avisos aparece ese teléfono como «conectado». Tocar **Hacerla sonar ahora** en el panel: en menos de un minuto el teléfono pita, vibra, muestra la notificación y el aviso con **Entendido**, que corta el sonido. Repetirlo con el protector de pantalla puesto: tiene que salir del protector y sonar.
 
 ## Fuentes

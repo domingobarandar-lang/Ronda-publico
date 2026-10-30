@@ -20,6 +20,12 @@ function armarInforme(db, ejecucion) {
   const escaneosPorPunto = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
 
   const lejosIds = new Set(((ejecucion.evaluacion || {}).gpsLejos || []).map(l => l.puntoId));
+  // Con qué se marcó cada punto (CU-28) solo se muestra cuando la ronda tiene
+  // que ver con chapitas: un punto de la ronda la tiene, o alguna marca se hizo
+  // con una (el punto pudo volver a QR después). En un condominio de puros QR,
+  // el informe y el aviso quedan iguales que antes de la v1.24.
+  const conChapitas = (ronda.puntoIds || []).some(pid => (db.puntos.find(p => p.id === pid) || {}).nfcSerie)
+    || ejecucion.escaneos.some(e => e.medio === 'nfc' || e.puntoNfc);
   const detalle = (ronda.puntoIds || []).map((pid, i) => {
     const punto = db.puntos.find(p => p.id === pid) || { id: pid, nombre: '(punto eliminado)' };
     const esc = escaneosPorPunto.get(pid);
@@ -36,6 +42,8 @@ function armarInforme(db, ejecucion) {
       // verificación es "pasó por la entrada", no "estuvo en el punto".
       anclado: Boolean(esc && esc.anclado),
       edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
+      // Las marcas de antes de la v1.24 no lo guardaban: quedan sin etiqueta.
+      medio: conChapitas && esc ? esc.medio || null : null,
       lejos: lejosIds.has(pid),
       faltante: !esc
     };
@@ -64,6 +72,9 @@ function hora(ts) {
   });
 }
 
+// Cómo se ve el medio de una marca en el informe, el aviso y el panel.
+const MEDIOS = { nfc: '📶 NFC', qr: '📷 QR', manual: '⌨️ a mano' };
+
 function informeTexto(inf) {
   const lineas = [];
   lineas.push(`🛡️ Ronda "${inf.ronda}" — ${inf.condominio}`);
@@ -78,6 +89,7 @@ function informeTexto(inf) {
       continue;
     }
     const marcas = [];
+    if (MEDIOS[d.medio]) marcas.push(MEDIOS[d.medio]);
     if (d.offline) marcas.push('(offline)');
     if (d.lejos) marcas.push(`⚠️ a ${d.distanciaM} m ${d.anclado ? 'de la entrada' : 'del punto'}`);
     else if (d.anclado) marcas.push('📍 por entrada');
@@ -95,4 +107,4 @@ function informeTexto(inf) {
   return lineas.join('\n');
 }
 
-module.exports = { armarInforme, informeTexto, ETIQUETAS, hora };
+module.exports = { armarInforme, informeTexto, ETIQUETAS, MEDIOS, hora };

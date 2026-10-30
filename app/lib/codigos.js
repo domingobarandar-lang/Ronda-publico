@@ -34,4 +34,22 @@ function interpretarCodigo(texto) {
   return null;
 }
 
-module.exports = { ALFABETO, codigoCorto, id, payloadQR, interpretarCodigo };
+// Número de serie de fábrica de una chapita NFC (el UID del tag). Web NFC lo
+// entrega como bytes en hexadecimal separados por ":" ("04:a2:3b:…"); acá se
+// guarda en mayúsculas y sin separadores, para comparar sin depender de cómo lo
+// escribió cada navegador. Un NTAG213 tiene 7 bytes (14 caracteres); se acepta
+// de 4 a 10 bytes, que es lo que existe en tags NFC. null = no es una serie.
+function normalizarSerie(texto) {
+  const limpio = String(texto == null ? '' : texto).replace(/[\s:-]/g, '').toUpperCase();
+  return /^[0-9A-F]{8,20}$/.test(limpio) && limpio.length % 2 === 0 ? limpio : null;
+}
+
+// Huella de la serie (SHA-256 en hexadecimal) para el paquete del guardia: con
+// ella la app valida la chapita sin señal y la serie no queda guardada en el
+// teléfono. Ojo: es una traba, no un secreto — una serie tiene pocos bits y
+// quien quiera puede leerla igual de la chapita con cualquier teléfono.
+function huellaSerie(serie) {
+  return serie ? crypto.createHash('sha256').update(String(serie)).digest('hex') : null;
+}
+
+module.exports = { ALFABETO, codigoCorto, id, payloadQR, interpretarCodigo, normalizarSerie, huellaSerie };

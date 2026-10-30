@@ -30,7 +30,16 @@
       if (!resp.ok) { document.getElementById('grilla').innerHTML = '<p class="nota">No se pudo cargar (¿sesión caducada?). Vuelve al panel.</p>'; return; }
       const datos = await resp.json();
       document.getElementById('titulo').textContent = 'Puntos de control — ' + datos.condominio;
-      document.getElementById('grilla').innerHTML = datos.puntos.map(p => `
+      // Los puntos con chapita NFC no llevan QR: salen marcados, sin código,
+      // para que la hoja siga mostrando todos los puntos del condominio. El
+      // código a mano tampoco se imprime: es el respaldo del administrador
+      // si la chapita se rompe, y pegado junto a ella se marcaría sin acercarse.
+      document.getElementById('grilla').innerHTML = datos.puntos.map(p => p.nfc ? `
+        <div class="tarjeta-qr tarjeta-nfc">
+          <div class="chapita-nfc">📶</div>
+          <div class="nombre">${p.nombre.replace(/</g, '&lt;')}</div>
+          <div class="nota">${p.pendiente ? 'Chapita NFC por grabar' : 'Chapita NFC'} — no lleva QR</div>
+        </div>` : `
         <div class="tarjeta-qr">
           <img src="${p.dataUrl}" alt="QR ${p.nombre}">
           <div class="nombre">${p.nombre.replace(/</g, '&lt;')}</div>

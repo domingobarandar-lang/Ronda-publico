@@ -258,6 +258,17 @@ td { font-variant-numeric: tabular-nums; }
 #secuencia { padding-left: 22px; }
 #secuencia li { margin: 6px 0; font-size: var(--texto-m); }
 #secuencia .vacio { list-style: none; margin-left: -22px; }
+.mover {
+  border: 1px solid var(--borde);
+  background: none;
+  color: var(--texto);
+  border-radius: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: var(--texto-s);
+}
+.mover:disabled { opacity: 0.3; cursor: default; }
 .quitar {
   border: none;
   background: none;
@@ -352,6 +363,7 @@ td { font-variant-numeric: tabular-nums; }
 }
 .tarjeta-qr img { width: 100%; max-width: 260px; }
 .tarjeta-qr .nombre { font-size: 20px; font-weight: 800; margin-top: var(--esp-2); }
+.tarjeta-qr .chapita-nfc { font-size: 96px; line-height: 1.4; }
 .tarjeta-qr .codigo { font-size: 16px; letter-spacing: 3px; color: var(--texto-suave); margin-top: var(--esp-1); }
 
 @media print {

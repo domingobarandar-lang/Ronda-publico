@@ -7,7 +7,7 @@
   <!-- Versión del shell: app.js la compara con la suya para detectar que el
        service worker sirvió una página de otra versión (ver shellMixto). Sube
        en cada release junto con package.json, sw.js y VERSION_APP. -->
-  <meta name="version-app" content="v1.22.0">
+  <meta name="version-app" content="v1.24.0">
   <title>Rondas QR</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
@@ -149,7 +149,7 @@
             <button id="btn-reintentar-marca" class="btn btn-principal">Reintentar</button>
           </div>
         </div>
-        <button id="btn-escanear" class="btn btn-principal btn-gigante">📷 Escanear QR</button>
+        <button id="btn-escanear" class="btn btn-principal btn-gigante">Escanear</button>
         <button id="btn-manual" class="btn btn-borde">⌨️ Ingresar código a mano</button>
         <label>Comentario (opcional)
           <textarea id="ronda-comentario" rows="2" maxlength="280" placeholder="Luminaria apagada en el estacionamiento"></textarea>
@@ -186,6 +186,43 @@
         <button id="btn-escaner-manual" class="btn btn-borde oculta">⌨️ Código a mano</button>
       </div>
       <button id="btn-cancelar-escaner" class="btn btn-borde">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Chapita NFC (CU-28): en un punto con chapita "Escanear" abre esto en vez
+       de la cámara. El lector arranca con ese toque y se detiene al cerrar. La
+       misma pantalla está en HTML_MODAL_NFC de app.js, para la página de una
+       versión anterior. -->
+  <div id="modal-nfc" class="modal modal-centrado oculta">
+    <div class="dialogo dialogo-nfc">
+      <svg class="dibujo-nfc" viewBox="0 0 160 120" aria-hidden="true">
+        <rect x="58" y="6" width="58" height="104" rx="9" fill="none" stroke="currentColor" stroke-width="5"/>
+        <circle cx="87" cy="20" r="4" fill="currentColor"/>
+        <path d="M44 40a26 26 0 0 0 0 40M34 32a38 38 0 0 0 0 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        <rect x="4" y="44" width="30" height="30" rx="7" fill="currentColor" opacity=".85"/>
+      </svg>
+      <h2>Acerca la parte trasera del teléfono a la chapita</h2>
+      <p id="nfc-texto" class="nota centrado" role="status"></p>
+      <button id="btn-reintentar-nfc" class="btn btn-principal oculta">Reintentar</button>
+      <div id="nfc-reporte" class="oculta"></div>
+      <div class="botonera-fila">
+        <button id="btn-cancelar-nfc" class="btn btn-borde">Cancelar</button>
+        <button id="btn-nfc-reportar" class="btn btn-borde">⚠️ La chapita no lee</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ronda con puntos de QR y de chapita, sin orden: la app no sabe frente a
+       cuál está el guardia, así que pregunta. Abre solo la cámara o solo el
+       lector de la chapita, nunca los dos. -->
+  <div id="modal-medio" class="modal modal-centrado oculta">
+    <div class="dialogo dialogo-nfc">
+      <h2>¿Qué hay en este punto?</h2>
+      <div class="botonera-fila">
+        <button id="btn-medio-qr" class="btn btn-principal">📷 Un QR</button>
+        <button id="btn-medio-nfc" class="btn btn-principal">📶 Una chapita</button>
+      </div>
+      <button id="btn-cancelar-medio" class="btn btn-borde">Cancelar</button>
     </div>
   </div>
 

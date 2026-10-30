@@ -10,7 +10,7 @@
   /* Versión de estos estilos. app.js la compara con la suya para detectar un
      estilos.css de otra versión servido por el service worker (shellMixto).
      Sube en cada release junto con package.json, sw.js, VERSION_APP e index.html. */
-  --version-app: "v1.22.0";
+  --version-app: "v1.24.0";
 
   /* Marca (violeta) */
   --marca: #a855f7;
@@ -381,6 +381,10 @@ a.btn { display: block; text-align: center; text-decoration: none; }
   padding: var(--esp-5);
   width: min(90vw, 380px);
 }
+.dialogo-nfc { text-align: center; }
+.dialogo-nfc h2 { margin: 8px 0; }
+.dibujo-nfc { width: 160px; height: 120px; color: var(--marca); }
+.dialogo-nfc .error, .escaner-pie .error { color: var(--peligro); }
 .dialogo input { text-transform: uppercase; letter-spacing: 3px; text-align: center; }
 
 /* Aviso flotante */

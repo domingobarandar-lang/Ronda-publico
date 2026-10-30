@@ -78,7 +78,7 @@
 
       <div id="tab-puntos" class="tab oculta">
         <h2>Puntos de control</h2>
-        <p class="nota">Un punto = un QR pegado en un sector. <a href="hoja-qr.html" target="_blank">🖨️ Imprimir hoja de QR</a></p>
+        <p class="nota">Un punto = un QR pegado en un sector, o una chapita NFC instalada. <a href="hoja-qr.html" target="_blank">🖨️ Imprimir hoja de QR</a></p>
         <div class="caja">
           <strong>Verificación de presencia</strong> — que el guardia no pueda marcar sin estar ahí. Se fija <em>desde un teléfono, caminando la ronda</em>:
           <br>📍 <strong>Fijar aquí</strong>: para puntos al aire libre. El guardia solo marca estando a menos de 20 m.
@@ -87,8 +87,16 @@
         </div>
         <form id="form-punto" class="fila-form">
           <input id="punto-nombre" placeholder="Nombre del punto (ej: Piscina)" required>
+          <!-- CU-28: un punto con chapita nace pendiente y se marca con QR
+               hasta que le graben la chapita en terreno. -->
+          <select id="punto-medio" aria-label="Cómo se marca el punto">
+            <option value="qr">📷 con QR</option>
+            <option value="nfc">📶 con chapita NFC</option>
+          </select>
           <button class="btn btn-principal">Agregar punto</button>
         </form>
+        <!-- Grabación de una chapita: aparece al tocar "📶 Grabar chapita". -->
+        <div id="caja-chapita" class="caja oculta" role="status"></div>
         <div id="tabla-puntos"></div>
       </div>
 
@@ -143,6 +151,7 @@
               <p class="nota">
                 Cada nombre que escribas se crea como punto de control con su propio QR y se
                 suma al final de la secuencia. Si el nombre ya existe, se reutiliza ese punto.
+                Con las flechas ↑ ↓ de la secuencia lo cambias de lugar.
               </p>
               <div id="puntos-ya-creados" class="oculta">
                 <h3>Puntos ya creados <span class="nota">(toca para sumarlos)</span></h3>

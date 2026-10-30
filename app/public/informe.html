@@ -12,6 +12,8 @@
     <p class="nota">Cargando informe…</p>
   </div>
   <script>
+    // Con qué se hizo cada marca (CU-28). Mismo texto que lib/informes.js.
+    const MEDIOS = { nfc: '📶 NFC', qr: '📷 QR', manual: '⌨️ a mano' };
     const CHIPS = {
       completa: '<span class="chip chip-verde">Completa</span>',
       completa_obs: '<span class="chip chip-ambar">Completa con observaciones</span>',
@@ -71,7 +73,7 @@
             <div style="width:26px; text-align:right; color:var(--texto-suave)">${d.orden}.</div>
             <div style="flex:1">${esc(d.nombre)}${d.lejos ? ` <span class="faltante">⚠️ a ${d.distanciaM} m del punto</span>` : ''}</div>
             <div>
-              ${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (d.offline ? ' <span class="nota">(offline)</span>' : '')}
+              ${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (MEDIOS[d.medio] ? ` <span class="nota">${MEDIOS[d.medio]}</span>` : '') + (d.offline ? ' <span class="nota">(offline)</span>' : '')}
               ${d.gps ? ` <a class="nota" href="https://maps.google.com/?q=${d.gps.lat},${d.gps.lon}" target="_blank" title="Dónde se hizo la marca">🗺️</a>` : ''}
             </div>
           </div>`).join('')}

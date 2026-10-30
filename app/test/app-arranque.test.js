@@ -202,6 +202,12 @@ test('CRÍTICO la app arranca sobre la página de v1.20.2 y la deja con la estru
   junto('marca-estado', 'btn-escanear');
   junto('btn-linterna', 'btn-cancelar-escaner');
   junto('btn-escaner-manual', 'btn-cancelar-escaner');
+  // v1.24 (CU-28): la pantalla de la chapita y la pregunta de la ronda mixta.
+  // Sin ellas el arranque revienta al cablear sus botones.
+  for (const id of ['modal-nfc', 'nfc-texto', 'btn-reintentar-nfc', 'nfc-reporte', 'btn-cancelar-nfc', 'btn-nfc-reportar',
+    'modal-medio', 'btn-medio-qr', 'btn-medio-nfc', 'btn-cancelar-medio']) {
+    assert.ok(dom.porId.has(id), `no se completó ${id}`);
+  }
   assert.equal(enApp('shellMixto()'), true, 'la app no sabe que tiene que recargarse');
 });
 
@@ -217,6 +223,15 @@ test('estilos de otra versión se detectan por su marca aunque la página sea nu
   for (const regla of ['.escaner-visor{', '.escaner-visor>#video{position:absolute', '.escaner-pie{position:relative;z-index:1']) {
     assert.ok(minimos.includes(regla), `las reglas mínimas no traen ${regla}`);
   }
+});
+
+test('si las pantallas de la chapita no se pudieran agregar, la app arranca igual', async () => {
+  // Sin el modal del código a mano no hay dónde colgarlas: los botones nuevos
+  // quedan sin cablear, pero un condominio de QR tiene que seguir andando.
+  const sinAncla = htmlV1202.replace(/id="modal-manual"/, 'id="modal-manual-x"');
+  const { ventana, dom } = await arrancar(sinAncla, estilosV1202);
+  assert.equal(ventana.__appLista, true, 'la app no arrancó: un botón de la chapita la tumbó');
+  assert.ok(!dom.porId.has('modal-nfc'));
 });
 
 test('con la página de v1.20.2 el lector abre y cierra sin reventar', async () => {
