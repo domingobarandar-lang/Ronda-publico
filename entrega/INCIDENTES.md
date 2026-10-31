@@ -139,10 +139,10 @@ En la misma investigación salieron tres fallos:
 | 2 | Una ronda con todos los puntos marcados se cierra a los 15 min de la última marca (`RONDA_COMPLETA_CIERRE_MIN`), con el motivo real | Código | En curso, v1.25 |
 | 3 | Los avisos se formatean en hora de Chile | Código | En curso, v1.25 |
 | 4 | Correr `npm test` también con `TZ=UTC`, como Railway, para que un error de zona horaria falle en el computador | Detección | Pendiente |
-| 5 | Señales de salud del producto en `/fabrica`: rondas cerradas automáticamente, vueltas a entrar a mitad de ronda, alarmas no mandadas | Detección | En curso, rama aparte |
+| 5 | Señales de salud del producto en `/fabrica`: rondas cerradas automáticamente, vueltas a entrar a mitad de ronda, alarmas no mandadas | Detección | En revisión, v1.26.0 |
 | 6 | Agregar a la prueba de terreno el turno del teléfono compartido: un guardia entra una vez y hace dos rondas seguidas que pasen la 1:30 h | Proceso | Pendiente |
 | 7 | Confirmar con el guardia de la garita por qué no tocaba «Terminar» (acción B4) | Producto | Pendiente |
-| 8 | Decidir si la alarma debe callar mientras hay una ronda en curso (patrón repetido) | Producto | Pendiente |
+| 8 | Decidir si la alarma debe callar mientras hay una ronda en curso (patrón repetido) | Producto | Pendiente (desde la v1.26, `/fabrica` cuenta cuántas alarmas se callaron) |
 | 9 | Avisar al administrador del condominio qué pasó y qué cambió | Comunicación | *Por completar* |
 
 ## Plantilla

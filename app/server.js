@@ -18,6 +18,7 @@ const { registrarAviso } = require('./lib/notificar');
 const { esFecha, sumarDias, inicioDiaChile } = require('./lib/fechas-chile');
 const { crearPush } = require('./lib/push');
 const recordatorios = require('./lib/recordatorios');
+const salud = require('./lib/salud');
 const { crearAlarmaKiosco } = require('./lib/alarma-kiosco');
 const cuenta = require('./lib/cuenta');
 const errores = require('./lib/errores');
@@ -203,6 +204,10 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     intentos.delete(clave);
     const token = crearSesion(db, u);
     store.guardar();
+    // Un guardia que entra con una ronda en curso tuvo que volver a iniciar
+    // sesión a mitad de recorrido. No es un error (no llega a Sentry), pero se
+    // mide en /fabrica (lib/salud.js). Nunca lanza.
+    salud.anotarReingreso(store, u);
     const condominio = db.condominios.find(c => c.id === u.condominioId) || {};
     res.json({
       token,
@@ -1311,7 +1316,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
         puntos: cuenta(db.puntos, c.id),
         rondas: cuenta(db.rondas, c.id),
         // Para ver de un vistazo si el condominio está andando o quedó a medias.
-        ultimaRonda: (store.ejecuciones.ultimaDe(c.id) || {}).inicio || null
+        ultimaRonda: (store.ejecuciones.ultimaDe(c.id) || {}).inicio || null,
+        // Lo que falla sin ser un error, en los últimos 7 días (lib/salud.js).
+        salud: salud.resumen(store, c.id)
       }))
     });
   });
