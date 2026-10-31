@@ -543,7 +543,8 @@ function evaluarPendiente(pendiente, fixNuevo, ahora) {
 // cierre, `ejecucion` queda en null y ese es el estado que se respalda.
 
 function estadoVacio() {
-  return { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null };
+  // apartados / duenos: el teléfono compartido (ver cambiarDeGuardia).
+  return { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null, apartados: [], duenos: {} };
 }
 
 function cargarEstado() {
@@ -725,6 +726,90 @@ function pintarConexion() {
 
 // ---------- Sesión ----------
 
+// ---------- Teléfono compartido (v1.25) ----------
+// En una garita varios guardias usan el mismo teléfono. Si la sesión de uno se
+// corta con la ronda a medias o con datos sin enviar y entra otro, lo pendiente
+// sigue siendo del primero: el servidor solo acepta los datos de una ronda con
+// la sesión de su dueño ("Esta ronda no te pertenece"). Hasta la v1.24 la app
+// los mandaba igual con la sesión del que entró, el servidor contestaba 403 y
+// la cola los descartaba; así se perdió el cierre de una ronda completa, y el
+// que entraba se encontraba con la ronda del otro en pantalla.
+//
+// Ahora la ronda anota su dueño al iniciarse (estado.duenos) y, cuando entra
+// otro guardia, lo del anterior queda APARTADO con su nombre: no se manda ni se
+// muestra. Vuelve a la cola cuando ese guardia entra de nuevo en este teléfono.
+// Lo apartado se guarda un día; para entonces el servidor ya cerró esa ronda
+// por abandonada con lo que alcanzó a llegarle.
+const APARTADOS_MAX_MS = 24 * 3600 * 1000;
+
+function anotarDueno(ejecucionId) {
+  if (!estado.sesion) return;
+  podarDuenos();
+  estado.duenos[ejecucionId] = { usuario: estado.sesion.usuario, nombre: estado.sesion.nombre };
+}
+
+// Deja solo los dueños de lo que todavía está en el teléfono.
+function podarDuenos() {
+  const vivos = new Set(estado.cola.map(e => e.ejecucionId));
+  if (estado.ejecucion) vivos.add(estado.ejecucion.id);
+  if (estado.ultimoInforme) vivos.add(estado.ultimoInforme.id);
+  for (const a of estado.apartados || []) {
+    for (const e of a.eventos) vivos.add(e.ejecucionId);
+    if (a.ejecucion) vivos.add(a.ejecucion.id);
+  }
+  const duenos = {};
+  for (const [id, d] of Object.entries(estado.duenos || {})) if (vivos.has(id)) duenos[id] = d;
+  estado.duenos = duenos;
+}
+
+// Entra `usuario`: aparta lo de otros guardias y le devuelve lo suyo. Devuelve
+// el aviso para el que entra, o null si no había nada que mover. Las rondas de
+// antes de la v1.25 no tienen dueño anotado y se quedan como estaban.
+function cambiarDeGuardia(usuario) {
+  const ahora = Date.now();
+  const duenos = estado.duenos || {};
+  const deOtro = id => Boolean(duenos[id]) && duenos[id].usuario !== usuario;
+  let apartados = (estado.apartados || []).filter(a => ahora - Date.parse(a.desde) < APARTADOS_MAX_MS);
+
+  const nuevos = new Map();
+  const apartadoDe = id => {
+    const d = duenos[id];
+    if (!nuevos.has(d.usuario)) {
+      nuevos.set(d.usuario, { usuario: d.usuario, nombre: d.nombre, desde: new Date(ahora).toISOString(), eventos: [], ejecucion: null });
+    }
+    return nuevos.get(d.usuario);
+  };
+  const quedan = [];
+  for (const evento of estado.cola) {
+    if (deOtro(evento.ejecucionId)) apartadoDe(evento.ejecucionId).eventos.push(evento);
+    else quedan.push(evento);
+  }
+  if (estado.ejecucion && deOtro(estado.ejecucion.id)) {
+    apartadoDe(estado.ejecucion.id).ejecucion = estado.ejecucion;
+    estado.ejecucion = null;
+    olvidarPendiente();
+    marcaRetenida = null;
+  }
+  // El informe que quedó en pantalla es del anterior: no es de este guardia.
+  if (estado.ultimoInforme && deOtro(estado.ultimoInforme.id)) estado.ultimoInforme = null;
+
+  // Lo suyo vuelve adelante: es más antiguo que lo que quedó en la cola.
+  const propios = apartados.filter(a => a.usuario === usuario);
+  apartados = apartados.filter(a => a.usuario !== usuario).concat([...nuevos.values()]);
+  estado.cola = propios.flatMap(a => a.eventos).concat(quedan);
+  const suya = propios.map(a => a.ejecucion).filter(Boolean).pop();
+  if (suya && !estado.ejecucion) estado.ejecucion = suya;
+  estado.apartados = apartados;
+  podarDuenos();
+
+  if (propios.length) return { texto: 'Recuperamos tu ronda pendiente en este teléfono: se está enviando.', tipo: 'ok' };
+  if (nuevos.size) {
+    const nombres = [...nuevos.values()].map(a => a.nombre || a.usuario).join(' y ');
+    return { texto: `Lo pendiente de ${nombres} quedó guardado aparte: se enviará cuando vuelva a entrar en este teléfono.`, tipo: 'info' };
+  }
+  return null;
+}
+
 // Inicia sesión de guardia y descarga sus rondas. Compartido por el login y el
 // registro (que entra solo después de crear la cuenta). Lanza si algo falla.
 async function iniciarSesionGuardia(usuario, pin) {
@@ -737,11 +822,13 @@ async function iniciarSesionGuardia(usuario, pin) {
     err.esAdmin = true;
     throw err;
   }
+  const traspaso = cambiarDeGuardia(r.usuario);
   estado.sesion = r;
   guardarEstado();
   pedirAlmacenamientoPersistente();
   await bajarPaquete(true);
   render();
+  if (traspaso) aviso(traspaso.texto, traspaso.tipo, 8000);
   // Los guardias entran, hacen la ronda y salen: sin esto la versión solo
   // quedaba anotada si el minuto del reloj caía dentro de la sesión.
   revisarVersion();
@@ -819,8 +906,11 @@ function salir() {
   detenerGps();
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
   // El rev sigue subiendo: si volviera a 0, al próximo arranque el respaldo
-  // (con la sesión vieja) le ganaría a este estado vacío.
-  estado = Object.assign(estadoVacio(), { rev: estado.rev });
+  // (con la sesión vieja) le ganaría a este estado vacío. Lo apartado de otros
+  // guardias se queda: no es de quien sale (ver cambiarDeGuardia).
+  const { apartados = [], duenos = {} } = estado;
+  estado = Object.assign(estadoVacio(), { rev: estado.rev, apartados, duenos });
+  podarDuenos();
   guardarEstado();
   render();
 }
@@ -943,6 +1033,7 @@ function iniciarRonda(rondaId) {
     cerrada: false
   };
   estado.ultimoInforme = null;
+  anotarDueno(estado.ejecucion.id);
   estado.cola.push({ tipo: 'iniciar', ejecucionId: estado.ejecucion.id, rondaId, inicio: estado.ejecucion.inicio });
   guardarEstado();
   cerrarAlarmaKiosco(); // salir a la ronda es atender la alarma
@@ -1527,10 +1618,28 @@ function registrarMarca(punto, codigo, nfc = null) {
     nfc: nfc ? { serie: nfc.serie || null } : null
   });
   guardarEstado();
-  navigator.vibrate && navigator.vibrate(120);
+  const completa = rondaCompleta(ejecucion, ronda);
+  // La última marca vibra distinto: lo que sigue ya no es otro punto.
+  navigator.vibrate && navigator.vibrate(completa ? [120, 80, 120, 80, 400] : 120);
   aviso(`✅ ${punto.nombre} (${ejecucion.escaneos.length}/${ronda.puntos.length})`, 'ok');
   render();
+  if (completa) mostrarTerminar();
   sincronizar();
+}
+
+function rondaCompleta(ejecucion, ronda) {
+  return Boolean(ejecucion && ronda && ronda.puntos.length)
+    && ronda.puntos.every(p => ejecucion.escaneos.some(e => e.puntoId === p.id));
+}
+
+// Lleva «Terminar ronda» a la vista: en una ronda de nueve puntos la lista lo
+// deja abajo, fuera de la pantalla. Salto directo, sin animación: un scroll
+// suave lo corta cualquier re-render o un WebView con la página en pausa.
+function mostrarTerminar() {
+  const boton = $('btn-cerrar-ronda');
+  try {
+    if (boton && boton.scrollIntoView) boton.scrollIntoView({ block: 'center' });
+  } catch { /* un WebView viejo sin opciones: queda donde está */ }
 }
 
 // La marca no entró: se le dice al guardia y queda el registro. Con `codigo` y
@@ -1724,6 +1833,12 @@ async function sincronizar() {
           // señal.
           if (evento.tipo === 'escaneo') {
             aviso(`El servidor rechazó una marca: ${err.message}`, 'error', 7000);
+          }
+          // Un cierre rechazado no se va a enviar nunca: sin esto la pantalla
+          // quedaba en "Enviando el informe al administrador…" para siempre.
+          if (evento.tipo === 'cerrar') {
+            aviso(`El servidor no aceptó el cierre de la ronda: ${err.message}`, 'error', 7000);
+            if (estado.ejecucion && estado.ejecucion.id === evento.ejecucionId) estado.ejecucion = null;
           }
           estado.cola.shift();
           guardarEstado();
@@ -2599,6 +2714,17 @@ function renderRonda() {
   // enterarse de que existen. "Escanear" a secas solo donde hay alguna.
   const conChapitas = ronda.puntos.some(p => p.nfc);
   $('btn-escanear').textContent = conChapitas ? 'Escanear' : '📷 Escanear QR';
+  // Todos los puntos marcados (v1.25): lo único que falta es «Terminar ronda»,
+  // y pasa a ser EL botón. En el teléfono compartido de una garita quedaron
+  // tres rondas seguidas abiertas con 9/9: «Terminar» estaba abajo, fuera de
+  // la pantalla y con el borde rojo de lo que no hay que tocar, y arriba seguía
+  // el botón grande de escanear como si faltara algo.
+  const completa = rondaCompleta(ejecucion, ronda);
+  const cajaLista = $('ronda-lista');
+  if (cajaLista) cajaLista.classList.toggle('oculta', !completa);
+  $('btn-escanear').classList.toggle('oculta', completa);
+  $('btn-manual').classList.toggle('oculta', completa);
+  $('btn-cerrar-ronda').className = completa ? 'btn btn-principal btn-gigante' : 'btn btn-peligro';
   // Sin pisar lo que el guardia está escribiendo: renderRonda corre con cada marca.
   const comentario = $('ronda-comentario');
   if (document.activeElement !== comentario) comentario.value = ejecucion.comentario || '';
@@ -2785,6 +2911,16 @@ function completarHtmlAnterior() {
     // v1.24: la pantalla de la chapita y la pregunta de la ronda mixta
     // (CU-28). El texto del botón lo pone renderRonda() según la ronda.
     if (!$('modal-nfc') && $('modal-manual')) $('modal-manual').insertAdjacentHTML('afterend', HTML_MODAL_NFC);
+    // v1.25: el aviso de "marcaste todos los puntos". Con estilos.css viejo
+    // (sin caja-exito) se ve como una caja común, que igual se lee.
+    const marcaEstado = $('marca-estado');
+    if (!$('ronda-lista') && marcaEstado) {
+      marcaEstado.insertAdjacentHTML('beforebegin', `
+        <div id="ronda-lista" class="caja caja-exito oculta" role="status">
+          <strong>✅ Marcaste todos los puntos</strong>
+          <p class="nota">Ahora toca «Terminar ronda» para enviar el informe. Hasta que no la terminas, la ronda sigue abierta.</p>
+        </div>`);
+    }
     const cancelar = $('btn-cancelar-escaner');
     if (cancelar && !$('escaner-texto')) {
       const texto = cancelar.parentNode.querySelector('p');

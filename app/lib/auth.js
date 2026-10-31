@@ -20,19 +20,39 @@ function verificarPin(pin, guardado) {
 // ENTERO en cada guardado—. Son las dos caras del mismo olvido: la de seguridad
 // (una llave robada no caducaba nunca) y la de peso.
 //
-// 1:30 h es vencimiento ABSOLUTO desde el login, no por inactividad: una ronda
-// que pase de esa hora y media va a pedir el PIN de nuevo a mitad de recorrido.
-// La cola del teléfono se conserva y se envía al volver a entrar (ver el manejo
-// de 401 en public/app.js), así que no se pierde ninguna marca; el costo es que
-// el guardia tiene que teclear.
+// 1:30 h desde el login o desde la última actividad de ronda (v1.25). Hasta la
+// v1.24 era absoluto desde el login, y en el teléfono compartido de la garita
+// eso cortaba rondas: el guardia entra para una ronda, no sale, y la siguiente
+// empieza con la sesión ya gastada; a la hora y media del login el teléfono se
+// queda sin sesión a mitad de recorrido y le pide el PIN. Ahora iniciar la
+// ronda, marcar y cerrar la renuevan (renovarSesion, desde server.js); la
+// consulta de versión de cada minuto NO, para que una sesión olvidada en un
+// teléfono prendido siga venciendo sola.
 const VIDA_SESION_MS = 90 * 60 * 1000;
+// La renovación se anota a lo más cada 5 minutos: escribe la base, y las marcas
+// llegan cada uno o dos.
+const RENOVAR_CADA_MS = 5 * 60 * 1000;
+
+function desdeCuando(sesion) {
+  const creada = Date.parse(sesion && sesion.creada);
+  const renovada = Date.parse(sesion && sesion.renovada);
+  return Number.isNaN(renovada) ? creada : Math.max(creada, renovada);
+}
 
 function vencida(sesion, ahora = Date.now()) {
-  const creada = Date.parse(sesion && sesion.creada);
+  const desde = desdeCuando(sesion);
   // Sin fecha entendible se la considera vencida: son las sesiones que quedaron
   // de antes de esta guarda, y dejarlas vivas para siempre es justo el bug.
-  if (Number.isNaN(creada)) return true;
-  return ahora - creada >= VIDA_SESION_MS;
+  if (Number.isNaN(desde)) return true;
+  return ahora - desde >= VIDA_SESION_MS;
+}
+
+// Devuelve true si anotó la renovación (quien llama guarda).
+function renovarSesion(sesion, ahora = Date.now()) {
+  if (!sesion || vencida(sesion, ahora)) return false;
+  if (ahora - desdeCuando(sesion) < RENOVAR_CADA_MS) return false;
+  sesion.renovada = new Date(ahora).toISOString();
+  return true;
 }
 
 // Saca del mapa todo lo que ya no sirve. Se llama al crear sesión: es el único
@@ -84,5 +104,5 @@ function soloAdmin(req, res, next) {
 
 module.exports = {
   hashPin, verificarPin, crearSesion, autenticar, soloAdmin,
-  VIDA_SESION_MS, vencida, podarSesiones
+  VIDA_SESION_MS, vencida, podarSesiones, renovarSesion
 };

@@ -138,6 +138,12 @@
       <div id="ronda-gps" class="nota"></div>
       <div id="lista-puntos"></div>
       <div class="botonera">
+        <!-- Todos los puntos marcados (v1.25): «Terminar ronda» pasa a ser el
+             botón grande y el de escanear se esconde (ver renderRonda). -->
+        <div id="ronda-lista" class="caja caja-exito oculta" role="status">
+          <strong>✅ Marcaste todos los puntos</strong>
+          <p class="nota">Ahora toca «Terminar ronda» para enviar el informe. Hasta que no la terminas, la ronda sigue abierta.</p>
+        </div>
         <!-- Marca en curso: QR ya leído que espera señal (se resuelve sola) o
              que no la consiguió (se reintenta sin volver a escanear). Va sobre
              el botón de escanear, que es donde el guardia tiene el dedo. -->
