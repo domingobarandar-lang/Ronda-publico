@@ -7,6 +7,7 @@ mismo servidor Express: la del guardia (`/`) y el panel del administrador
 - Código de la app: [app/](app/) — `cd app && npm install && npm run demo`
 - Contexto: [BRIEF.md](BRIEF.md) · [SPEC.md](SPEC.md) · [QA.md](QA.md)
 - Operación y seguridad: [entrega/](entrega/) — deploy de la v1.17: [entrega/CHECKLIST-DEPLOY-v1.17.md](entrega/CHECKLIST-DEPLOY-v1.17.md)
+- Fallos en producción: [entrega/INCIDENTES.md](entrega/INCIDENTES.md). Al investigar o arreglar uno, agregarlo al registro (y su análisis si la sección 2 lo pide).
 
 El estado vive en `app/data/rondas.sqlite` (SQLite, fuera de git; desde la v1.17 — antes `db.json`, que se importa solo). El `.env` no se versiona:
 copiar `app/.env.example` → `app/.env`.
