@@ -144,7 +144,8 @@ test('el buffer NO viaja en el estado que se serializa a localStorage', () => {
   // guardarEstado() serializa `estado` entero en cada marca: veinte lecturas de
   // GPS por segundo ahí dentro serían escrituras a disco a ese ritmo.
   assert.match(fuente, /^let bufferFixes = \[\];$/m, 'bufferFixes debe ser variable de módulo');
-  const estadoInicial = /\{ sesion: null, paquete: null, ejecucion: null, cola: \[\], ultimoInforme: null \}/;
+  // apartados / duenos (v1.25): lo del teléfono compartido, ver cambiarDeGuardia.
+  const estadoInicial = /\{ sesion: null, paquete: null, ejecucion: null, cola: \[\], ultimoInforme: null, apartados: \[\], duenos: \{\} \}/;
   assert.match(fuente, estadoInicial, 'cambió la forma de `estado`: revisar que el buffer no entró');
   assert.ok(!/estado\.(bufferFixes|fixes|marcaPendiente|marcaRetenida)/.test(fuente), 'el buffer se coló dentro de `estado`');
 });

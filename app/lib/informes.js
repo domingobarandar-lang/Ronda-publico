@@ -3,6 +3,7 @@
 // public/informe.html a partir del JSON.
 const { OCULTAR_SIN_CONEXION } = require('./rondas'); // TEMPORAL, ver lib/rondas.js
 const { nombreGuardia } = require('./cuenta');
+const { TZ } = require('./fechas-chile');
 
 const ETIQUETAS = {
   completa: 'Completa',
@@ -65,10 +66,12 @@ function armarInforme(db, ejecucion) {
   };
 }
 
+// En hora de Chile, no en la del servidor: Railway corre en UTC y los avisos
+// salían tres horas adelantados («Inicio 01:02 p. m.» de una ronda de las 10:02).
 function hora(ts) {
   if (!ts) return '—';
   return new Date(ts).toLocaleString('es-CL', {
-    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
   });
 }
 

@@ -99,8 +99,25 @@ test('API: cada respuesta es la misma que en la v1.22 (salvo los campos nuevos, 
   ]);
 });
 
-test('avisos al administrador: el mismo texto, letra por letra', () => {
-  assert.deepEqual(hoy.servidor.avisos, referencia.servidor.avisos);
+// v1.25, a propósito: las horas de los avisos van en hora de Chile y no en la
+// del servidor (Railway corre en UTC y los avisos salían tres horas
+// adelantados: «Inicio 01:02 p. m.» de una ronda de las 10:02). La referencia
+// se grabó en UTC: sus horas se pasan a Chile antes de comparar, y todo lo
+// demás sigue letra por letra. De paso, la hora queda escrita con el Intl de
+// este Node (el espacio de "a. m." cambia entre versiones de ICU).
+function horasAChile(texto) {
+  return texto.replace(/(\d{2})\/(\d{2}), (\d{2}):(\d{2})\s([ap])\.\s?m\./g, (_, dia, mes, h, min, ap) => {
+    const t = Date.UTC(2026, Number(mes) - 1, Number(dia), (Number(h) % 12) + (ap === 'p' ? 12 : 0), Number(min));
+    return new Date(t).toLocaleString('es-CL', {
+      timeZone: 'America/Santiago', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+  });
+}
+
+test('avisos al administrador: el mismo texto, letra por letra (con la hora en Chile, v1.25)', () => {
+  const esperados = referencia.servidor.avisos.map(a => ({ ...a, texto: horasAChile(a.texto) }));
+  assert.ok(esperados.some((a, i) => a.texto !== referencia.servidor.avisos[i].texto), 'la referencia ya no trae horas que pasar');
+  assert.deepEqual(hoy.servidor.avisos, esperados);
   assert.deepEqual(hoy.servidor.push, referencia.servidor.push);
 });
 

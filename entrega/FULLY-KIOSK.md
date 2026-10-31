@@ -114,7 +114,7 @@ Para hacerlo:
 4. Dejar el lector abierto **10 s sin QR**: aparece la ayuda y **Código a mano**, y **Cancelar** se ve entero.
 5. Escanear un QR de la ronda: queda marcado, o aparece el panel "afinando ubicación".
 6. Con la ronda en curso, dejar el teléfono **2 minutos sin tocar**: la pantalla no se apaga ni la página se recarga.
-7. En el panel → Guardias, la versión de ese teléfono dice **v1.24.1** y "al día".
+7. En el panel → Guardias, la versión de ese teléfono dice **v1.25.0** y "al día".
 8. **Alarma de ronda** (solo en el teléfono que la tiene que recibir), con la ronda de prueba ya terminada: bajo el botón de la alarma **no** debe decir «falta activar su interfaz JavaScript». Tocar **Activar alarma de ronda en este teléfono**; en el panel → Avisos aparece ese teléfono como «conectado». Tocar **Hacerla sonar ahora** en el panel: en menos de un minuto el teléfono pita, vibra, muestra la notificación y el aviso con **Entendido**, que corta el sonido. Repetirlo con el protector de pantalla puesto: tiene que salir del protector y sonar.
 
 ## Fuentes
