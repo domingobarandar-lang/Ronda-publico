@@ -3,6 +3,8 @@
 Guía de administración y operación. Público: José (soporte) y el administrador del condominio (uso diario).
 
 > Teléfonos que corren la app del guardia en **Fully Kiosk Browser** (el de la garita): ajustes obligatorios y prueba de 5 minutos en [FULLY-KIOSK.md](FULLY-KIOSK.md).
+>
+> Cuando algo falla en producción: gravedad, qué hacer mientras pasa y registro de fallos en [INCIDENTES.md](INCIDENTES.md).
 
 ## Alta de un condominio nuevo (pantalla de fábrica)
 
