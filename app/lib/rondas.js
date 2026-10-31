@@ -511,8 +511,10 @@ function cerrarEjecucion(db, ejecucion, { fin, automatico = false, comentario } 
   const ev = ejecucion.evaluacion;
   if (automatico) {
     ejecucion.cierreAutomatico = true;
-    ev.observaciones.unshift('Cerrada automáticamente por el sistema: el teléfono no terminó la ronda '
-      + '(se apagó, se cerró la app o nunca volvió a tener señal). Muestra solo lo que alcanzó a llegar.');
+    ev.observaciones.unshift(ronda && !ev.faltantes.length
+      ? 'Cerrada automáticamente por el sistema: el guardia marcó todos los puntos pero no tocó «Terminar ronda».'
+      : 'Cerrada automáticamente por el sistema: el teléfono no terminó la ronda '
+        + '(se apagó, se cerró la app o nunca volvió a tener señal). Muestra solo lo que alcanzó a llegar.');
   } else {
     delete ejecucion.cierreAutomatico;
   }
@@ -544,6 +546,24 @@ function umbralAbandonoMs(ronda) {
   return Math.max(base, porDuracion || 0) * 60000;
 }
 
+// Ronda con TODOS los puntos marcados que nadie terminó (v1.25). Ya no le queda
+// nada por hacer al guardia salvo tocar «Terminar ronda», así que no hay que
+// esperarla dos horas: pasaba en el teléfono compartido de la garita, donde la
+// ronda quedaba abierta hasta que el siguiente guardia tomaba el teléfono, el
+// informe no salía y la alarma de ronda del condominio quedaba callada.
+// RONDA_COMPLETA_CIERRE_MIN (15 por defecto) desde la última marca.
+function umbralCompletaMs() {
+  return (numEnv('RONDA_COMPLETA_CIERRE_MIN', 15) || 15) * 60000;
+}
+
+// Todos los puntos de la ronda tienen marca. Sin ronda (la eliminaron) no se
+// puede saber: cuenta como que faltan.
+function todosMarcados(ejecucion, ronda) {
+  if (!ronda || !ronda.puntoIds.length) return false;
+  const marcados = new Set((ejecucion.escaneos || []).map(e => e.puntoId));
+  return ronda.puntoIds.every(pid => marcados.has(pid));
+}
+
 // Lo último que el servidor supo de esta ronda. Las horas vienen del teléfono:
 // una que no se entienda no cuenta.
 function ultimaActividad(ejecucion) {
@@ -557,7 +577,9 @@ function ultimaActividad(ejecucion) {
 
 function estaAbandonada(db, ejecucion, ahora = Date.now()) {
   if (ejecucion.estado !== 'en_curso') return false;
-  return ahora - ultimaActividad(ejecucion) >= umbralAbandonoMs(rondaDe(db, ejecucion));
+  const ronda = rondaDe(db, ejecucion);
+  const umbral = todosMarcados(ejecucion, ronda) ? umbralCompletaMs() : umbralAbandonoMs(ronda);
+  return ahora - ultimaActividad(ejecucion) >= umbral;
 }
 
 // El teléfono apareció con datos de una ronda que el sistema cerró solo: era
@@ -744,7 +766,7 @@ function nombres(db, puntoIds) {
 
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
-  estaAbandonada, ultimaActividad, umbralAbandonoMs, reabrirSiAutomatica,
+  estaAbandonada, ultimaActividad, umbralAbandonoMs, umbralCompletaMs, todosMarcados, rondaDe, reabrirSiAutomatica,
   distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM,
-  OCULTAR_SIN_CONEXION, MAX_COMENTARIO, MANUAL_EN_PUNTO_NFC, esPuntoNfc
+  OCULTAR_SIN_CONEXION, MAX_COMENTARIO, MANUAL_EN_PUNTO_NFC, esPuntoNfc, limpiarComentario
 };
