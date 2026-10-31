@@ -105,7 +105,8 @@ test('el buffer de fixes NO se serializa a localStorage', () => {
   assert.deepEqual(Object.keys(JSON.parse(guardado)).sort(),
     // `rev` es el contador de guardados que decide entre localStorage y el
     // respaldo en IndexedDB al arrancar (ver recuperarRespaldo en app.js).
-    ['cola', 'ejecucion', 'paquete', 'rev', 'sesion', 'ultimoInforme'],
+    // `apartados` y `duenos`: el teléfono compartido (v1.25, cambiarDeGuardia).
+    ['apartados', 'cola', 'duenos', 'ejecucion', 'paquete', 'rev', 'sesion', 'ultimoInforme'],
     'apareció una clave nueva en el estado persistido: ¿se coló el buffer?');
   assert.ok(app.correr('bufferFixes.length') > 0, 'el buffer sí tiene lecturas — la prueba no es vacía');
 });

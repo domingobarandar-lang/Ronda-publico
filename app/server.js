@@ -5,10 +5,10 @@ const express = require('express');
 const QRCode = require('qrcode');
 const { cargarEnv } = require('./lib/env');
 const { crearStore } = require('./lib/store');
-const { hashPin, verificarPin, crearSesion, autenticar, soloAdmin } = require('./lib/auth');
+const { hashPin, verificarPin, crearSesion, autenticar, soloAdmin, renovarSesion } = require('./lib/auth');
 const { codigoCorto, id, payloadQR, normalizarSerie, huellaSerie } = require('./lib/codigos');
 const motor = require('./lib/rondas');
-const { armarInforme, informeTexto } = require('./lib/informes');
+const { armarInforme, informeTexto, hora } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
 const correo = require('./lib/correo');
 const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
@@ -51,6 +51,13 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   const auth = autenticar(store);
   const admin = [auth, soloAdmin];
+  // Iniciar, marcar y cerrar una ronda renuevan la sesión (v1.25): sin esto
+  // vencía a la hora y media del login aunque el guardia estuviera en pleno
+  // recorrido (ver VIDA_SESION_MS en lib/auth.js).
+  const enRonda = [auth, (req, res, next) => {
+    if (renovarSesion(store.db.sesiones[req.token])) store.guardar();
+    next();
+  }];
 
   // Express 4 NO atrapa el rechazo de un handler `async`: se vuelve un
   // unhandledRejection y Node mata el proceso. No es un 500 con log feo, es el
@@ -465,6 +472,8 @@ function crearApp({ rutaDb, enviarPush } = {}) {
       else if (informe.estado === 'sospechosa') alerta = '🔴 ALERTA: ronda con datos sospechosos\n\n';
       const nota = notaExtra ? `${notaExtra}\n`
         : cerradaPorAdmin ? '(cerrada por el administrador)\n'
+        : automatico && motor.todosMarcados(ejecucion, motor.rondaDe(db, ejecucion))
+          ? '(cerrada automáticamente: el guardia marcó todos los puntos pero no tocó «Terminar ronda»)\n'
         : automatico ? '(cerrada automáticamente: el teléfono no terminó la ronda)\n'
         : '';
       store.transaccion(() => {
@@ -494,7 +503,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   // ---------- Guardia: ejecuciones ----------
 
-  app.post('/api/ejecuciones', auth, (req, res) => {
+  app.post('/api/ejecuciones', enRonda, (req, res) => {
     const { id: ejecucionId, rondaId, inicio } = req.body || {};
     const r = motor.iniciarEjecucion(db, store.ejecuciones, { ejecucionId, rondaId, guardia: req.usuario, inicio });
     if (r.error) return res.status(r.codigo).json({ error: r.error });
@@ -502,7 +511,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.status(r.repetida ? 200 : 201).json(r.ejecucion);
   });
 
-  app.post('/api/ejecuciones/:id/escaneos', auth, (req, res) => {
+  app.post('/api/ejecuciones/:id/escaneos', enRonda, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     const { codigo, ts, offline, gps, nfc } = req.body || {};
@@ -539,7 +548,7 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   // cerrada (el rechazo pudo ocurrir en el último punto y llegar por la cola
   // después del cierre) y no cambia la evaluación de nada.
   const MAX_RECHAZOS = 50;
-  app.post('/api/ejecuciones/:id/rechazos', auth, (req, res) => {
+  app.post('/api/ejecuciones/:id/rechazos', enRonda, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     const { puntoId } = req.body || {};
@@ -582,13 +591,30 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     return true;
   }
 
-  app.post('/api/ejecuciones/:id/cerrar', auth, alerta(async (req, res) => {
+  app.post('/api/ejecuciones/:id/cerrar', enRonda, alerta(async (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
+    const { fin, comentario } = req.body || {};
+    // Ronda con todos los puntos que el sistema ya cerró porque nadie tocó
+    // «Terminar ronda» (v1.25): el toque tardío no la reabre. No trae nada
+    // nuevo, y reabrirla mandaba el informe dos veces y contaba la espera como
+    // ronda. Si trae un comentario, se guarda y se avisa aparte.
+    if (ejecucion.cierreAutomatico && motor.todosMarcados(ejecucion, motor.rondaDe(db, ejecucion))) {
+      const texto = motor.limpiarComentario(comentario);
+      if (texto && texto !== ejecucion.comentario) {
+        ejecucion.comentario = texto;
+        const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
+        const inf = armarInforme(db, ejecucion);
+        store.transaccion(() => {
+          store.ejecuciones.guardar(ejecucion);
+          registrarAviso(store, condominio, `💬 Comentario de ${inf.guardia} sobre su ronda "${inf.ronda}" del ${hora(inf.inicio)}: ${texto}`);
+        });
+      }
+      return res.json(armarInforme(db, ejecucion));
+    }
     // El cierre de verdad, del teléfono, reemplaza al automático: trae la hora
     // real de término y el informe se rehace con todo lo que llegó.
     if (ejecucion.guardiaId === req.usuario.id) motor.reabrirSiAutomatica(ejecucion);
-    const { fin, comentario } = req.body || {};
     res.json(await cerrarYNotificar(ejecucion, { fin, comentario }));
   }));
 

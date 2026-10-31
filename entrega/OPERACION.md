@@ -3,6 +3,8 @@
 Guía de administración y operación. Público: José (soporte) y el administrador del condominio (uso diario).
 
 > Teléfonos que corren la app del guardia en **Fully Kiosk Browser** (el de la garita): ajustes obligatorios y prueba de 5 minutos en [FULLY-KIOSK.md](FULLY-KIOSK.md).
+>
+> Cuando algo falla en producción: gravedad, qué hacer mientras pasa y registro de fallos en [INCIDENTES.md](INCIDENTES.md).
 
 ## Alta de un condominio nuevo (pantalla de fábrica)
 
@@ -230,8 +232,10 @@ En local es lo mismo sin `railway ssh --`, con el servidor detenido o reinicián
 | "Ese código no corresponde…" | QR de otro condominio o punto fuera de la ronda | Verificar que la lámina pegada sea la del sector correcto |
 | Guardia sin acceso | PIN olvidado | Panel → Guardias → "Nuevo PIN" |
 | No llegan avisos push al teléfono | Permiso de notificaciones denegado o claves VAPID sin configurar | Panel → Avisos → "Activar avisos en este teléfono"; en iPhone hay que instalar el panel primero |
-| Guardia debe reingresar el PIN a mitad de ronda | La sesión dura 1 h 30 desde que entró | Es lo esperado. Las marcas NO se pierden: quedan en el teléfono y se envían al volver a entrar |
-| Ronda quedó "En curso" | Guardia no cerró | Panel → Informes → "Cerrar" |
+| Guardia debe reingresar el PIN a mitad de ronda | Desde la v1.25 no debería pasar: la sesión dura 1 h 30 desde la última actividad de ronda (iniciar, marcar, terminar), no desde el login. Pasa si estuvo más de 1 h 30 sin marcar nada | Las marcas NO se pierden: quedan en el teléfono y se envían al volver a entrar |
+| En un teléfono compartido, entra otro guardia y lo pendiente del anterior "desaparece" | Desde la v1.25 queda **guardado aparte** con el nombre de su dueño (el servidor solo acepta los datos de una ronda con la sesión de quien la hizo) | Se envía solo cuando ese guardia vuelve a entrar en ese teléfono. Si no vuelve, el servidor cierra su ronda por abandonada con lo que alcanzó a llegar |
+| Ronda quedó "En curso" | Guardia no cerró | Se cierra sola: a los 15 min de la última marca si tiene todos los puntos (`RONDA_COMPLETA_CIERRE_MIN`), a las 2 h si le faltan (`RONDA_ABANDONO_MIN`). Para no esperar: Panel → Informes → "Cerrar" |
+| Aviso "el guardia marcó todos los puntos pero no tocó «Terminar ronda»" | El guardia hizo la ronda entera y no la terminó | La ronda cuenta completa. Recordarle al guardia que, al marcar el último punto, aparece «✅ Marcaste todos los puntos» y el botón grande «Terminar ronda»: hay que tocarlo |
 | El servidor no arranca y el log dice "No se pudo importar … db.json" | El `db.json` está roto o sus conteos no cuadraron al importarlo (primer arranque de la v1.17) | No se perdió nada: el `.json` sigue intacto. Revisar el motivo en el log; si no se resuelve, volver a la v1.16 (sección **Vuelta atrás**) |
 | El panel muestra solo las últimas 200 rondas | Desde la v1.17 el listado trae las últimas 200 | Para fechas anteriores, el informe semanal por rango de fechas |
 | No llega el correo del respaldo | `RESPALDO_TO` vacío, Gmail sin configurar, o respaldo sobre 18 MB | Mirar las líneas `[respaldo]` del log; probar con `node scripts/respaldo-ahora.js` |
