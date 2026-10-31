@@ -1,7 +1,8 @@
 // Fábrica: alta de condominios y de sus cuentas de administrador.
 // Pantalla de la operación, aparte del panel del administrador: acá se crean los
 // condominios (lo único que no se puede hacer desde el panel) y se cargan los
-// correos del informe semanal de cada uno.
+// correos del informe semanal de cada uno. Desde la v1.26 cada condominio
+// muestra además la salud del producto de la última semana (lib/salud.js).
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -151,6 +152,46 @@ Informe semanal a: ${r.condominio.correosInforme.join(', ') || '(sin correo toda
 
 // ---------- Lista de condominios ----------
 
+const veces = n => (n === 1 ? '1 vez' : `${n} veces`);
+const rondas = n => (n === 1 ? '1 ronda' : `${n} rondas`);
+
+// Salud del producto: lo que falla sin ser un error y por eso no llega a
+// Sentry. En ámbar, lo que hay que mirar: rondas que el guardia no cerró y
+// rondas en las que tuvo que volver a entrar a mitad de camino.
+function bloqueSalud(s) {
+  if (!s) return '';
+  const r = s.rondas;
+  const titulo = `<p class="nota" style="margin-top:14px"><strong>Salud del producto · últimos ${s.dias} días</strong></p>`;
+  if (!r.cerradas && !r.enCurso && !s.reingresos.veces && !s.alarmasRetenidas.veces) {
+    return `${titulo}<p class="nota">Sin rondas en los últimos ${s.dias} días.</p>`;
+  }
+  const cifra = (texto, mirar) => (mirar ? `<span class="chip chip-ambar">${texto}</span>` : texto);
+  const filas = [
+    ['Completas', `${r.completas} · ${r.porcentaje.completas}%`],
+    ['Incompletas', `${r.incompletas} · ${r.porcentaje.incompletas}%`],
+    ['Con sospechas', `${r.sospechosas} · ${r.porcentaje.sospechosas}%`],
+    ['Cerradas automáticamente', cifra(`${r.automaticas} · ${r.porcentaje.automaticas}%`, r.automaticas > 0)],
+    ['Volvió a iniciar sesión a mitad de ronda',
+      cifra(`${rondas(s.reingresos.rondas)} · ${s.reingresos.porcentaje}%`, s.reingresos.rondas > 0)
+        + (s.reingresos.veces > s.reingresos.rondas ? ` <span class="nota">(${veces(s.reingresos.veces)})</span>` : '')],
+    ['Alarma no enviada por ronda en curso',
+      veces(s.alarmasRetenidas.veces) + (s.alarmasRetenidas.veces ? ` · en ${rondas(s.alarmasRetenidas.rondas)}` : '')]
+  ];
+  const notas = [];
+  if (r.enCurso) notas.push(`Además, ${r.enCurso === 1 ? '1 ronda en curso' : `${r.enCurso} rondas en curso`}.`);
+  // Los inicios de sesión y las alarmas se anotan desde la v1.26: antes de
+  // eso un cero no quiere decir que no pasara.
+  if (s.registroDesde && Date.parse(s.registroDesde) > Date.parse(s.desde)) {
+    notas.push(`Los inicios de sesión a mitad de ronda y las alarmas no enviadas se cuentan desde el ${esc(fecha(s.registroDesde))} (antes no se anotaban).`);
+  }
+  return `${titulo}
+      <table class="tabla-salud">
+        <thead><tr><th>Rondas cerradas</th><th>${r.cerradas}</th></tr></thead>
+        <tbody>${filas.map(([etiqueta, valor]) => `<tr><td>${etiqueta}</td><td>${valor}</td></tr>`).join('')}</tbody>
+      </table>
+      ${notas.map(n => `<p class="nota" style="margin-top:6px">${n}</p>`).join('')}`;
+}
+
 function ficha(c) {
   // Cada cuenta de panel ve solo su condominio; la de acceso total (marcada)
   // los ve todos y se maneja desde el entorno del servidor, así que acá no se
@@ -177,6 +218,7 @@ function ficha(c) {
         ${c.puntos} punto(s) · ${c.rondas} ronda(s) · ${c.guardias} guardia(s) ·
         última ronda: ${esc(fecha(c.ultimaRonda))}
       </p>
+      ${bloqueSalud(c.salud)}
 
       <div class="fila-form">
         <input class="correos" value="${esc(c.correosInforme.join(', '))}" placeholder="Correo(s) del informe, separados por comas">

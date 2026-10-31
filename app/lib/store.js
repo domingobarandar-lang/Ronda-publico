@@ -10,7 +10,8 @@
 //     (db.usuarios.find, db.puntos.filter…) no cambian.
 //   - Lo que crece sin techo (ejecuciones, notificaciones) vive en tablas
 //     propias y se lee y escribe por fila con los repositorios
-//     `store.ejecuciones` y `store.notificaciones`.
+//     `store.ejecuciones` y `store.notificaciones`. Los eventos de salud del
+//     producto (v1.26, `store.salud`) también, aunque se podan solos.
 //
 // Todo es SÍNCRONO a propósito: un request no puede quedar a medias entre leer
 // una ejecución y guardarla (ver el invariante 1 del plan).
@@ -57,7 +58,20 @@ const ESQUEMA = `
   );
   CREATE INDEX IF NOT EXISTS notif_condo ON notificaciones(condominio_id, id);
   CREATE TABLE IF NOT EXISTS meta (clave TEXT PRIMARY KEY, valor TEXT);
+  CREATE TABLE IF NOT EXISTS eventos_salud (
+    id INTEGER PRIMARY KEY,
+    condominio_id TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    usuario_id TEXT,
+    ejecucion_id TEXT
+  );
+  CREATE INDEX IF NOT EXISTS salud_condo_tipo_ts ON eventos_salud(condominio_id, tipo, ts);
 `;
+
+// Los eventos de salud se miran por semana; un mes alcanza para comparar y
+// mantiene la tabla chica sin una tarea aparte.
+const SALUD_RETENER_DIAS = 30;
 
 // DB_PATH puede apuntar al .sqlite o, como hasta la v1.16, al db.json. En el
 // segundo caso se usa `rondas.sqlite` en la misma carpeta y el .json queda como
@@ -171,7 +185,18 @@ function crearStore(rutaArchivo, opciones = {}) {
     notifContarCondo: sql.prepare('SELECT COUNT(*) AS n FROM notificaciones WHERE condominio_id = ?'),
     notifTodas: sql.prepare('SELECT datos FROM notificaciones ORDER BY id'),
     notifDeCondo: sql.prepare('SELECT id, datos FROM notificaciones WHERE condominio_id = ? ORDER BY id'),
-    notifReemplazar: sql.prepare('UPDATE notificaciones SET datos = ? WHERE id = ?')
+    notifReemplazar: sql.prepare('UPDATE notificaciones SET datos = ? WHERE id = ?'),
+    ejecEstados: sql.prepare(`
+      SELECT estado, COALESCE(json_extract(datos, '$.cierreAutomatico'), 0) AS automatico, COUNT(*) AS n
+      FROM ejecuciones WHERE condominio_id = ? AND inicio >= ? AND inicio < ?
+      GROUP BY estado, automatico`),
+    saludPoner: sql.prepare('INSERT INTO eventos_salud (condominio_id, tipo, ts, usuario_id, ejecucion_id) VALUES (?, ?, ?, ?, ?)'),
+    saludListar: sql.prepare(`
+      SELECT ts, usuario_id AS usuarioId, ejecucion_id AS ejecucionId FROM eventos_salud
+      WHERE condominio_id = ? AND tipo = ? AND ts >= ? AND ts < ? ORDER BY ts`),
+    saludUltimo: sql.prepare('SELECT ts, ejecucion_id AS ejecucionId FROM eventos_salud WHERE condominio_id = ? AND tipo = ? ORDER BY ts DESC LIMIT 1'),
+    saludPodar: sql.prepare('DELETE FROM eventos_salud WHERE ts < ?'),
+    saludAnonimizar: sql.prepare('UPDATE eventos_salud SET usuario_id = NULL WHERE usuario_id = ?')
   };
 
   // ---------- Repositorio de ejecuciones ----------
@@ -225,6 +250,13 @@ function crearStore(rutaArchivo, opciones = {}) {
     contar(condominioId) {
       return condominioId == null ? st.ejecContar.get().n : st.ejecContarCondo.get(String(condominioId)).n;
     },
+    // Cuántas hay por estado y por cierre automático, de las que empezaron
+    // entre `desde` (inclusive) y `hasta` (exclusive), en ISO UTC. Se cuenta en
+    // SQLite para no leer cada ronda entera (lib/salud.js).
+    contarEstados(condominioId, desde, hasta) {
+      return st.ejecEstados.all(String(condominioId), String(desde), String(hasta))
+        .map(f => ({ estado: f.estado, automatico: Boolean(f.automatico), n: f.n }));
+    },
     eliminar(id) {
       return st.ejecQuitar.run(String(id)).changes > 0;
     },
@@ -269,6 +301,44 @@ function crearStore(rutaArchivo, opciones = {}) {
         cambiados++;
       }
       return cambiados;
+    }
+  };
+
+  // ---------- Repositorio de eventos de salud del producto ----------
+  // Lo que no es un error y por eso no ve Sentry: un guardia que tuvo que
+  // volver a entrar a mitad de ronda, una alarma que no sonó porque había una
+  // ronda en curso (ver lib/salud.js). Sin datos personales: del guardia solo
+  // el id interno, igual que lib/errores.js.
+  //
+  // `desde()` es cuándo empezó el registro (el primer arranque con esta
+  // versión): antes de esa fecha un cero no quiere decir nada.
+  if (!st.meta.get('saludDesde')) st.metaPoner.run('saludDesde', new Date().toISOString());
+  const salud = {
+    anotar({ condominioId, tipo, ts, usuarioId = null, ejecucionId = null }) {
+      const t = Date.parse(ts);
+      const cuando = Number.isNaN(t) ? Date.now() : t;
+      st.saludPoner.run(String(condominioId), String(tipo), new Date(cuando).toISOString(),
+        usuarioId == null ? null : String(usuarioId), ejecucionId == null ? null : String(ejecucionId));
+      // La poda va al ritmo de lo que entra: son pocos por día.
+      st.saludPodar.run(new Date(cuando - SALUD_RETENER_DIAS * 86400000).toISOString());
+    },
+    // Los de un tipo entre `desde` (inclusive) y `hasta` (exclusive), el más
+    // antiguo primero.
+    listar(condominioId, tipo, desde, hasta) {
+      return st.saludListar.all(String(condominioId), String(tipo), String(desde), String(hasta))
+        .map(f => ({ ...f }));
+    },
+    ultimo(condominioId, tipo) {
+      const fila = st.saludUltimo.get(String(condominioId), String(tipo));
+      return fila ? { ...fila } : null;
+    },
+    // Al borrar la cuenta de un guardia (lib/cuenta.js): el evento queda, sin
+    // el vínculo con la persona, igual que sus rondas.
+    anonimizarUsuario(usuarioId) {
+      return Number(st.saludAnonimizar.run(String(usuarioId)).changes);
+    },
+    desde() {
+      return (st.meta.get('saludDesde') || {}).valor || null;
     }
   };
 
@@ -437,6 +507,7 @@ function crearStore(rutaArchivo, opciones = {}) {
     guardar,
     ejecuciones,
     notificaciones,
+    salud,
     transaccion,
     exportar,
     respaldar,
