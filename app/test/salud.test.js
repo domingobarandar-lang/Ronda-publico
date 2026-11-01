@@ -1,7 +1,7 @@
-// Salud del producto (v1.26): lo que falla sin ser un error y por eso no ve
-// Sentry. Cómo terminan las rondas, las rondas en las que el guardia tuvo que
-// volver a entrar a mitad de recorrido y las alarmas que no sonaron porque
-// había una ronda en curso. Ver lib/salud.js.
+// Salud del producto (v1.26): lo que falla sin ser un error de código. Cómo
+// terminan las rondas y las rondas con dificultades técnicas, separadas en
+// fallo de la aplicación (con el GPS aparte) y fallo del usuario. Ver
+// lib/salud.js.
 'use strict';
 
 const test = require('node:test');
@@ -11,7 +11,6 @@ const os = require('os');
 const path = require('path');
 const { crearStore } = require('../lib/store');
 const salud = require('../lib/salud');
-const recordatorios = require('../lib/recordatorios');
 const cuenta = require('../lib/cuenta');
 
 const MIN = 60000;
@@ -30,11 +29,16 @@ const cerrada = (id, condominioId, inicio, estado, extra = {}) =>
 
 const guardia = (id, condominioId) => ({ id, condominioId, usuario: id, nombre: `Guardia ${id}`, rol: 'guardia' });
 
-// Avisos de la alarma de ronda que salen por Web Push (lib/push.js).
-const pushFalso = () => {
-  const enviadas = [];
-  return { enviadas, recordar: async condominio => { enviadas.push(condominio.id); return { ok: 1, total: 1, errores: [] }; } };
-};
+// La ronda r1 tiene dos puntos.
+const RONDA = { id: 'r1', condominioId: 'c1', nombre: 'Perímetro', puntoIds: ['p1', 'p2'] };
+const marca = puntoId => ({ puntoId, ts: iso(AHORA - DIA), medio: 'qr' });
+
+// Rechazos como los anota el servidor (anotarRechazo en server.js). Los de GPS
+// traen siempre topeM; los del medio, nunca.
+const gps = (extra = {}) => ({ puntoId: 'p1', ts: iso(AHORA - DIA), motivo: 'Sin ubicación', topeM: 40, ...extra });
+const medio = () => ({ puntoId: 'p1', ts: iso(AHORA - DIA), motivo: 'Este punto tiene chapita: acércala al teléfono.' });
+
+const causas = d => ({ app: [...d.app].sort(), usuario: [...d.usuario].sort(), rechazosGps: d.rechazosGps });
 
 test('rondas por estado en los últimos 7 días, con porcentaje sobre las cerradas', () => {
   const store = nuevo();
@@ -56,7 +60,7 @@ test('rondas por estado en los últimos 7 días, con porcentaje sobre las cerrad
   assert.equal(r.dias, 7);
   assert.equal(r.desde, iso(AHORA - 7 * DIA));
   assert.deepEqual(r.rondas, {
-    cerradas: 6, completas: 2, incompletas: 1, sospechosas: 1, automaticas: 2, enCurso: 1,
+    total: 7, cerradas: 6, completas: 2, incompletas: 1, sospechosas: 1, automaticas: 2, enCurso: 1,
     porcentaje: { completas: 33, incompletas: 17, sospechosas: 17, automaticas: 33 }
   });
   store.cerrar();
@@ -64,18 +68,93 @@ test('rondas por estado en los últimos 7 días, con porcentaje sobre las cerrad
 
 test('un condominio sin rondas da ceros, no NaN', () => {
   const store = nuevo();
-  store.ejecuciones.guardar(cerrada('x', 'c1', AHORA - DIA, 'completa'));
+  store.ejecuciones.guardar(cerrada('x', 'c1', AHORA - DIA, 'completa', { rechazos: [gps()] }));
   const r = salud.resumen(store, 'vacio', AHORA);
   assert.deepEqual(r.rondas, {
-    cerradas: 0, completas: 0, incompletas: 0, sospechosas: 0, automaticas: 0, enCurso: 0,
+    total: 0, cerradas: 0, completas: 0, incompletas: 0, sospechosas: 0, automaticas: 0, enCurso: 0,
     porcentaje: { completas: 0, incompletas: 0, sospechosas: 0, automaticas: 0 }
   });
-  assert.deepEqual(r.reingresos, { rondas: 0, veces: 0, porcentaje: 0 });
-  assert.deepEqual(r.alarmasRetenidas, { veces: 0, rondas: 0 });
+  assert.deepEqual(r.dificultades, {
+    rondas: 0,
+    porcentaje: 0,
+    app: { rondas: 0, porcentaje: 0, causas: { gps: 0, sesion: 0, telefono: 0, chapita: 0 } },
+    usuario: { rondas: 0, porcentaje: 0, causas: { lejos: 0, medio: 0, terminar: 0 } },
+    gps: { rondas: 0, porcentaje: 0, rechazos: 0 }
+  });
   store.cerrar();
 });
 
-test('volver a entrar con una ronda en curso se anota; sin ronda propia en curso, no', () => {
+test('GPS: lo que la señal podía arreglar es de la aplicación; lejos con buena señal, del usuario', () => {
+  const opciones = { ronda: RONDA, precisionMaxM: 100 };
+  // Sin ubicación, ubicación vieja o imprecisa: siempre de la aplicación.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps(), gps({ motivo: 'Ubicación vieja', edadMs: 60000 })] }, opciones)),
+    { app: ['gps'], usuario: [], rechazosGps: 2 });
+  // Lejos pero dentro del error posible (tope 40 + 100 m): también.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 140 })] }, opciones)),
+    { app: ['gps'], usuario: [], rechazosGps: 1 });
+  // Más allá: el guardia no estaba en el punto.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 141 })] }, opciones)),
+    { app: [], usuario: ['lejos'], rechazosGps: 0 });
+  // El margen sale de GPS_PRECISION_MAX_M (configGps) si no se pasa.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 120 })] }, { ronda: RONDA })),
+    { app: ['gps'], usuario: [], rechazosGps: 1 });
+});
+
+test('medio equivocado y chapita que no lee', () => {
+  const opciones = { ronda: RONDA };
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [medio(), medio()] }, opciones)),
+    { app: [], usuario: ['medio'], rechazosGps: 0 });
+  // «La chapita no lee» (reporte) y el teléfono que no entregó la serie.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [{ puntoId: 'p1', ts: iso(AHORA), motivo: 'La chapita no lee', reporte: 'chapita' }] }, opciones)),
+    { app: ['chapita'], usuario: [], rechazosGps: 0 });
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [{ puntoId: 'p1', ts: iso(AHORA), motivo: 'El número de serie de la chapita no es válido.' }] }, opciones)),
+    { app: ['chapita'], usuario: [], rechazosGps: 0 });
+  // Una ronda sin rechazos ni nada raro no tiene dificultades.
+  assert.deepEqual(causas(salud.dificultades({ escaneos: [marca('p1'), marca('p2')] }, opciones)),
+    { app: [], usuario: [], rechazosGps: 0 });
+});
+
+test('cerrada por el sistema: con todo marcado faltó «Terminar»; con puntos sin marcar, el teléfono', () => {
+  const opciones = { ronda: RONDA };
+  assert.deepEqual(causas(salud.dificultades({ cierreAutomatico: true, escaneos: [marca('p1'), marca('p2')] }, opciones)),
+    { app: [], usuario: ['terminar'], rechazosGps: 0 });
+  assert.deepEqual(causas(salud.dificultades({ cierreAutomatico: true, escaneos: [marca('p1')] }, opciones)),
+    { app: ['telefono'], usuario: [], rechazosGps: 0 });
+  // Sin la ronda (la borraron) no se sabe si estaba todo: cuenta como teléfono.
+  assert.deepEqual(causas(salud.dificultades({ cierreAutomatico: true, escaneos: [marca('p1'), marca('p2')] }, { ronda: null })),
+    { app: ['telefono'], usuario: [], rechazosGps: 0 });
+});
+
+test('resumen: rondas con dificultades por lado y por causa, y el GPS aparte', () => {
+  const store = nuevo();
+  store.db.rondas.push(RONDA);
+  const e = store.ejecuciones;
+  // 1: dos rechazos de GPS (una ronda, dos rechazos).
+  e.guardar(cerrada('d1', 'c1', AHORA - 1 * DIA, 'completa', { rechazos: [gps(), gps({ distanciaM: 90 })] }));
+  // 2: GPS y además lejos: cuenta en los dos lados.
+  e.guardar(cerrada('d2', 'c1', AHORA - 2 * DIA, 'completa', { rechazos: [gps(), gps({ distanciaM: 500 })] }));
+  // 3: QR en un punto con chapita.
+  e.guardar(cerrada('d3', 'c1', AHORA - 3 * DIA, 'completa', { rechazos: [medio()] }));
+  // 4: marcó todo y no tocó «Terminar».
+  e.guardar(cerrada('d4', 'c1', AHORA - 4 * DIA, 'completa', { cierreAutomatico: true, escaneos: [marca('p1'), marca('p2')] }));
+  // 5: el teléfono no la terminó.
+  e.guardar(cerrada('d5', 'c1', AHORA - 5 * DIA, 'incompleta', { cierreAutomatico: true, escaneos: [marca('p1')] }));
+  // 6 y 7: sin nada raro (una en curso).
+  e.guardar(cerrada('d6', 'c1', AHORA - 6 * DIA, 'completa', { escaneos: [marca('p1'), marca('p2')] }));
+  e.guardar(ejec('d7', 'c1', AHORA - 10 * MIN));
+  // 8: de hace más de 7 días, con GPS: no cuenta.
+  e.guardar(cerrada('vieja', 'c1', AHORA - 9 * DIA, 'completa', { rechazos: [gps()] }));
+
+  const d = salud.resumen(store, 'c1', AHORA).dificultades;
+  assert.deepEqual(d.app, { rondas: 3, porcentaje: 43, causas: { gps: 2, sesion: 0, telefono: 1, chapita: 0 } });
+  assert.deepEqual(d.usuario, { rondas: 3, porcentaje: 43, causas: { lejos: 1, medio: 1, terminar: 1 } });
+  assert.deepEqual(d.gps, { rondas: 2, porcentaje: 29, rechazos: 3 });
+  assert.equal(d.rondas, 5, 'la ronda con GPS y lejos cuenta una vez');
+  assert.equal(d.porcentaje, 71);
+  store.cerrar();
+});
+
+test('volver a entrar con una ronda en curso se anota como sesión cortada; sin ronda propia en curso, no', () => {
   const store = nuevo();
   const pedro = guardia('g-pedro', 'c1');
   const luis = guardia('g-luis', 'c1');
@@ -96,9 +175,9 @@ test('volver a entrar con una ronda en curso se anota; sin ronda propia en curso
   store.ejecuciones.guardar({ ...r, estado: 'incompleta', fin: iso(AHORA) });
   assert.equal(salud.anotarReingreso(store, pedro, AHORA), null);
 
-  const res = salud.resumen(store, 'c1', AHORA);
-  assert.deepEqual(res.reingresos, { rondas: 1, veces: 2, porcentaje: 100 },
-    'dos inicios de sesión en la misma ronda son una ronda cortada');
+  const d = salud.resumen(store, 'c1', AHORA).dificultades;
+  assert.equal(d.app.causas.sesion, 1, 'dos inicios de sesión en la misma ronda son una ronda cortada');
+  assert.deepEqual(d.app, { rondas: 1, porcentaje: 100, causas: { gps: 0, sesion: 1, telefono: 0, chapita: 0 } });
 
   // Sin datos personales: del guardia solo queda el id interno.
   const filas = store.sql.prepare('SELECT * FROM eventos_salud').all();
@@ -114,12 +193,12 @@ test('un reingreso de hace más de 7 días no cuenta, y los de más de 30 se pod
   store.ejecuciones.guardar(ejec('r1', 'c1', AHORA - 40 * DIA, { guardiaId: pedro.id }));
   salud.anotarReingreso(store, pedro, AHORA - 40 * DIA);
   salud.anotarReingreso(store, pedro, AHORA - 8 * DIA);
-  assert.equal(salud.resumen(store, 'c1', AHORA).reingresos.veces, 0);
+  // La ronda empezó hace 40 días: no es de esta semana, aunque siga abierta.
+  assert.equal(salud.resumen(store, 'c1', AHORA).dificultades.app.causas.sesion, 0);
   // Anotar uno nuevo poda los que pasaron de 30 días.
   salud.anotarReingreso(store, pedro, AHORA);
   const ts = store.sql.prepare('SELECT ts FROM eventos_salud ORDER BY ts').all().map(f => f.ts);
   assert.deepEqual(ts, [iso(AHORA - 8 * DIA), iso(AHORA)]);
-  assert.equal(salud.resumen(store, 'c1', AHORA).reingresos.veces, 1);
   store.cerrar();
 });
 
@@ -137,52 +216,6 @@ test('anotar un reingreso nunca hace fallar el login', () => {
   store.cerrar();
 });
 
-test('alarma retenida: una por intervalo mientras la ronda sigue en curso, no una por minuto', async () => {
-  const store = nuevo();
-  const push = pushFalso();
-  const t0 = AHORA - 3 * 60 * MIN;
-  const condominio = { id: 'c1', nombre: 'Los Aromos', recordatorioMin: 30, recordatorioDesde: iso(t0 - DIA) };
-  store.db.condominios.push(condominio);
-  store.ejecuciones.guardar(ejec('colgada', 'c1', t0));
-
-  // Revisa cada minuto durante 75 minutos, como el servidor.
-  for (let m = 0; m <= 75; m++) await recordatorios.revisar(store, push, t0 + m * MIN);
-  assert.deepEqual(push.enviadas, [], 'con una ronda en curso la alarma no suena');
-  const ts = store.salud.listar('c1', salud.ALARMA_RETENIDA, iso(0), iso(AHORA)).map(f => f.ts);
-  assert.deepEqual(ts, [iso(t0 + 30 * MIN), iso(t0 + 60 * MIN)]);
-
-  // Se cierra la ronda: la alarma vuelve a sonar y ya no se anota retenida.
-  const e = store.ejecuciones.obtener('colgada');
-  store.ejecuciones.guardar({ ...e, estado: 'incompleta', fin: iso(t0 + 76 * MIN), cierreAutomatico: true });
-  await recordatorios.revisar(store, push, t0 + 77 * MIN);
-  assert.deepEqual(push.enviadas, ['c1']);
-  assert.equal(store.salud.listar('c1', salud.ALARMA_RETENIDA, iso(0), iso(AHORA)).length, 2);
-
-  const r = salud.resumen(store, 'c1', AHORA);
-  assert.deepEqual(r.alarmasRetenidas, { veces: 2, rondas: 1 });
-  assert.equal(r.rondas.automaticas, 1);
-  store.cerrar();
-});
-
-test('alarma retenida: una ronda corta no retiene nada, y con la alarma apagada no se cuenta', async () => {
-  const store = nuevo();
-  const push = pushFalso();
-  const t0 = AHORA - 60 * MIN;
-  const corta = { id: 'c1', nombre: 'Corta', recordatorioMin: 30, recordatorioDesde: iso(t0 - DIA) };
-  const apagada = { id: 'c2', nombre: 'Apagada', recordatorioMin: 0 };
-  store.db.condominios.push(corta, apagada);
-  // La ronda empezó hace 10 minutos: la alarma recién toca 30 minutos después
-  // de su inicio, así que no se retuvo ninguna.
-  store.ejecuciones.guardar(ejec('r1', 'c1', AHORA - 10 * MIN));
-  store.ejecuciones.guardar(ejec('r2', 'c2', AHORA - 5 * 60 * MIN));
-  await recordatorios.revisar(store, push, AHORA);
-  assert.equal(recordatorios.retenidaPorRonda(store, corta, AHORA), null);
-  assert.equal(recordatorios.retenidaPorRonda(store, apagada, AHORA), null);
-  assert.equal(store.sql.prepare('SELECT COUNT(*) AS n FROM eventos_salud').get().n, 0);
-  assert.deepEqual(push.enviadas, []);
-  store.cerrar();
-});
-
 test('borrar la cuenta del guardia suelta su id de los eventos, que siguen contando', () => {
   const store = nuevo();
   const pedro = guardia('g-pedro', 'c1');
@@ -191,7 +224,7 @@ test('borrar la cuenta del guardia suelta su id de los eventos, que siguen conta
   salud.anotarReingreso(store, pedro, AHORA - 10 * MIN);
   cuenta.eliminarGuardia(store, pedro);
   assert.equal(store.sql.prepare('SELECT usuario_id FROM eventos_salud').get().usuario_id, null);
-  assert.equal(salud.resumen(store, 'c1', AHORA).reingresos.rondas, 1);
+  assert.equal(salud.resumen(store, 'c1', AHORA).dificultades.app.causas.sesion, 1);
   store.cerrar();
 });
 

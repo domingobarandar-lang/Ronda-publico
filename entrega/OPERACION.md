@@ -30,7 +30,14 @@ Eso es todo: el condominio queda andando sin que nadie más tenga acceso al pane
 
 Desde la ficha de cada condominio, la fábrica también: cambia los correos del informe, cambia el PIN de una cuenta de panel (le cierra las sesiones abiertas) y **quita** cuentas de panel que ya no correspondan (no deja borrar la última, o nadie podría entrar). La lista avisa cuando hay más de una cuenta dando vueltas.
 
-**Salud del producto** (v1.26): cada ficha trae una tabla de los últimos 7 días con lo que falla sin ser un error, y por eso no avisa Sentry: cómo terminaron las rondas (completas, incompletas, con sospechas y **cerradas automáticamente**, que son las que el teléfono no terminó), en cuántas el guardia **tuvo que volver a iniciar sesión a mitad de ronda** y cuántas veces **la alarma no se mandó porque había una ronda en curso** (una ronda colgada calla la alarma de todo el condominio). Lo que está en ámbar es lo que hay que mirar. Los inicios de sesión y las alarmas se empezaron a anotar con la v1.26: la ficha dice desde cuándo, y antes de esa fecha un cero no quiere decir nada.
+**Salud del producto** (v1.26): cada ficha trae, para los últimos 7 días, cómo terminaron las rondas (completas, incompletas, con sospechas y **cerradas automáticamente**, en ámbar) y las **rondas con dificultades técnicas**, separadas en:
+
+- **Fallo de la aplicación o del teléfono:** **GPS** (en rojo: es el que más hay que mirar; sin señal, ubicación vieja o imprecisa, con el número de rechazos), sesión cortada a mitad de ronda, el teléfono no terminó la ronda (la cerró el sistema con puntos sin marcar) y la chapita no lee.
+- **Fallo del usuario:** lejos del punto con buena señal de GPS, QR/chapita/código equivocado y marcó todos los puntos sin tocar «Terminar ronda».
+
+Una ronda puede tener más de una causa. La sesión cortada se empezó a anotar con la v1.26: la ficha dice desde cuándo, y antes de esa fecha un cero no quiere decir nada.
+
+**Errores técnicos (Sentry)** (v1.26): cada ficha muestra los errores de código sin resolver de ese condominio en los últimos 7 días (los 3 más frecuentes, con enlace a Sentry), y al final de la página van los que no tienen condominio. Para que aparezcan, el servidor necesita `SENTRY_TOKEN_LECTURA` en Railway: un token de Sentry de **solo lectura** (cómo crearlo, en `app/.env.example`). Sin él, la pantalla dice que falta y lo demás funciona igual. Un error se marca como resuelto en Sentry y deja de salir acá.
 
 > **Cuentas heredadas**: las cuentas de las demos y de las migraciones anteriores (`admin`/1234, `marta`, `carmen`, `admin-piloto`/1234) ya no abren todos los condominios, pero siguen entrando al suyo con un PIN publicado en git. En producción: purgar las demo (`purga-demo.js --aplicar`) y cambiarle el PIN a `admin-piloto` desde la fábrica.
 

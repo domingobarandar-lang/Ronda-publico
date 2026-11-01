@@ -23,6 +23,7 @@ const { crearAlarmaKiosco } = require('./lib/alarma-kiosco');
 const cuenta = require('./lib/cuenta');
 const errores = require('./lib/errores');
 const sentry = require('./lib/sentry');
+const { crearLectorSentry } = require('./lib/sentry-lectura');
 
 cargarEnv(__dirname);
 
@@ -30,7 +31,7 @@ cargarEnv(__dirname);
 // suya (VERSION_APP en public/app.js) y se recarga sola si no coinciden.
 const VERSION_SERVIDOR = 'v' + require('./package.json').version;
 
-function crearApp({ rutaDb, enviarPush } = {}) {
+function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {}) {
   // DB_PATH: en producción (Railway/VPS) apunta al volumen persistente.
   const store = crearStore(rutaDb || process.env.DB_PATH);
   const db = store.db;
@@ -1349,6 +1350,18 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     });
   });
 
+  // Los errores de código que juntó Sentry en 7 días: los de cada condominio y
+  // los que no tienen (lib/sentry-lectura.js). Va aparte de la lista porque
+  // Sentry puede tardar o no estar configurado, y la lista no lo espera.
+  app.get('/api/fabrica/sentry', ...deFabrica, alerta(async (req, res) => {
+    if (!lectorSentry.configurado) return res.json({ conectado: false, falta: lectorSentry.falta, dias: lectorSentry.dias });
+    const ids = db.condominios.map(c => c.id);
+    const [sinCondominio, ...listas] = await Promise.all([lectorSentry.sinCondominio(), ...ids.map(cid => lectorSentry.deCondominio(cid))]);
+    const porCondominio = {};
+    ids.forEach((cid, i) => { porCondominio[cid] = listas[i]; });
+    res.json({ conectado: true, dias: lectorSentry.dias, sinCondominio, porCondominio });
+  }));
+
   // Alta de un condominio: nombre, código de registro y correos del informe.
   // Sin cuenta de panel, salvo que se pidan adminUsuario + adminPin: la operación
   // entra con la cuenta de acceso total y lo elige en el selector.
@@ -1470,8 +1483,9 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.use((err, req, res, next) => {
     // Cuerpo demasiado grande o JSON roto: error del cliente, no del servidor.
     const clienteMalo = err && err.status >= 400 && err.status < 500;
-    // Solo la ruta, sin query string: puede traer datos del usuario.
-    if (!clienteMalo) errores.reportar(`${req.method} ${req.path}`, err);
+    // Solo la ruta, sin query string: puede traer datos del usuario. Con sesión,
+    // el condominio va como etiqueta a Sentry (lo lee /fabrica).
+    if (!clienteMalo) errores.reportar(`${req.method} ${req.path}`, err, { condominioId: req.usuario ? miCondominio(req) : null });
     if (res.headersSent) return next(err);
     if (clienteMalo) return res.status(err.status).json({ error: 'Petición inválida.' });
     res.status(500).json({ error: 'Error interno del servidor.' });

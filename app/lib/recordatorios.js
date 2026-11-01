@@ -21,14 +21,8 @@
 // recibir push: preguntan cada minuto (lib/alarma-kiosco.js) y alarmaVigente()
 // les contesta con lo que revisar() ya anotó. El reloj de intervalos es uno
 // solo, el de acá.
-//
-// Desde v1.26 la alarma que tocaba y no sonó porque había una ronda en curso
-// queda anotada (retenidaPorRonda): no es un error, pero una ronda colgada en
-// curso calla la alarma de todo el condominio, y eso se mira en /fabrica
-// (lib/salud.js).
 
 const errores = require('./errores');
-const { ALARMA_RETENIDA } = require('./salud');
 
 const MIN_PERMITIDO = 5;
 const MAX_PERMITIDO = 24 * 60;
@@ -72,50 +66,17 @@ function textoAlarma(condominio, { prueba = false } = {}) {
   };
 }
 
-// Desde cuándo cuenta el reloj: la configuración, la alarma anterior o el
-// inicio de la última ronda, lo que haya pasado último.
-function referencia(store, condominio) {
-  const ultima = store.ejecuciones.ultimaDe(condominio.id);
-  const ultimaRonda = ultima ? ms(ultima.inicio) : 0;
-  const ultimoAviso = ms((condominio.recordatorioUltimo || {}).ts);
-  return Math.max(ms(condominio.recordatorioDesde), ultimoAviso, ultimaRonda);
-}
-
-const rondaEnCurso = (store, condominio) =>
-  store.ejecuciones.listar({ condominioId: condominio.id, estado: 'en_curso', limite: 1 })[0] || null;
-
 // ¿Le toca alarma a este condominio en `ahora`? Solo lee la base: dos
 // consultas por índice (¿hay una en curso? ¿cuándo empezó la última?).
 function leToca(store, condominio, ahora = Date.now()) {
   const min = Number(condominio.recordatorioMin) || 0;
   if (!min) return false;
-  if (rondaEnCurso(store, condominio)) return false;
-  return ahora - referencia(store, condominio) >= min * 60000;
-}
-
-// La alarma que tocaba en `ahora` y no suena porque hay una ronda en curso:
-// devuelve esa ronda, o null. Es el reloj de leToca sin la guarda de la ronda
-// en curso, y cuenta también desde la última retenida: así una ronda que queda
-// abierta horas suma una por intervalo, no una por minuto.
-function retenidaPorRonda(store, condominio, ahora = Date.now()) {
-  const min = Number(condominio.recordatorioMin) || 0;
-  if (!min) return null;
-  const abierta = rondaEnCurso(store, condominio);
-  if (!abierta) return null;
-  const retenida = store.salud.ultimo(condominio.id, ALARMA_RETENIDA);
-  const desde = Math.max(referencia(store, condominio), retenida ? ms(retenida.ts) : 0);
-  return ahora - desde >= min * 60000 ? abierta : null;
-}
-
-// Anotarla nunca frena la revisión de los demás condominios.
-function anotarRetenida(store, condominio, ahora) {
-  try {
-    const abierta = retenidaPorRonda(store, condominio, ahora);
-    if (!abierta) return;
-    store.salud.anotar({ condominioId: condominio.id, tipo: ALARMA_RETENIDA, ts: new Date(ahora).toISOString(), ejecucionId: abierta.id });
-  } catch (e) {
-    errores.reportar('salud', e);
-  }
+  if (store.ejecuciones.listar({ condominioId: condominio.id, estado: 'en_curso', limite: 1 }).length) return false;
+  const ultima = store.ejecuciones.ultimaDe(condominio.id);
+  const ultimaRonda = ultima ? ms(ultima.inicio) : 0;
+  const ultimoAviso = ms((condominio.recordatorioUltimo || {}).ts);
+  const referencia = Math.max(ms(condominio.recordatorioDesde), ultimoAviso, ultimaRonda);
+  return ahora - referencia >= min * 60000;
 }
 
 // La alarma que un teléfono con Fully tiene que hacer sonar ahora, o null.
@@ -152,10 +113,7 @@ function alarmaVigente(store, condominio, ahora = Date.now()) {
 async function revisar(store, push, ahora = Date.now()) {
   const db = store.db;
   for (const condominio of db.condominios) {
-    if (!leToca(store, condominio, ahora)) {
-      anotarRetenida(store, condominio, ahora);
-      continue;
-    }
+    if (!leToca(store, condominio, ahora)) continue;
     // Se anota ANTES de enviar: si el envío tarda y el siguiente tick llega
     // antes de que termine, no sale una segunda alarma.
     condominio.recordatorioUltimo = { ts: new Date(ahora).toISOString(), ok: 0, total: 0 };
@@ -169,7 +127,7 @@ async function revisar(store, push, ahora = Date.now()) {
       if (r.total) console.log(`[alarma-ronda] ${condominio.nombre}: ${r.ok}/${r.total} teléfonos`);
     } catch (e) {
       console.warn(`[alarma-ronda] ${condominio.nombre}: ${e.message}`);
-      errores.reportar('alarma-ronda', e);
+      errores.reportar('alarma-ronda', e, { condominioId: condominio.id });
     }
   }
 }
@@ -180,6 +138,6 @@ function iniciar(store, push) {
 }
 
 module.exports = {
-  iniciar, revisar, leToca, retenidaPorRonda, alarmaVigente, textoAlarma, validarMinutos, textoIntervalo,
+  iniciar, revisar, leToca, alarmaVigente, textoAlarma, validarMinutos, textoIntervalo,
   MIN_PERMITIDO, MAX_PERMITIDO, PRUEBA_VIGENTE_MS
 };

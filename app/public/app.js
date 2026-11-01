@@ -16,6 +16,9 @@ const CLAVE = 'rondasqr';
 const VERSION_APP = 'v1.26.0';
 
 let estado = cargarEstado();
+// errores.js etiqueta con esto lo que manda a Sentry (v1.26): el condominio de
+// la sesión, para que /fabrica separe los errores por condominio.
+if (typeof window !== 'undefined') window.__erroresCondominio = () => (estado && estado.sesion && estado.sesion.condominio && estado.sesion.condominio.id) || null;
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 let sincronizando = false;
 let stream = null;

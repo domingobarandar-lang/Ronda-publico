@@ -2,7 +2,8 @@
 // Pantalla de la operación, aparte del panel del administrador: acá se crean los
 // condominios (lo único que no se puede hacer desde el panel) y se cargan los
 // correos del informe semanal de cada uno. Desde la v1.26 cada condominio
-// muestra además la salud del producto de la última semana (lib/salud.js).
+// muestra además la salud del producto de la última semana (lib/salud.js) y sus
+// errores de Sentry (lib/sentry-lectura.js).
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -152,44 +153,113 @@ Informe semanal a: ${r.condominio.correosInforme.join(', ') || '(sin correo toda
 
 // ---------- Lista de condominios ----------
 
-const veces = n => (n === 1 ? '1 vez' : `${n} veces`);
 const rondas = n => (n === 1 ? '1 ronda' : `${n} rondas`);
+const cifra = (texto, chip) => (chip ? `<span class="chip ${chip}">${texto}</span>` : texto);
+const fila = (etiqueta, valor, sangria) => `<tr><td${sangria ? ' style="padding-left:28px"' : ''}>${etiqueta}</td><td>${valor}</td></tr>`;
 
-// Salud del producto: lo que falla sin ser un error y por eso no llega a
-// Sentry. En ámbar, lo que hay que mirar: rondas que el guardia no cerró y
-// rondas en las que tuvo que volver a entrar a mitad de camino.
+// Cada causa de dificultad (lib/salud.js), con el texto que se muestra.
+const CAUSAS = {
+  app: [
+    ['gps', '📍 <strong>GPS</strong>: sin señal, ubicación vieja o imprecisa'],
+    ['sesion', 'Se le cortó la sesión a mitad de ronda'],
+    ['telefono', 'El teléfono no terminó la ronda (la cerró el sistema con puntos sin marcar)'],
+    ['chapita', 'La chapita no lee']
+  ],
+  usuario: [
+    ['lejos', 'Lejos del punto, con buena señal de GPS'],
+    ['medio', 'QR, chapita o código equivocado'],
+    ['terminar', 'Marcó todos los puntos y no tocó «Terminar ronda»']
+  ]
+};
+
+// Salud del producto: lo que falla sin ser un error de código. Dos tablas:
+// cómo terminan las rondas, y las rondas con dificultades técnicas separadas en
+// fallo de la aplicación y del usuario. El GPS va en rojo: es el fallo de la
+// aplicación al que más hay que ponerle ojo.
 function bloqueSalud(s) {
   if (!s) return '';
   const r = s.rondas;
+  const d = s.dificultades;
   const titulo = `<p class="nota" style="margin-top:14px"><strong>Salud del producto · últimos ${s.dias} días</strong></p>`;
-  if (!r.cerradas && !r.enCurso && !s.reingresos.veces && !s.alarmasRetenidas.veces) {
-    return `${titulo}<p class="nota">Sin rondas en los últimos ${s.dias} días.</p>`;
-  }
-  const cifra = (texto, mirar) => (mirar ? `<span class="chip chip-ambar">${texto}</span>` : texto);
-  const filas = [
+  if (!r.total) return `${titulo}<p class="nota">Sin rondas en los últimos ${s.dias} días.</p>`;
+
+  const estados = [
     ['Completas', `${r.completas} · ${r.porcentaje.completas}%`],
     ['Incompletas', `${r.incompletas} · ${r.porcentaje.incompletas}%`],
     ['Con sospechas', `${r.sospechosas} · ${r.porcentaje.sospechosas}%`],
-    ['Cerradas automáticamente', cifra(`${r.automaticas} · ${r.porcentaje.automaticas}%`, r.automaticas > 0)],
-    ['Volvió a iniciar sesión a mitad de ronda',
-      cifra(`${rondas(s.reingresos.rondas)} · ${s.reingresos.porcentaje}%`, s.reingresos.rondas > 0)
-        + (s.reingresos.veces > s.reingresos.rondas ? ` <span class="nota">(${veces(s.reingresos.veces)})</span>` : '')],
-    ['Alarma no enviada por ronda en curso',
-      veces(s.alarmasRetenidas.veces) + (s.alarmasRetenidas.veces ? ` · en ${rondas(s.alarmasRetenidas.rondas)}` : '')]
+    ['Cerradas automáticamente', cifra(`${r.automaticas} · ${r.porcentaje.automaticas}%`, r.automaticas > 0 && 'chip-ambar')]
   ];
-  const notas = [];
-  if (r.enCurso) notas.push(`Además, ${r.enCurso === 1 ? '1 ronda en curso' : `${r.enCurso} rondas en curso`}.`);
-  // Los inicios de sesión y las alarmas se anotan desde la v1.26: antes de
-  // eso un cero no quiere decir que no pasara.
+  const notasEstados = r.enCurso ? [`Además, ${r.enCurso === 1 ? '1 ronda en curso' : `${r.enCurso} rondas en curso`}.`] : [];
+
+  const causa = (lado, [clave, etiqueta]) => {
+    const n = d[lado].causas[clave];
+    let valor = n ? rondas(n) : '—';
+    if (clave === 'gps' && n) {
+      valor = cifra(`${rondas(n)} · ${d.gps.porcentaje}%`, 'chip-roja')
+        + ` <span class="nota">(${d.gps.rechazos === 1 ? '1 rechazo' : `${d.gps.rechazos} rechazos`})</span>`;
+    }
+    return fila(etiqueta, valor, true);
+  };
+  const lado = (nombre, clave) => `<tr><th>${nombre}</th><th>${rondas(d[clave].rondas)} · ${d[clave].porcentaje}%</th></tr>`
+    + CAUSAS[clave].map(c => causa(clave, c)).join('');
+
+  const notas = [`Sobre ${rondas(r.total)} de la semana. Una ronda puede tener más de una causa.`];
+  // La sesión cortada se anota desde la v1.26: antes de eso, un cero no quiere
+  // decir que no pasara.
   if (s.registroDesde && Date.parse(s.registroDesde) > Date.parse(s.desde)) {
-    notas.push(`Los inicios de sesión a mitad de ronda y las alarmas no enviadas se cuentan desde el ${esc(fecha(s.registroDesde))} (antes no se anotaban).`);
+    notas.push(`La sesión cortada se cuenta desde el ${esc(fecha(s.registroDesde))} (antes no se anotaba).`);
   }
+  const conNotas = lista => lista.map(n => `<p class="nota" style="margin-top:6px">${n}</p>`).join('');
+
   return `${titulo}
-      <table class="tabla-salud">
+      <table>
         <thead><tr><th>Rondas cerradas</th><th>${r.cerradas}</th></tr></thead>
-        <tbody>${filas.map(([etiqueta, valor]) => `<tr><td>${etiqueta}</td><td>${valor}</td></tr>`).join('')}</tbody>
+        <tbody>${estados.map(([etiqueta, valor]) => fila(etiqueta, valor)).join('')}</tbody>
       </table>
-      ${notas.map(n => `<p class="nota" style="margin-top:6px">${n}</p>`).join('')}`;
+      ${conNotas(notasEstados)}
+      <p class="nota" style="margin-top:14px"><strong>Rondas con dificultades técnicas: ${rondas(d.rondas)} · ${d.porcentaje}%</strong></p>
+      <table>
+        <tbody>${lado('Fallo de la aplicación o del teléfono', 'app')}${lado('Fallo del usuario', 'usuario')}</tbody>
+      </table>
+      ${conNotas(notas)}`;
+}
+
+// ---------- Errores técnicos (Sentry) ----------
+// Llegan aparte de la lista (GET /api/fabrica/sentry): Sentry puede tardar o no
+// estar conectado, y la lista no lo espera. Cada ficha trae un hueco
+// [data-sentry] que se llena acá; los errores sin condominio van abajo.
+
+function bloqueSentry(r, dias) {
+  if (!r) return '';
+  if (r.error) return `<p class="nota rojo">No se pudo leer Sentry: ${esc(r.error)}</p>`;
+  if (!r.problemas) return `<p class="nota">Sin errores en los últimos ${dias} días.</p>`;
+  const items = r.lista.map(p => {
+    const titulo = p.enlace ? `<a href="${esc(p.enlace)}" target="_blank" rel="noopener">${esc(p.titulo)}</a>` : esc(p.titulo);
+    const donde = p.donde ? ` <span class="nota">· ${esc(p.donde)}</span>` : '';
+    return `<li>${titulo}${donde}<br><span class="nota">${p.eventos === 1 ? '1 vez' : `${p.eventos} veces`} · última: ${esc(fecha(p.ultimaVez))}</span></li>`;
+  }).join('');
+  const resto = r.problemas - r.lista.length;
+  return `<p class="nota"><span class="chip chip-roja">${r.problemas === 1 ? '1 problema' : `${r.problemas} problemas`}</span> sin resolver, los más frecuentes:</p>
+      <ul style="margin:6px 0 0 18px">${items}</ul>
+      ${resto > 0 ? `<p class="nota" style="margin-top:6px">…y ${resto} más en Sentry.</p>` : ''}`;
+}
+
+async function cargarSentry() {
+  const general = $('sentry-general');
+  try {
+    const s = await api('/api/fabrica/sentry');
+    if (!s.conectado) {
+      general.innerHTML = `<p class="nota">Sentry no está conectado a esta pantalla: falta ${esc(s.falta)} en el servidor.</p>`;
+      document.querySelectorAll('[data-sentry]').forEach(el => { el.innerHTML = '<p class="nota">Sentry no está conectado (ver abajo).</p>'; });
+      return;
+    }
+    general.innerHTML = `<p class="nota">Tareas del servidor, pantallas sin sesión y errores anteriores a la v1.26.</p>${bloqueSentry(s.sinCondominio, s.dias)}`;
+    document.querySelectorAll('[data-sentry]').forEach(el => {
+      el.innerHTML = bloqueSentry(s.porCondominio[el.dataset.sentry], s.dias) || '<p class="nota">—</p>';
+    });
+  } catch (err) {
+    general.innerHTML = `<p class="nota rojo">No se pudo leer Sentry: ${esc(err.message)}</p>`;
+  }
 }
 
 function ficha(c) {
@@ -219,6 +289,8 @@ function ficha(c) {
         última ronda: ${esc(fecha(c.ultimaRonda))}
       </p>
       ${bloqueSalud(c.salud)}
+      <p class="nota" style="margin-top:14px"><strong>Errores técnicos (Sentry) · últimos 7 días</strong></p>
+      <div data-sentry="${esc(c.id)}"><p class="nota">Cargando…</p></div>
 
       <div class="fila-form">
         <input class="correos" value="${esc(c.correosInforme.join(', '))}" placeholder="Correo(s) del informe, separados por comas">
@@ -262,6 +334,7 @@ async function cargar() {
         ? `<p class="nota rojo">⚠️ Hay ${totales.length} cuentas de acceso total (${totales.map(esc).join(', ')}). Debería haber una sola.</p>`
         : '';
     $('lista-condominios').innerHTML = alerta + condominios.map(ficha).join('');
+    cargarSentry();
   } catch (err) {
     if (sesion) aviso(err.message, 'error');
   }
