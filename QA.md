@@ -100,7 +100,28 @@ La suite quedó en **20/20 en verde**. Cambios de cobertura respecto a la tabla 
 1. **Modo avión + purgar caché + abrir la app del guardia.** Debe arrancar. Si queda en blanco, falta un archivo en el `SHELL` del service worker. `test/sw-shell.test.js` cubre el caso conocido; esta prueba cubre el resto.
 2. **Medir el mismo punto bajo techo con el método viejo y el nuevo** y comparar `precisionM`. Es la premisa de todo el cambio: si el ± se queda plano entre el segundo 12 y el 45, ese punto **no tiene arreglo por GPS** y pertenece a la verificación por trayecto (fase 2), no a más muestreo.
 3. **Batería en una ronda larga** (60-90 min) con Wake Lock y GPS encendido desde el login. Es el riesgo aceptado de encender el GPS con la sesión: si el teléfono muere a mitad de ronda se pierde la ronda entera, que es peor que una marca rechazada.
-4. **La métrica que no se puede mover**: ninguna marca fuera de `topeM` aceptada. Si esa cifra se mueve, el motor se aflojó por accidente.
+4. **La métrica que no se puede mover**: ninguna marca fuera de `topeM` aceptada. Si esa cifra se mueve, el motor se aflojó por accidente. *(Desde la v1.27, en una marca por cercanía `distanciaM` y `topeM` son los de la lectura cercana: 30 m, o el tope de la entrada en un 🏠. La lectura del momento queda en `distanciaAhoraM` y su límite es 30 m (o el radio del ancla) + `GPS_ERROR_EXTRA_M` + su ±.)*
+
+## Actualización v1.27 — cercanía reciente (2026-11-01)
+
+Origen: marcas dudosas bajo techo (INC-002, ADR-001). Ver CU-29 en el SPEC.
+
+| Escenario | Casos del SPEC | Resultado |
+|---|---|---|
+| Alero: lectura del momento a 45 m ±15, lectura de hace 50 s a 10 m ±8 → **aceptada por cercanía** | CU-29 | ✅ |
+| Subterráneo: sin señal buena al marcar (±150 m, o sin lectura), lectura a 12 m ±8 de hace 1,5 min → aceptada | CU-29 | ✅ |
+| Caseta: lectura del momento a 150 m ±10 → rechazada aunque haya una lectura cercana | CU-29 | ✅ |
+| Ida y vuelta: pasó cerca, se fue a 150 m y volvió a 40 m → la de 150 m lo desmiente | CU-29 | ✅ |
+| Bordes: a 30 m sí, a 35 m no; ±20 sí, ±25 no, sin ± no; 5 min sí, 6 min no; momento a 70 m ±15 no, a 65 m ±15 sí | CU-29 | ✅ |
+| 🏠 con lecturas malas adentro durante 12 min: entra con la de la entrada (INC-002); a los 16 min, no | CU-19, CU-29 | ✅ |
+| Una app sin cercanía (v1.25) → 422 como siempre; una lectura «cercana» inventada a 35 m → 422 | CU-29 | ✅ |
+| El informe dice «📍 por cercanía (a 10 m hace 1 min; al marcar, a 45 m)»; no es «lejos» ni sospecha | CU-29 | ✅ |
+| `GPS_CERCANIA_MIN=0` → vuelve la v1.25 | CU-29 | ✅ |
+| App y servidor deciden lo mismo en toda la grilla de la rama nueva | CU-29 | ✅ |
+| Señal por punto: buena / regular / mala y la recomendación; solo el administrador, solo su condominio, últimos 30 días | CU-29 | ✅ |
+| El diagnóstico no cambia ni un byte de la base y no crea una si no existe | CU-29 | ✅ |
+
+**Pendiente de terreno (v1.27)**: en el teléfono de la garita (Fully Kiosk), un punto semi-techado y uno bajo techo, escaneando 1-3 min después de perder la señal. Y correr `scripts/diagnostico-gps.js` en producción (con permiso) antes y unas semanas después del deploy: tienen que bajar los rechazos bajo techo, y las marcas por cercanía tienen que concentrarse en los puntos que el diagnóstico clasifica como semi-techados o bajo techo.
 
 ## Bugs encontrados y corregidos durante QA
 

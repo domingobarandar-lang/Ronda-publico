@@ -1,6 +1,6 @@
 # ADR-001: Marcas dudosas bajo techo — qué se puede mejorar del GPS y qué no
 
-**Estado:** Propuesto
+**Estado:** Aceptado. Fases 1 y 2 implementadas en la v1.27.0 (CU-29); el script de la fase 0 está listo y no se ha corrido en producción; la fase 3 espera sus datos.
 **Fecha:** 2026-11-01
 **Deciden:** José (producto y soporte), operación en terreno
 **Relacionado:** CU-16, CU-18, CU-19, CU-23, CU-24, CU-28 en [SPEC.md](../SPEC.md) · [INC-002](INCIDENTES.md#inc-002--marcas-dudosas-en-los-puntos-bajo-techo)
@@ -69,14 +69,14 @@ No aflojar los umbrales generales. Trabajar en cuatro fases, en este orden:
 | Dimensión | Evaluación |
 |---|---|
 | Complejidad | Media: app del guardia y servidor (una rama nueva en `verificarPresencia()`, en los dos lados) |
-| Costo | Una versión (v1.26) |
+| Costo | Una versión (v1.27) |
 | Efecto en el control | Más débil que el exacto: acepta a quien estuvo cerca hace minutos. Sigue rechazando la foto escaneada desde lejos |
 | Compatibilidad | Una app vieja en caché sigue igual que hoy; los parámetros viajan en el paquete |
 
 **La regla.** Al escanear un punto con ubicación, primero se decide como hoy: si la señal del momento alcanza, la marca entra. Si no alcanza, porque no hay señal buena o porque dice que el guardia está lejos, **antes de rechazar se mira el rastro**. La marca entra «por cercanía» si se cumplen las dos:
 
 1. **Estuvo cerca hace poco**: en los últimos **5 minutos** (`GPS_CERCANIA_MIN`) hubo una lectura buena (±20 m o mejor, `GPS_LECTURA_BUENA_M`) a **30 m o menos** del punto (`GPS_CERCANIA_M`).
-2. **Nada lo ubica más lejos de lo que el GPS se puede equivocar**: ninguna lectura posterior a la última de esas lecturas cercanas, incluida la del momento, buena o mala, está a más de **50 m** del punto descontando su ± (`distancia − ± ≤ GPS_ERROR_POSIBLE_M`). Las lecturas malas no sirven para aprobar, pero sí para desmentir.
+2. **Nada lo ubica más lejos de lo que el GPS se puede equivocar**: ninguna lectura posterior a la última de esas lecturas cercanas, incluida la del momento, buena o mala, está a más de **50 m** del punto descontando su ±. Los 50 m son los 30 de la cercanía más **20 m de error que el GPS no declara** (`distancia − ± ≤ GPS_CERCANIA_M + GPS_ERROR_EXTRA_M`): el rebote corre la posición más de lo que dice su ±. En un punto 🏠 es el radio del ancla más esos 20. Las lecturas malas no sirven para aprobar, pero sí para desmentir.
 
 La condición 2 es la que separa «el GPS está fallando» de «el guardia se fue». Con una lectura que se ve buena, el rebote corre la posición decenas de metros, no cientos: volver a la caseta, a 150 m, deja lecturas que ninguna falla del GPS explica.
 
@@ -87,13 +87,13 @@ La condición 2 es la que separa «el GPS está fallando» de «el guardia se fu
 | **Caseta**: pasa a 25 m del punto, vuelve a la caseta, a 150 m, y escanea la foto | Lectura de 150 m con ±10: 140 m, más que cualquier falla | ❌ lejos |
 | **Ida y vuelta**: pasó cerca, se fue a 150 m y volvió a 40 m | La lectura de 150 m lo desmiente; no hay una lectura cercana después | Como hoy: espera 15 s o «acércate» |
 
-La marca viaja con las dos lecturas, marcada `via: 'cercania'`: la cercana (la prueba) y la del momento (la que dijo «lejos»). El servidor revisa las dos con los mismos números: la cercana, a 30 m o menos y con 5 min o menos; la del momento, dentro del error posible. Lo único que solo puede revisar el teléfono son las lecturas intermedias. La marca retenida (`evaluarPendiente()`, que hoy recibe `gpsUltimo()`) pasa por la misma regla, y el cierre (`evaluar()`) no la cuenta como «lejos del punto».
+La marca viaja con las dos lecturas: `gps`, la del momento (la que dijo «lejos»), y `cercania`, la prueba. El servidor revisa las dos con los mismos números: la cercana, a 30 m o menos y con 5 min o menos; la del momento, dentro del error posible. Lo único que solo puede revisar el teléfono son las lecturas intermedias. La marca retenida (`evaluarPendiente()`, que hoy recibe `gpsUltimo()`) pasa por la misma regla, y el cierre (`evaluar()`) no la cuenta como «lejos del punto».
 
 Los puntos 🏠 usan el mismo mecanismo con sus números de hoy (40 m, 15 min) y dejan de ser un algoritmo aparte. 🏠 queda solo para los puntos a más de 30 m del último lugar con señal.
 
-**A favor:** rescata al guardia que está en el punto y al que el GPS ubica lejos por el rebote, cubre los semi-techados y los subterráneos cercanos a la señal sin que el administrador clasifique nada, y arregla la entrada que se pierde (el hallazgo de arriba). Sube la calidad exigida a la prueba: hoy una lectura de ±90 m cerca de la entrada sirve (tope 40 m + margen de hasta 40 m); con esto, no.
+**A favor:** rescata al guardia que está en el punto y al que el GPS ubica lejos por el rebote, cubre los semi-techados y los subterráneos cercanos a la señal sin que el administrador clasifique nada, y arregla la entrada que se pierde (el hallazgo de arriba). La rama nueva le exige más a su prueba que la verificación de siempre: una lectura de ±90 m pegada a la entrada no sirve como lectura cercana. La verificación directa no cambia: si esa lectura es la del momento, entra como hasta ahora (tope 40 m + margen de hasta 40 m).
 
-**En contra:** prueba que el guardia estuvo a 30 m hace menos de 5 minutos y que ahora no está más lejos que unos 50 m más el error, no que está parado en el punto. En concreto, quien pasó por el punto puede marcarlo hasta 5 minutos después desde 60–80 m. Eso no sirve para escanear la foto desde la caseta si la caseta está más lejos; un punto a menos de ~60 m de la caseta ya hoy queda débil por el margen (tope de hasta 60 m). Queda el hueco de **apagar la ubicación**: sin lecturas no hay nada que desmienta, y por eso la ventana es de 5 minutos. Todo queda a la vista: el informe dice «📍 por cercanía: a 12 m hace 1 min; al marcar, el GPS lo ubicaba a 45 m», y el indicador de señal por punto de la fase 2 muestra si un punto que siempre tuvo buena señal empieza a marcarse por cercanía. El número que más pesa es `GPS_ERROR_POSIBLE_M`, y se calibra con la fase 0: cada rechazo guarda la distancia y el ± del intento, así que muestran de qué tamaño son las fallas del GPS en cada condominio.
+**En contra:** prueba que el guardia estuvo a 30 m hace menos de 5 minutos y que ahora no está más lejos que unos 50 m más el error, no que está parado en el punto. En concreto, quien pasó por el punto puede marcarlo hasta 5 minutos después desde 60–80 m. Eso no sirve para escanear la foto desde la caseta si la caseta está más lejos; un punto a menos de ~60 m de la caseta ya hoy queda débil por el margen (tope de hasta 60 m). Queda el hueco de **apagar la ubicación**: sin lecturas no hay nada que desmienta, y por eso la ventana es de 5 minutos. Todo queda a la vista: el informe dice «📍 por cercanía: a 12 m hace 1 min; al marcar, el GPS lo ubicaba a 45 m», y el indicador de señal por punto de la fase 2 muestra si un punto que siempre tuvo buena señal empieza a marcarse por cercanía. El número que más pesa es `GPS_ERROR_EXTRA_M`, y se calibra con la fase 0: cada rechazo guarda la distancia y el ± del intento, así que muestran de qué tamaño son las fallas del GPS en cada condominio.
 
 ### C. Promedio que sigue al guardia cuando camina — **condicionada (fase 3)**
 
@@ -144,7 +144,7 @@ Fuera de alcance según el SPEC. **Las balizas Bluetooth y la posición por WiFi
 
 - **Control vs. fricción.** A compra menos fricción con menos control en todos los puntos. B y D bajan la fricción **y** mantienen o suben el control, porque atacan la causa. C es neutro en el control. Por eso A se descarta y B va primero.
 - **Débil vs. nada.** La cercanía y la entrada son controles más débiles que el exacto, a propósito: bajo techo, en Fully, la alternativa real es no verificar nada. Ninguna de las dos prueba que el guardia entró; para eso está la chapita (D).
-- **El espejo cliente-servidor.** B agrega una rama a `verificarPresencia()` en los dos lados (marca `via: 'cercania'`: la lectura cercana hasta 30 m y 5 min, la del momento dentro del error posible), y `paridad-gps.test.js` tiene que recorrerla. El servidor no ve las lecturas intermedias; tampoco puede comprobar hoy que una lectura es real (una app de ubicación falsa es un hueco conocido, ver [SEGURIDAD.md](SEGURIDAD.md)).
+- **El espejo cliente-servidor.** B agrega una rama a `verificarPresencia()` en los dos lados (la marca lleva `cercania`: la lectura cercana hasta 30 m y 5 min, la del momento dentro del error posible), y `paridad-gps.test.js` tiene que recorrerla. El servidor no ve las lecturas intermedias; tampoco puede comprobar hoy que una lectura es real (una app de ubicación falsa es un hueco conocido, ver [SEGURIDAD.md](SEGURIDAD.md)).
 - **Medir primero.** Sin la fase 0, cualquier ajuste se hace a ciegas, que es justo lo que la v1.14 quiso dejar de hacer al empezar a registrar los rechazos.
 
 ## Consecuencias
@@ -158,26 +158,26 @@ Fuera de alcance según el SPEC. **Las balizas Bluetooth y la posición por WiFi
 
 ### Fase 0 — Diagnóstico por punto (1 día, sin deploy)
 
-1. [ ] Script de **solo lectura** sobre la base de producción (pedir permiso antes, como en INC-001) que dé, por punto y en los últimos 30 días: modo, `precisionM` y versión con que se fijó, marcas, mediana y p90 del `acc` de las marcas, rechazos por tipo (imprecisa, distancia, vencida, sin señal), y cuántas marcas aceptadas quedaron a más del 80 % del tope.
-2. [ ] Clasificar cada punto problema: **bajo losa** (lecturas de ±100 m o más), **semi-techado** (±20–60 m, rechazos por distancia), **mal fijado** (`precisionM` vacía o método antiguo), o **por entrada con el ancla perdida** (rechazos con `edadMs` de pocos segundos en un punto anclado: la señal de la entrada debería traer minutos).
+1. [x] Script de **solo lectura** sobre la base de producción (pedir permiso antes, como en INC-001) que dé, por punto y en los últimos 30 días: modo, `precisionM` y versión con que se fijó, marcas, mediana y p90 del `acc` de las marcas, rechazos por tipo (imprecisa, distancia, vencida, sin señal), y cuántas marcas aceptadas quedaron a más del 80 % del tope. → `app/scripts/diagnostico-gps.js` (v1.27), con la misma cuenta que el panel (`lib/senal-puntos.js`). **Falta correrlo en producción, con permiso.**
+2. [ ] Clasificar cada punto problema (el script ya pone la clase; falta leerla con los datos de producción): **bajo losa** (lecturas de ±100 m o más), **semi-techado** (±20–60 m, rechazos por distancia), **mal fijado** (`precisionM` vacía o método antiguo), o **por entrada con el ancla perdida** (rechazos con `edadMs` de pocos segundos en un punto anclado: la señal de la entrada debería traer minutos).
 3. [ ] Completar la sección de impacto de INC-002 con esos números.
 
-### Fase 1 — Cercanía reciente (v1.26)
+### Fase 1 — Cercanía reciente (v1.27)
 
-1. [ ] Rastro en `app.js`: el fix consolidado cada 5 s, bueno o malo, con su ±. Podado a la ventana más larga en uso (15 min si la ronda tiene puntos 🏠; si no, 5) y con tope de unas 200 lecturas. Vive en memoria, como el buffer, y se borra al cerrar sesión.
-2. [ ] `pruebaCercania(punto)` con las dos condiciones, llamada solo cuando la verificación de hoy no alcanza, y un solo selector de lecturas por punto usado por `gpsParaMarca()`, la verificación al escanear y `evaluarPendiente()`.
-3. [ ] Rama `via: 'cercania'` en `verificarPresencia()` de `lib/rondas.js` y de `app.js`, que revisa las dos lecturas que viajan. Los puntos 🏠 pasan por el mismo camino con sus números. `evaluar()` no la cuenta como «lejos del punto».
-4. [ ] `GPS_LECTURA_BUENA_M` (20), `GPS_CERCANIA_M` (30), `GPS_CERCANIA_MIN` (5) y `GPS_ERROR_POSIBLE_M` (50) en `configGps()` y en el paquete, con defaults en `cfgGps()` para un paquete viejo en caché. Son el punto de partida: se calibran con la fase 0.
-5. [ ] Informe y aviso al administrador: «📍 por cercanía: a N m hace M min; al marcar, el GPS lo ubicaba a D m».
-6. [ ] Tests: los cuatro casos de la opción B; sin lectura cercana en 5 min → como hoy (espera y rechazo); lectura cercana de hace 6 min → no cuenta; lectura del momento a 70 m con ±15 → rechazo; lectura de ±90 m pegada al punto → no cuenta como cercana; punto 🏠 con 3 min de lecturas malas adentro → se acepta; la marca retenida usa las mismas lecturas que la verificación; el servidor rechaza una marca `via: 'cercania'` con la lectura cercana a 35 m o la del momento fuera del error posible; paridad de la rama nueva.
+1. [x] Rastro en `app.js` (`anotarRastro()`): el fix consolidado, bueno o malo, con su ±, uno por tramo de 2 s y las últimas 1.800 lecturas (una hora; más simple que podar por ventana, y alcanza para los 15 min de un 🏠). Vive en memoria, como el buffer, y se borra al cerrar sesión o al entrar otro guardia.
+2. [x] `cercaniaPara(punto)` con las dos condiciones, llamada solo cuando la verificación de siempre no alcanza, y un solo selector por punto, `ubicacionParaMarca()`, usado por la marca al escanear y por `evaluarPendiente()`.
+3. [x] Rama `presenciaPorCercania()` en `verificarPresencia()` de `lib/rondas.js` y de `app.js`, que revisa las dos lecturas que viajan. Los puntos 🏠 pasan por el mismo camino con sus números. `evaluar()` no la cuenta como «lejos del punto» y deja `porCercania` en la marca.
+4. [x] `GPS_LECTURA_BUENA_M` (20), `GPS_CERCANIA_M` (30), `GPS_CERCANIA_MIN` (5) y `GPS_ERROR_EXTRA_M` (20) en `configGps()` y en el paquete, con defaults en `cfgGps()` para un paquete viejo en caché. Son el punto de partida: se calibran con la fase 0.
+5. [x] Informe y aviso al administrador: «📍 por cercanía (a N m hace M min; al marcar, a D m)».
+6. [x] Tests (`test/app-gps.test.js`, `test/cercania.test.js`, `test/paridad-gps.test.js`): los cuatro casos de la opción B; sin lectura cercana en 5 min → como hoy (espera y rechazo); lectura cercana de hace 6 min → no cuenta; lectura del momento a 70 m con ±15 → rechazo; lectura de ±90 m pegada al punto → no cuenta como cercana; punto 🏠 con 3 min de lecturas malas adentro → se acepta; la marca retenida usa las mismas lecturas que la verificación; el servidor rechaza una marca con la lectura cercana a 35 m o la del momento fuera del error posible; paridad de la rama nueva.
 7. [ ] Prueba de terreno en el teléfono de la garita (Fully): un punto semi-techado y uno bajo techo, escaneando 1–3 min después de perder la señal.
-8. [ ] Actualizar CU-16 y CU-19 en SPEC.md, OPERACION.md y CHANGELOG.
+8. [x] CU-29 nuevo en SPEC.md (y la regla de presencia), OPERACION.md y CHANGELOG.
 
 **Cómo saber que funcionó:** bajan los rechazos y las observaciones de señal imprecisa bajo techo, se sabe cuántas marcas entran por cercanía en cada punto, y **ninguna marca aceptada fuera de `topeM`** (la métrica de QA.md que no se puede mover).
 
 ### Fase 2 — Cada punto con su prueba
 
-1. [ ] Tabla de decisión en OPERACION.md:
+1. [x] Tabla de decisión en OPERACION.md:
 
    | Lugar del punto | Prueba |
    |---|---|
@@ -186,7 +186,7 @@ Fuera de alcance según el SPEC. **Las balizas Bluetooth y la posición por WiFi
    | Bajo losa, teléfono con Chrome en Android | 📶 Chapita NFC, sin ubicación |
    | Bajo losa a más de 30 m de la señal, teléfono con Fully Kiosk | 🏠 Por entrada (hasta que Fully lea chapitas) |
 
-2. [ ] En el panel, por punto: «señal en este punto: buena / regular / mala», calculada con el `acc` de sus marcas y sus rechazos de los últimos 30 días, y una recomendación según la tabla. Solo sugiere: **la ubicación del punto nunca se mueve sola** con las marcas de los guardias (se podría ir corriendo hacia la caseta de a pocos metros).
+2. [x] En el panel, por punto: «señal en este punto: buena / regular / mala», calculada con el `acc` de sus marcas y sus rechazos de los últimos 30 días, y una recomendación según la tabla (`GET /api/admin/puntos/senal`, `lib/senal-puntos.js`). Mala: ± típico sobre 20 m o 1 de cada 4 intentos rechazado. Buena: p90 hasta 20 m, menos de 1 de cada 10 rechazado y hasta 1 de cada 4 marcas por cercanía. Con menos de 3 intentos no opina. Solo sugiere: **la ubicación del punto nunca se mueve sola** con las marcas de los guardias (se podría ir corriendo hacia la caseta de a pocos metros).
 
 ### Fase 3 — GPS con señal (solo si la fase 0 lo justifica)
 

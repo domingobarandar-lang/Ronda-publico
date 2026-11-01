@@ -63,7 +63,7 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 | # | Fecha | Gravedad | Qué pasó | Cómo nos enteramos | Estado |
 |---|---|---|---|---|---|
 | INC-001 | 2026-10-31 | S2 | Rondas interrumpidas en el teléfono compartido de una garita ([análisis](#inc-001--rondas-interrumpidas-en-el-teléfono-compartido-de-la-garita)) | *Por completar* | Corrección en curso (v1.25) |
-| INC-002 | 2026-11-01 | S2 (estimada) | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Investigación; corrección propuesta |
+| INC-002 | 2026-11-01 | S2 (estimada) | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Corrección en curso (v1.27) |
 
 **Fallos anteriores**, reconstruidos del CHANGELOG y de los commits. No tienen análisis y la gravedad es estimada:
 
@@ -150,7 +150,7 @@ En la misma investigación salieron tres fallos:
 
 **Gravedad**: S2 estimada: el informe muestra marcas que no prueban la presencia, o el guardia no puede marcar un punto en el que está. Pasa a S1 si la fase 0 del ADR muestra puntos que no se pueden marcar nunca.
 **Condominio**: *por completar*.
-**Estado**: investigación. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
+**Estado**: corrección en curso (v1.27: cercanía reciente, CU-29). Falta el diagnóstico con datos de producción y la prueba de terreno. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
 
 #### Qué pasó
 
@@ -168,6 +168,7 @@ En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el códig
 | Agosto 2026 | v1.13 y v1.14: la lectura pasa a ser la mejor y después el promedio de una ventana de 20 s. La ventana cambia; la entrada se sigue perdiendo. |
 | *Por completar* | Primer aviso de marcas dudosas bajo techo y quién lo dio. |
 | 2026-11-01 | Revisión del código: se encuentra que la lectura de la entrada no se guarda aparte. |
+| 2026-11-01 | v1.27.0 (PR, sin desplegar): rastro de lecturas en la app y cercanía reciente para todos los puntos con ubicación; los 🏠 usan la lectura de la entrada los 15 min completos. Señal por punto en el panel y `scripts/diagnostico-gps.js`. |
 
 #### Cinco porqués
 
@@ -181,10 +182,10 @@ En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el códig
 
 | # | Acción | Nivel | Estado |
 |---|---|---|---|
-| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Pendiente |
-| 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Propuesta |
-| 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Propuesta |
-| 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.26 por buena | Proceso | Pendiente |
+| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Script listo (`scripts/diagnostico-gps.js`); falta correrlo en producción, con permiso |
+| 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Hecho en la v1.27 (sin desplegar) |
+| 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Hecho en la v1.27 (sin desplegar) |
+| 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.27 por buena | Proceso | Pendiente |
 
 ## Plantilla
 
