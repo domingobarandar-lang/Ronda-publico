@@ -221,12 +221,13 @@ test('errores de Web NFC: permiso negado, NFC apagado y sin NFC se dicen distint
   assert.match(texto('Raro'), /Raro/);
 });
 
-test('pantalla de la chapita: el lector arranca con el toque y se detiene al cerrar', async () => {
+test('pantalla de la chapita: el lector arranca con el toque y queda escuchando (v1.24.2)', async () => {
   let señal = null;
   let lector = null;
+  let escaneos = 0;
   class NDEFReader {
     constructor() { lector = this; }
-    scan({ signal }) { señal = signal; return Promise.resolve(); }
+    scan({ signal }) { señal = signal; escaneos++; return Promise.resolve(); }
   }
   const app = cargarApp({ ventana: { NDEFReader } });
   conRonda(app, { puntos: [P_NFC] });
@@ -237,8 +238,18 @@ test('pantalla de la chapita: el lector arranca con el toque y se detiene al cer
   lector.onreading(lectura(P_NFC.payload));
   await tick();
   assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'nfc');
-  assert.equal(señal.aborted, true, 'el lector siguió encendido después de leer');
   assert.equal(app.elementos.get('modal-nfc').classList.contains('oculta'), true);
+  // La chapita sigue pegada al teléfono: si el lector se apagara acá, Android
+  // la vería sin dueño y abriría otra cosa encima de la app.
+  assert.equal(señal.aborted, false, 'el lector se apagó con la chapita todavía apoyada');
+  // Cancelar tampoco lo apaga, y volver a abrir la pantalla no lo reinicia.
+  app.correr('abrirPantallaNfc()');
+  app.correr('cerrarPantallaNfc()');
+  assert.equal(señal.aborted, false);
+  assert.equal(escaneos, 1, 'reiniciar el lector abre el hueco por el que Android se lleva la chapita');
+  // Salir sí lo apaga.
+  app.correr('salir()');
+  assert.equal(señal.aborted, true, 'el lector siguió encendido después de salir');
 
   // Permiso negado: el mensaje queda en la pantalla, con Reintentar.
   class Negado { scan() { return Promise.reject(new DOMException('no', 'NotAllowedError')); } }
@@ -248,12 +259,72 @@ test('pantalla de la chapita: el lector arranca con el toque y se detiene al cer
   await new Promise(r => setImmediate(r));
   assert.match(negado.elementos.get('nfc-texto').textContent, /permiso/);
   assert.equal(negado.elementos.get('btn-reintentar-nfc').classList.contains('oculta'), false);
-  // Cancelar con el lector vivo lo apaga.
-  const otra = cargarApp({ ventana: { NDEFReader } });
-  conRonda(otra, { puntos: [P_NFC] });
-  otra.correr('abrirPantallaNfc()');
-  otra.correr('cerrarPantallaNfc()');
-  assert.equal(señal.aborted, true);
+});
+
+test('v1.24.2: con el lector escuchando, una chapita fuera de su pantalla igual marca (y no se la lleva Android)', async () => {
+  let lector = null;
+  let señal = null;
+  class NDEFReader {
+    constructor() { lector = this; }
+    scan({ signal }) { señal = signal; return Promise.resolve(); }
+  }
+  let camaras = 0;
+  const app = cargarApp({ ventana: { NDEFReader } });
+  app.ctx.navigator.mediaDevices = { getUserMedia: () => { camaras++; return new Promise(() => {}); } };
+  conRonda(app, { puntos: [P_QR, P_NFC] });
+  // El toque en "Iniciar" de una ronda con chapitas enciende el lector.
+  app.correr("estado.ejecucion = null; iniciarRonda('r1')");
+  assert.ok(lector && !señal.aborted, 'Iniciar no encendió el lector');
+  // El guardia abre la cámara por error y acerca la chapita: marca igual.
+  app.correr("abrirEscaner()");
+  app.elementos.get('modal-escaner').classList.remove('oculta');
+  lector.onreading(lectura(P_NFC.payload));
+  await tick();
+  assert.equal(app.correr('estado.ejecucion.escaneos.length'), 1);
+  assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'nfc');
+  assert.equal(app.elementos.get('modal-escaner').classList.contains('oculta'), true, 'la cámara quedó abierta encima');
+  // Una copia de la chapita leída en la lista de la ronda: rechazo, como en su pantalla.
+  conRonda(app, { puntos: [P_NFC] });
+  app.ctx.__copia = lectura(P_NFC.payload, '04:11:22:33:44:55:66');
+  lector.onreading(app.ctx.__copia);
+  await tick();
+  assert.equal(app.correr('estado.cola[0].tipo'), 'rechazo');
+  // Sin ronda en curso no marca nada: se explica.
+  app.correr('estado.ejecucion = null; estado.cola = []');
+  app.ctx.__otra = lectura(P_NFC2.payload, '04:11:22:33:44:55:66');
+  lector.onreading(app.ctx.__otra);
+  await tick();
+  assert.equal(app.correr('estado.cola.length'), 0);
+  assert.match(app.elementos.get('aviso').textContent, /primero inicia la ronda/);
+});
+
+test('v1.24.2: un condominio de puros QR nunca enciende el lector ni pide permiso de NFC', async () => {
+  let escaneos = 0;
+  let consultas = 0;
+  class NDEFReader { scan() { escaneos++; return Promise.resolve(); } }
+  const app = cargarApp({ ventana: { NDEFReader } });
+  app.ctx.navigator.permissions = { query: async () => { consultas++; return { state: 'granted' }; } };
+  conRonda(app, { puntos: [P_QR] });
+  app.correr("estado.ejecucion = null; iniciarRonda('r1')");
+  app.correr('armarLectorNfc()');
+  await tick();
+  app.correr('escanear()');
+  await tick();
+  assert.equal(escaneos, 0);
+  // Y en uno con chapitas, con el permiso ya dado, se enciende solo al arrancar
+  // (o al volver a la app) aunque no haya toque: así sobrevive a una recarga.
+  conRonda(app, { puntos: [P_NFC] });
+  app.correr('armarLectorNfc()');
+  await tick();
+  assert.equal(escaneos, 1);
+  assert.ok(consultas >= 1);
+  // Permiso todavía sin dar: sin toque no se intenta (Chrome no puede preguntar).
+  const sinPermiso = cargarApp({ ventana: { NDEFReader } });
+  sinPermiso.ctx.navigator.permissions = { query: async () => ({ state: 'prompt' }) };
+  conRonda(sinPermiso, { puntos: [P_NFC] });
+  sinPermiso.correr('armarLectorNfc()');
+  await tick();
+  assert.equal(escaneos, 1);
 });
 
 test('ronda mixta sin orden: "Escanear" pregunta, y abre solo la cámara o solo la chapita', async () => {

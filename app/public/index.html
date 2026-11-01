@@ -7,7 +7,7 @@
   <!-- Versión del shell: app.js la compara con la suya para detectar que el
        service worker sirvió una página de otra versión (ver shellMixto). Sube
        en cada release junto con package.json, sw.js y VERSION_APP. -->
-  <meta name="version-app" content="v1.25.0">
+  <meta name="version-app" content="v1.25.1">
   <title>Rondas QR</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
@@ -21,6 +21,13 @@
   </header>
 
   <main>
+    <!-- Sesión vencida (v1.25.1): la ronda sigue y lo marcado queda guardado;
+         esto ofrece volver a entrar para enviarlo. Lo pinta pintarSesion(). -->
+    <div id="aviso-sesion" class="caja caja-alerta oculta">
+      <p id="aviso-sesion-texto"></p>
+      <button id="btn-entrar-de-nuevo" class="btn btn-principal">Entrar de nuevo</button>
+    </div>
+
     <!-- Login del guardia: primera pantalla al entrar (la app es solo del guardia;
          el administrador tiene su propia app en /panel) -->
     <section id="vista-login" class="vista oculta">
@@ -35,6 +42,9 @@
       </label>
       <button id="btn-login" class="btn btn-principal btn-gigante">Entrar</button>
       <p id="error-login" class="error oculta"></p>
+      <!-- Con la sesión vencida, el login no es una puerta cerrada: se puede
+           volver a la ronda y entrar después (por ejemplo, con señal). -->
+      <button id="btn-volver-ronda" class="btn btn-borde oculta">← Volver sin entrar</button>
       <button id="btn-ir-registro" class="btn btn-borde">🆕 Crear mi usuario</button>
       <p class="nota centrado">¿Guardia nuevo? Crea tu usuario para empezar.</p>
       <button id="btn-instalar" class="btn btn-borde oculta">📲 Instalar la app en este equipo</button>

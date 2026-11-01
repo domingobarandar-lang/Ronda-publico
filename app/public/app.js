@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.25.0';
+const VERSION_APP = 'v1.25.1';
 
 let estado = cargarEstado();
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
@@ -647,6 +647,31 @@ async function recuperarRespaldo() {
   return !teniaRonda && Boolean(estado.ejecucion && !estado.ejecucion.cerrada);
 }
 
+// Otra pestaña de la app guardó (v1.25.1). Pasa cuando la app está en una
+// pestaña de Chrome y una chapita acercada con la app en segundo plano abre su
+// enlace en OTRA pestaña (ver enlaceDeChapita en admin.js): cada pestaña tiene
+// su `estado` en memoria, y la que guardara después borraría lo que marcó la
+// otra. Gana la copia con el rev más alto, igual que con el respaldo.
+function tomarEstadoDeOtraPestana(texto) {
+  let otro = null;
+  try { otro = texto ? JSON.parse(texto) : null; } catch { otro = null; }
+  if (!otro || (otro.rev || 0) <= (estado.rev || 0)) return false;
+  estado = Object.assign(estadoVacio(), otro);
+  return true;
+}
+
+// La app la abrió una chapita (su enlace termina en #nfc): Android la abrió
+// porque la app no estaba escuchando, así que esa lectura no marcó nada. Se
+// dice y se limpia la dirección, para que una recarga no lo repita.
+function abiertaPorChapita() {
+  if (location.hash !== '#nfc') return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+  if (!estado.sesion) return;
+  aviso(rondaAbierta()
+    ? 'Abriste la app con la chapita: acércala otra vez para marcar el punto.'
+    : 'Abriste la app con la chapita: inicia la ronda y acércala otra vez.', 'info', 7000);
+}
+
 // Pide que el navegador no borre los datos de la app para hacer espacio. En
 // una PWA instalada Chrome suele concederlo solo; si no, no cambia nada.
 function pedirAlmacenamientoPersistente() {
@@ -673,6 +698,7 @@ function esc(texto) {
 function mostrarVista(id) {
   for (const v of document.querySelectorAll('.vista')) v.classList.add('oculta');
   $(id).classList.remove('oculta');
+  pintarSesion(id);
 }
 
 let avisoTimer = null;
@@ -827,8 +853,12 @@ async function iniciarSesionGuardia(usuario, pin) {
   guardarEstado();
   pedirAlmacenamientoPersistente();
   await bajarPaquete(true);
+  const delServidor = !estado.ejecucion && await recuperarRondaDelServidor();
   render();
-  if (traspaso) aviso(traspaso.texto, traspaso.tipo, 8000);
+  if (delServidor) aviso('Se recuperó tu ronda en curso desde el servidor: sigue donde quedaste.', 'ok', 8000);
+  else if (traspaso) aviso(traspaso.texto, traspaso.tipo, 8000);
+  armarLectorNfc();
+  sincronizar();
   // Los guardias entran, hacen la ronda y salen: sin esto la versión solo
   // quedaba anotada si el minuto del reloj caía dentro de la sesión.
   revisarVersion();
@@ -900,19 +930,100 @@ async function registrar() {
 }
 
 function salir() {
-  if (estado.cola.length && !confirm('Hay marcas sin enviar al servidor. ¿Salir igual?')) return;
+  // Hasta la v1.25.0 salir con marcas sin enviar las borraba («¿Salir igual?»).
+  // Ahora quedan apartadas a nombre de quien sale, como las de un guardia cuya
+  // sesión se cortó (ver cambiarDeGuardia), y vuelven cuando entra de nuevo.
+  const pendiente = Boolean(estado.sesion && (estado.cola.length || rondaAbierta()));
+  if (pendiente && !confirm('Hay marcas sin enviar. Quedan guardadas en este teléfono y se envían cuando vuelvas a entrar. ¿Salir?')) return;
   olvidarPendiente();
   marcaRetenida = null;
   detenerGps();
+  detenerLectorNfc();
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
   // El rev sigue subiendo: si volviera a 0, al próximo arranque el respaldo
   // (con la sesión vieja) le ganaría a este estado vacío. Lo apartado de otros
   // guardias se queda: no es de quien sale (ver cambiarDeGuardia).
   const { apartados = [], duenos = {} } = estado;
+  if (pendiente) {
+    const yo = { usuario: estado.sesion.usuario, nombre: estado.sesion.nombre };
+    for (const e of estado.cola) duenos[e.ejecucionId] = duenos[e.ejecucionId] || yo;
+    const abierta = rondaAbierta() ? estado.ejecucion : null;
+    if (abierta) duenos[abierta.id] = duenos[abierta.id] || yo;
+    apartados.push({ ...yo, desde: new Date().toISOString(), eventos: estado.cola, ejecucion: abierta });
+  }
   estado = Object.assign(estadoVacio(), { rev: estado.rev, apartados, duenos });
   podarDuenos();
   guardarEstado();
   render();
+}
+
+// ---------- Sesión vencida a mitad de la ronda (v1.25.1) ----------
+// Hasta la v1.25.0, el primer envío rechazado por sesión vencida (401) borraba
+// la sesión, y la marca siguiente mandaba al login: sin señal (un subterráneo)
+// el guardia no podía entrar y la ronda quedaba trabada. Ahora la sesión queda
+// marcada (`vencida`) y no se borra: la ronda sigue, lo marcado se guarda, y un
+// aviso arriba ofrece «Entrar de nuevo». Al entrar, se envía todo.
+
+function sesionVigente(sesion = estado.sesion) {
+  return Boolean(sesion && sesion.token && !sesion.vencida);
+}
+
+function rondaAbierta(ejecucion = estado.ejecucion) {
+  return Boolean(ejecucion && !ejecucion.cerrada);
+}
+
+// El aviso de arriba ("Tu sesión venció") y, en el login, la vuelta a la ronda.
+// Sin `vista`, mira cuál está a la vista.
+function pintarSesion(vista) {
+  const vencida = Boolean(estado.sesion && estado.sesion.vencida);
+  const caja = $('aviso-sesion');
+  if (caja) {
+    const visible = id => $(id) && !$(id).classList.contains('oculta');
+    const enLogin = vista ? vista === 'vista-login' || vista === 'vista-registro' : visible('vista-login') || visible('vista-registro');
+    caja.classList.toggle('oculta', !vencida || enLogin);
+    const pendientes = estado.cola.length;
+    $('aviso-sesion-texto').textContent = rondaAbierta()
+      ? `Tu sesión venció. La ronda sigue: lo que marques queda guardado en el teléfono${pendientes ? ` (${pendientes} por enviar)` : ''}. Entra de nuevo con tu usuario y PIN para enviarlo.`
+      : pendientes
+        ? `Tu sesión venció: hay ${pendientes} por enviar. Entra de nuevo con tu usuario y PIN para enviarlo.`
+        : 'Tu sesión venció. Entra de nuevo con tu usuario y PIN.';
+  }
+  const volver = $('btn-volver-ronda');
+  if (volver) volver.classList.toggle('oculta', !vencida);
+}
+
+function irAEntrarDeNuevo() {
+  mostrarVista('vista-login');
+  $('error-login').classList.add('oculta');
+  if (estado.sesion && estado.sesion.usuario) $('campo-usuario').value = estado.sesion.usuario;
+  $('campo-pin').value = '';
+}
+
+// Chrome borró los datos del sitio (o es otro teléfono): si el servidor tiene
+// una ronda abierta de este guardia, se retoma con las marcas que ya llegaron.
+// Lo que estaba en el teléfono sin enviar se perdió con los datos: eso no lo
+// arregla nadie, por eso la app pide almacenamiento persistente.
+async function recuperarRondaDelServidor() {
+  let r;
+  try {
+    r = await api('/api/mi/ronda-en-curso');
+  } catch {
+    return false;
+  }
+  const ej = r && r.ejecucion;
+  if (!ej || estado.ejecucion || !estado.paquete) return false;
+  if (!estado.paquete.rondas.some(x => x.id === ej.rondaId)) return false;
+  estado.ejecucion = {
+    id: ej.id,
+    rondaId: ej.rondaId,
+    inicio: ej.inicio,
+    escaneos: (ej.escaneos || []).map(e => ({ puntoId: e.puntoId, ts: e.ts, offline: e.offline, gps: null, medio: e.medio })),
+    cerrada: false,
+    comentario: ej.comentario || ''
+  };
+  anotarDueno(ej.id);
+  guardarEstado();
+  return true;
 }
 
 // ---------- Eliminar mi cuenta (CU-25) ----------
@@ -974,6 +1085,7 @@ const conTope = (promesa, ms) => Promise.race([promesa, new Promise(r => setTime
 // la alarma (Web Push o Fully). La del servidor ya la borró el DELETE.
 async function borrarDatosLocales() {
   olvidarPendiente();
+  detenerLectorNfc();
   marcaRetenida = null;
   detenerGps();
   liberarWakeLock();
@@ -1042,6 +1154,9 @@ function iniciarRonda(rondaId) {
   reengancharSiNegado();
   iniciarGps();
   pedirWakeLock();
+  // El toque en "Iniciar" es el gesto que Chrome pide para el permiso de NFC:
+  // desde acá toda chapita que se acerque la lee esta app (ver armarLectorNfc).
+  armarLectorNfc(true);
   render();
   sincronizar();
 }
@@ -1245,10 +1360,65 @@ function textoDeChapita(mensaje) {
   return null;
 }
 
-// Arranca el lector. Web NFC exige que venga de un toque del guardia (por eso
-// se llama desde el botón, nunca solo) y pide permiso la primera vez. Se detiene
-// con detenerLectorNfc(); la página oculta lo suspende sola.
-async function iniciarLectorNfc(alError) {
+// ---------- El lector queda escuchando (v1.25.1) ----------
+// Hasta la v1.24.1 el lector se encendía al abrir la pantalla de la chapita y se
+// apagaba al leer, con la chapita todavía pegada al teléfono. Una chapita que
+// Android ve sin que ninguna app la tenga tomada se la entrega al sistema: la
+// pantalla «Nueva etiqueta», otra app de NFC o una ventana vacía que tapa a la
+// app. Eso era la «pantalla en blanco que saca de la app»: pasaba al acercar la
+// chapita fuera de esa pantalla (en la lista de la ronda, con la cámara abierta,
+// antes de tocar Escanear) y también justo después de una lectura buena, si el
+// guardia dejaba el teléfono apoyado. Ahora, en un condominio con chapitas, el
+// lector se enciende con el primer toque y queda escuchando mientras la app
+// esté abierta: toda chapita que se acerque es de esta app. La pantalla de la
+// chapita es solo lo que se ve. Con la página oculta Chrome lo suspende solo y
+// lo retoma al volver; Android, con la pantalla apagada, no lee nada.
+
+// El paquete tiene algún punto con chapita: solo ahí se enciende el lector. Un
+// condominio de puros QR no lo enciende nunca, ni pide el permiso de NFC.
+function paqueteConChapitas() {
+  return Boolean(estado.paquete && (estado.paquete.rondas || []).some(r => (r.puntos || []).some(p => p.nfc)));
+}
+
+// Enciende el lector si hace falta y no está encendido. `conToque`: lo llama un
+// toque del guardia (Iniciar, Escanear), que es lo que Chrome exige para pedir
+// el permiso la primera vez; ahí se enciende solo si la ronda que importa tiene
+// chapitas, para no pedirle permiso de NFC a quien hace una ronda de QR. Sin
+// toque (arranque, volver a la app) solo si el permiso ya está dado: sin él
+// Chrome no puede preguntar y no hay nada que hacer hasta el próximo toque.
+async function armarLectorNfc(conToque = false) {
+  if (lectorNfc || !estado.sesion || !paqueteConChapitas() || sinLectorNfc()) return;
+  if (conToque) {
+    const ronda = rondaActual();
+    if (ronda && !ronda.puntos.some(p => p.nfc)) return;
+  } else {
+    try {
+      const permiso = await navigator.permissions.query({ name: 'nfc' });
+      if (!permiso || permiso.state !== 'granted') return;
+    } catch {
+      return; // sin la API de permisos no se sabe: se espera al próximo toque
+    }
+    if (lectorNfc || !estado.sesion || !paqueteConChapitas()) return;
+  }
+  iniciarLectorNfc();
+}
+
+// Si la pantalla de la chapita está abierta, el problema del lector se dice ahí
+// (con Reintentar si no se arregla solo). Si no, se calla: el lector de fondo
+// es un resguardo y el guardia no tiene por qué enterarse de su estado hasta
+// que toque Escanear.
+function errorLectorNfc(motivo, definitivo) {
+  const modal = $('modal-nfc');
+  if (!modal || modal.classList.contains('oculta')) return;
+  const texto = $('nfc-texto');
+  texto.textContent = motivo;
+  texto.classList.add('error');
+  if (definitivo) $('btn-reintentar-nfc').classList.remove('oculta');
+}
+
+// Arranca el lector. Web NFC pide un toque del guardia la primera vez (para el
+// permiso). Se detiene con detenerLectorNfc(); la página oculta lo suspende sola.
+async function iniciarLectorNfc() {
   detenerLectorNfc();
   const control = new AbortController();
   lectorNfc = control;
@@ -1258,19 +1428,28 @@ async function iniciarLectorNfc(alError) {
       if (lectorNfc === control) chapitaLeida(evento);
     };
     lector.onreadingerror = () => {
-      if (lectorNfc === control) alError('No se pudo leer la chapita. Mantén el teléfono quieto sobre ella un par de segundos.', false);
+      if (lectorNfc === control) errorLectorNfc('No se pudo leer la chapita. Mantén el teléfono quieto sobre ella un par de segundos.', false);
     };
     await lector.scan({ signal: control.signal });
   } catch (err) {
     if (lectorNfc !== control || (err && err.name === 'AbortError')) return;
     lectorNfc = null;
-    alError(textoErrorNfc(err), true);
+    errorLectorNfc(textoErrorNfc(err), true);
   }
 }
 
 function detenerLectorNfc() {
   if (lectorNfc) lectorNfc.abort();
   lectorNfc = null;
+}
+
+// Cierra lo que esté abierto encima de la ronda (cámara, pregunta, código a
+// mano, pantalla de la chapita) cuando la marca llega por la chapita.
+function cerrarPantallasDeMarca() {
+  if ($('modal-nfc') && !$('modal-nfc').classList.contains('oculta')) $('modal-nfc').classList.add('oculta');
+  if ($('modal-medio') && !$('modal-medio').classList.contains('oculta')) $('modal-medio').classList.add('oculta');
+  if (!$('modal-manual').classList.contains('oculta')) $('modal-manual').classList.add('oculta');
+  if (!$('modal-escaner').classList.contains('oculta')) cerrarEscaner();
 }
 
 async function chapitaLeida(evento) {
@@ -1287,7 +1466,15 @@ async function chapitaLeida(evento) {
   const clave = `${texto}|${serie}`;
   if (clave === ultimoCodigoLeido.valor && ahora - ultimoCodigoLeido.ts < 2500) return;
   ultimoCodigoLeido = { valor: clave, ts: ahora };
-  cerrarPantallaNfc();
+  // Sin ronda en curso (pantalla de inicio, resumen final) la chapita no marca
+  // nada, pero tampoco se le escapa a Android: se lee acá y se explica.
+  if (!estado.ejecucion || estado.ejecucion.cerrada || !rondaActual()) {
+    aviso('Para marcar la chapita, primero inicia la ronda.', 'info', 5000);
+    return;
+  }
+  // El lector NO se apaga: la chapita sigue pegada al teléfono, y si se soltara
+  // ahora Android la volvería a ver y se la daría a otra app.
+  cerrarPantallasDeMarca();
   const huella = serie ? await huellaSerie(serie) : null;
   procesarCodigo(texto.trim(), ahora, { serie, huella });
 }
@@ -1382,17 +1569,16 @@ function abrirPantallaNfc() {
     return;
   }
   texto.textContent = 'Mantenlo quieto unos segundos, hasta que vibre. La primera vez Chrome pide permiso para usar NFC.';
-  iniciarLectorNfc((motivo, definitivo) => {
-    if ($('modal-nfc').classList.contains('oculta')) return;
-    texto.textContent = motivo;
-    texto.classList.add('error');
-    if (definitivo) reintentar.classList.remove('oculta');
-  });
+  // Si ya estaba escuchando (v1.25.1) no se reinicia: apagarlo y prenderlo
+  // abre justo el hueco por el que Android se lleva la chapita.
+  if (!lectorNfc) iniciarLectorNfc();
 }
 
+// Cierra la pantalla. El lector sigue escuchando si el condominio tiene
+// chapitas (ver armarLectorNfc); si no, se apaga como antes.
 function cerrarPantallaNfc() {
-  detenerLectorNfc();
   $('modal-nfc').classList.add('oculta');
+  if (!estado.sesion || !paqueteConChapitas()) detenerLectorNfc();
 }
 
 // El aviso de un QR retenido que se soltó porque llegó otro. Se suma al aviso
@@ -1763,7 +1949,7 @@ function esperaReintentoMs(intentos) {
 }
 
 async function sincronizar() {
-  if (sincronizando || !estado.sesion || !navigator.onLine) { pintarConexion(); return; }
+  if (sincronizando || !sesionVigente() || !navigator.onLine) { pintarConexion(); pintarSesion(); return; }
   sincronizando = true;
   try {
     while (estado.cola.length) {
@@ -1808,10 +1994,13 @@ async function sincronizar() {
       } catch (err) {
         const decision = decidirFalla(evento, err);
         if (decision === 'sesion') {
-          // Sesión caducada: se conserva la cola y se pide entrar de nuevo.
-          estado.sesion = null;
+          // Sesión vencida: se conserva la cola y se marca, sin borrarla (ver
+          // sesionVigente). La ronda sigue; al volver a entrar se envía.
+          estado.sesion.vencida = true;
           guardarEstado();
-          aviso('La sesión caducó. Entra de nuevo para enviar lo pendiente.', 'error');
+          aviso(rondaAbierta()
+            ? 'Tu sesión venció. La ronda sigue: lo que marques queda guardado. Entra de nuevo para enviarlo.'
+            : 'Tu sesión venció. Entra de nuevo para enviar lo pendiente.', 'error', 8000);
           break;
         } else if (decision === 'reintentar') {
           // Sin red no se anota nada. Con respuesta de error del servidor (502
@@ -1848,6 +2037,7 @@ async function sincronizar() {
   } finally {
     sincronizando = false;
     pintarConexion();
+    pintarSesion();
     renderSync();
     if (!document.getElementById('vista-final').classList.contains('oculta')) renderFinal();
   }
@@ -2153,6 +2343,7 @@ function render() {
   // Sin sesión se entra por el login (la app es solo del guardia, ya no hay
   // selector de perfil). Con la sesión caducada y cola pendiente también: la
   // cola se conserva y se envía apenas vuelve a entrar.
+  if (!paqueteConChapitas()) detenerLectorNfc();
   if (!estado.sesion && (!estado.paquete || estado.cola.length)) return mostrarVista('vista-login');
   if (estado.ejecucion && !estado.ejecucion.cerrada) return renderRonda();
   if (estado.ejecucion && estado.ejecucion.cerrada) return renderFinal();
@@ -2911,6 +3102,17 @@ function completarHtmlAnterior() {
     // v1.24: la pantalla de la chapita y la pregunta de la ronda mixta
     // (CU-28). El texto del botón lo pone renderRonda() según la ronda.
     if (!$('modal-nfc') && $('modal-manual')) $('modal-manual').insertAdjacentHTML('afterend', HTML_MODAL_NFC);
+    // v1.25.1: el aviso de sesión vencida y la vuelta a la ronda desde el login.
+    if (!$('aviso-sesion') && $('vista-login')) {
+      $('vista-login').insertAdjacentHTML('beforebegin', `
+        <div id="aviso-sesion" class="caja caja-alerta oculta">
+          <p id="aviso-sesion-texto"></p>
+          <button id="btn-entrar-de-nuevo" class="btn btn-principal">Entrar de nuevo</button>
+        </div>`);
+    }
+    if (!$('btn-volver-ronda') && $('error-login')) {
+      $('error-login').insertAdjacentHTML('afterend', '<button id="btn-volver-ronda" class="btn btn-borde oculta">← Volver sin entrar</button>');
+    }
     // v1.25: el aviso de "marcaste todos los puntos". Con estilos.css viejo
     // (sin caja-exito) se ve como una caja común, que igual se lee.
     const marcaEstado = $('marca-estado');
@@ -2964,6 +3166,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Antes que cualquier otra cosa: los botones de esta versión se cablean abajo
   // y una página de la versión anterior no los trae.
   completarHtmlAnterior();
+  // Los botones de las versiones nuevas se cablean sin poder tumbar el
+  // arranque: si una página vieja quedara sin ellos, los puntos QR tienen que
+  // seguir funcionando igual. Lo mismo en la tecla Escape, más abajo.
+  const alTocar = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
   // Registro (autoservicio del guardia) — accesible desde la pantalla de entrada
   $('btn-ir-registro').addEventListener('click', irARegistro);
   $('btn-registrar').addEventListener('click', registrar);
@@ -2995,6 +3201,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-login').addEventListener('click', entrar);
   $('campo-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('btn-salir').addEventListener('click', salir);
+  // v1.25.1: sesión vencida a mitad de ronda. Sin cablear en una página vieja.
+  alTocar('btn-entrar-de-nuevo', irAEntrarDeNuevo);
+  alTocar('btn-volver-ronda', render);
   $('btn-actualizar').addEventListener('click', () => bajarPaquete().then(render));
   $('btn-alarma').addEventListener('click', alternarAlarma);
   $('btn-eliminar-cuenta').addEventListener('click', irAEliminarCuenta);
@@ -3002,10 +3211,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-confirmar-eliminar').addEventListener('click', eliminarCuenta);
   $('eliminar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') eliminarCuenta(); });
   $('btn-escanear').addEventListener('click', escanear);
-  // Los botones de la chapita (v1.24) se cablean sin poder tumbar el arranque:
-  // si una página vieja quedara sin ellos, los puntos QR tienen que seguir
-  // funcionando igual. Lo mismo en la tecla Escape, más abajo.
-  const alTocar = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  // Los botones de la chapita (v1.24), con alTocar (ver arriba).
   alTocar('btn-cancelar-nfc', cerrarPantallaNfc);
   alTocar('btn-nfc-reportar', reportarChapita);
   alTocar('btn-medio-qr', () => elegirMedio('qr'));
@@ -3061,6 +3267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!estado.sesion) return;
     if (gpsWatchId === null || !gpsFresco()) reiniciarGps();
     if (estado.ejecucion && !estado.ejecucion.cerrada) pedirWakeLock();
+    armarLectorNfc();
     pintarGps();
     pintarGpsInicio();
   });
@@ -3085,6 +3292,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // seguiría viendo "ubicación activa" cuando ya no le van a aceptar la marca.
     setInterval(() => { vigilarGps(); pintarGps(); pintarGpsInicio(); }, 3000);
     render();
+    armarLectorNfc();
+    abiertaPorChapita();
+    window.addEventListener('storage', e => {
+      if (e.key === CLAVE && tomarEstadoDeOtraPestana(e.newValue)) render();
+    });
     // La app arrancó: el vigía (vigia.js) ya no tiene que rescatar nada.
     window.__appLista = true;
     if (recuperada) aviso('Se recuperó tu ronda en curso: sigue donde quedaste.', 'ok', 6000);

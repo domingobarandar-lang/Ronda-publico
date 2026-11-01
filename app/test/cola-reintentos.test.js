@@ -56,11 +56,13 @@ function montar({ cola, respuestas }) {
     let sincronizando = false;
     ${extraer('decidirFalla')}
     ${extraer('esperaReintentoMs')}
+    ${extraer('sesionVigente')}
+    ${extraer('rondaAbierta')}
     ${extraer('sincronizar')}
     return { sincronizar, decidirFalla, esperaReintentoMs };
   `;
   const modulo = new Function(
-    'estado', 'navigator', 'api', 'guardarEstado', 'aviso', 'pintarConexion', 'renderSync', 'renderFinal',
+    'estado', 'navigator', 'api', 'guardarEstado', 'aviso', 'pintarConexion', 'pintarSesion', 'renderSync', 'renderFinal',
     'document', 'Date', 'console', codigo
   )(
     estado,
@@ -74,6 +76,7 @@ function montar({ cola, respuestas }) {
     },
     () => {},
     (texto, tipo) => avisos.push({ texto, tipo }),
+    () => {},
     () => {},
     () => {},
     () => {},
@@ -195,8 +198,17 @@ test('sin red no anota intentos ni espera', async () => {
 });
 
 test('un 401 conserva la cola y pide entrar de nuevo', async () => {
-  const app = montar({ cola: [escaneo(1)], respuestas: 401 });
+  const app = montar({ cola: [escaneo(1)], respuestas: n => (n === 1 ? 401 : {}) });
   await app.sincronizar();
   assert.equal(app.estado.cola.length, 1);
-  assert.equal(app.estado.sesion, null);
+  // v1.25.1: la sesión no se borra, queda marcada como vencida. Así la app no
+  // manda al login a mitad de la ronda (sin señal no se podría entrar).
+  assert.equal(app.estado.sesion.vencida, true);
+  assert.match(app.avisos[0].texto, /venció/);
+  // Vencida, no se vuelve a intentar hasta que el guardia entre de nuevo.
+  await app.sincronizar();
+  assert.equal(app.llamadas.length, 1);
+  app.estado.sesion = { token: 't2' };
+  await app.sincronizar();
+  assert.equal(app.estado.cola.length, 0, 'al volver a entrar se envió lo pendiente');
 });
