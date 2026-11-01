@@ -10,6 +10,7 @@ const { codigoCorto, id, payloadQR, normalizarSerie, huellaSerie } = require('./
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto, hora } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
+const { resumenSenal } = require('./lib/senal-puntos');
 const correo = require('./lib/correo');
 const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
 const fabrica = require('./lib/fabrica');
@@ -681,6 +682,20 @@ function crearApp({ rutaDb, enviarPush } = {}) {
 
   app.get('/api/admin/puntos', ...admin, (req, res) => {
     res.json(db.puntos.filter(p => p.condominioId === miCondominio(req)));
+  });
+
+  // Señal en cada punto (ADR-001, fase 2): con las marcas y los rechazos de
+  // los últimos 30 días, para que el administrador elija la prueba de cada punto
+  // con un dato en vez de a ojo. Aparte de /api/admin/puntos porque recorre
+  // ejecuciones: si falla o tarda, la tabla de puntos carga igual.
+  const DIAS_SENAL = 30;
+  const LIMITE_SENAL = 3000;
+  app.get('/api/admin/puntos/senal', ...admin, (req, res) => {
+    const condominioId = miCondominio(req);
+    const desde = new Date(Date.now() - DIAS_SENAL * 86400000).toISOString();
+    const ejecuciones = store.ejecuciones.listar({ condominioId, desde, limite: LIMITE_SENAL });
+    const puntos = db.puntos.filter(p => p.condominioId === condominioId);
+    res.json({ dias: DIAS_SENAL, desde, ejecuciones: ejecuciones.length, puntos: resumenSenal(puntos, ejecuciones) });
   });
 
   app.post('/api/admin/puntos', ...admin, (req, res) => {

@@ -458,7 +458,13 @@ async function cargarPuntos() {
   // administrador aprieta el botón: así el cronómetro de la medición no se gasta
   // esperando a que el GPS despierte.
   calentarGps();
-  puntosCache = await api('/api/admin/puntos');
+  // La señal por punto (v1.27) es un extra: si falla, la tabla sale sin ella.
+  const [puntos, senal] = await Promise.all([
+    api('/api/admin/puntos'),
+    api('/api/admin/puntos/senal').catch(() => null)
+  ]);
+  puntosCache = puntos;
+  const senalPorPunto = new Map(((senal && senal.puntos) || []).map(s => [s.puntoId, s]));
   if (!puntosCache.length) {
     $('tabla-puntos').innerHTML = '<p class="nota">Aún no hay puntos. Agrega el primero arriba.</p>';
     return;
@@ -490,7 +496,25 @@ async function cargarPuntos() {
     const cabecera = p.verificacion === 'anclaje'
       ? `🏠 <strong>Por entrada</strong> · ${p.radioM || 40} m · ${p.ventanaMin || 15} min`
       : `📍 <strong>Exacta</strong> · ${p.radioM || 20} m`;
-    return `${cabecera}<br><span class="nota">${mapa} · ${calidadTexto(p)}</span>`;
+    return `${cabecera}<br><span class="nota">${mapa} · ${calidadTexto(p)}</span>${senalTexto(p)}`;
+  };
+  // Cómo le fue al GPS en el punto en los últimos 30 días (ADR-001, fase 2):
+  // el ± típico de las marcas, cuántas entraron por cercanía y cuántos intentos
+  // rechazó. Con una recomendación cuando el punto pide otra prueba. Solo
+  // sugiere: la ubicación del punto nunca se mueve sola.
+  const NIVELES = { buena: '🟢 buena', regular: '🟡 regular', mala: '🔴 mala' };
+  const senalTexto = p => {
+    const s = senalPorPunto.get(p.id);
+    if (!s) return '';
+    if (!s.nivel) return '<br><span class="nota">Señal: todavía sin marcas para opinar</span>';
+    const datos = [
+      s.accMediana != null ? `±${s.accMediana} m típico` : null,
+      `${s.marcas} marca${s.marcas === 1 ? '' : 's'}`,
+      s.porCercania ? `${s.porCercania} por cercanía` : null,
+      s.rechazosGps ? `${s.rechazosGps} rechazo${s.rechazosGps === 1 ? '' : 's'} del GPS` : null
+    ].filter(Boolean).join(' · ');
+    return `<br><span class="nota">Señal (${senal.dias} días): <strong>${NIVELES[s.nivel]}</strong> · ${datos}</span>`
+      + (s.recomendacion ? `<br><span class="nota${s.nivel === 'mala' ? ' rojo' : ''}">💡 ${esc(s.recomendacion)}</span>` : '');
   };
   // Con qué se marca cada punto (CU-28), siempre a la vista: el administrador
   // tiene que saber de un vistazo cuál es cuál y qué falta. Pendiente es un
