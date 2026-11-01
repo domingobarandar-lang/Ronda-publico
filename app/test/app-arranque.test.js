@@ -22,7 +22,9 @@ const vm = require('node:vm');
 
 const publico = path.join(__dirname, '../public');
 const fixtures = path.join(__dirname, 'fixtures');
-const fuente = fs.readFileSync(path.join(publico, 'app.js'), 'utf8');
+// LF también en un checkout de Windows con CRLF: revisarVersion() se recorta
+// buscando '\n}\n' (con CRLF no lo encontraba y miraba el archivo entero).
+const fuente = fs.readFileSync(path.join(publico, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
 const html = fs.readFileSync(path.join(publico, 'index.html'), 'utf8');
 const estilos = fs.readFileSync(path.join(publico, 'estilos.css'), 'utf8');
 const htmlV1202 = fs.readFileSync(path.join(fixtures, 'index-v1.20.2.html'), 'utf8');

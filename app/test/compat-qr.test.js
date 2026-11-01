@@ -25,7 +25,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { correrEscenario } = require('./compat/escenario-qr');
 
-const referencia = require('./fixtures/referencia-qr-v1.22.json');
+// Las horas con «a. m.» / «p. m.» las escribe toLocaleString según el ICU de
+// Node, y los espacios cambian de una versión a otra: la referencia (Node de la
+// v1.22) trae «a. m.» con espacio duro (U+00A0) y Node 24.21 (ICU 78 / CLDR 48)
+// escribe «a. m.» con espacio normal. También se cubre U+202F, el espacio fino
+// duro que ICU 72+ pone antes de AM/PM en otros idiomas. En pantalla se ven
+// iguales y no es un cambio de la app, así que en los dos lados se pasan a
+// espacio normal antes de comparar. La referencia no se regenera: es la foto
+// de la v1.22.
+const ESPACIOS_ICU = /[\u00A0\u202F]/g;
+function espaciosComunes(valor) {
+  if (typeof valor === 'string') return valor.replace(ESPACIOS_ICU, ' ');
+  if (Array.isArray(valor)) return valor.map(espaciosComunes);
+  if (!valor || typeof valor !== 'object') return valor;
+  return Object.fromEntries(Object.entries(valor).map(([clave, v]) => [clave, espaciosComunes(v)]));
+}
+
+const referencia = espaciosComunes(require('./fixtures/referencia-qr-v1.22.json'));
 
 // Campos que la v1.24 agrega, y el único valor que pueden tener en un
 // condominio sin chapitas.
@@ -56,13 +72,13 @@ function sinCamposNuevos(valor, ruta = '', vistos = []) {
 let hoy;
 test.before(async () => {
   const app = path.join(__dirname, '..');
-  hoy = await correrEscenario({
+  hoy = espaciosComunes(await correrEscenario({
     crearApp: require('../server').crearApp,
     datosSemilla: require('../seed').datosSemilla,
     calcularSemanal: require('../lib/informe-semanal').calcular,
     appJs: fs.readFileSync(path.join(app, 'public/app.js'), 'utf8'),
     geoJs: fs.readFileSync(path.join(app, 'public/geo.js'), 'utf8')
-  });
+  }));
 });
 
 test('la referencia es de la v1.22.0 y cubre lo que importa', () => {

@@ -383,6 +383,13 @@ async function escenarioApp({ appJs, geoJs }) {
 }
 
 async function correrEscenario(piezas) {
+  // La hora del aviso al administrador (hora() en lib/informes.js) y la de la
+  // lista de la app («Marcado 03:00 a. m.») salen con la zona horaria del
+  // equipo. La referencia de la v1.22 se generó en UTC; en un equipo con la
+  // hora de Chile todo salía corrido 3 horas. Se fija UTC para las dos corridas
+  // (la de hoy y la que genera la referencia): Node la aplica aunque se cambie
+  // con el proceso andando, también en Windows.
+  process.env.TZ = 'UTC';
   return { servidor: await escenarioServidor(piezas), app: await escenarioApp(piezas) };
 }
 
