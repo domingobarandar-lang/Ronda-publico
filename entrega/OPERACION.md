@@ -80,7 +80,7 @@ Una **chapita** es un sticker NFC NTAG213 (25 mm) dentro de una carcasa impresa 
 ### 2. Instalar y grabar la chapita (en terreno)
 
 1. **Instalar primero**: pegar la carcasa con la chapita en el lugar del punto. Se graba **a través del plástico**, ya instalada.
-2. Parado junto a la chapita, con el **NFC del teléfono encendido** (Ajustes → buscar «NFC»), abrir el panel (`https://<servidor>/panel`) en **Chrome**, entrar, ir a **Puntos** y tocar **📶 Grabar chapita** en ese punto. (Para cambiar una chapita rota: **Reemplazar chapita**.)
+2. Parado junto a la chapita, con el **NFC del teléfono encendido** (Ajustes → buscar «NFC»), abrir el panel (`https://<servidor>/panel`) en **Chrome**, entrar, ir a **Puntos** y tocar **📶 Grabar chapita** en ese punto. (Para cambiar una chapita rota: **Reemplazar chapita**.) Abrir el panel con **la misma dirección que usan los guardias**: desde la v1.25.1 la chapita lleva un enlace a la app, que se graba con esa dirección (si se acerca la chapita con la app cerrada, abre la app en vez de una pantalla en blanco). Las chapitas grabadas antes siguen sirviendo; para que lleven el enlace, «Reemplazar chapita» con la misma chapita (si no está bloqueada).
 3. Tocar **Empezar** y **acercar la parte trasera del teléfono a la chapita** (la antena suele estar al centro o arriba de la espalda del teléfono). La primera vez Chrome pide permiso para usar NFC: permitir.
 4. El panel va diciendo qué hace:
    - lee el **número de serie** de la chapita. Si la chapita ya tiene grabado otro punto, pregunta antes de seguir; si ya está registrada en otro punto, se detiene;

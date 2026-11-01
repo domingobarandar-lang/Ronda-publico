@@ -9,7 +9,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const fuente = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.js'), 'utf8');
+// En Windows, con core.autocrlf=true, el archivo llega con CRLF y el fin de la
+// función ('\n}\n') no aparecería: se normaliza a LF antes de buscarlo.
+const fuente = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.js'), 'utf8').replace(/\r\n/g, '\n');
 const inicio = fuente.indexOf('function moverEnSecuencia(');
 assert.ok(inicio !== -1, 'public/admin.js ya no define moverEnSecuencia()');
 const ctx = vm.createContext({});
