@@ -239,7 +239,7 @@ function bloqueSentry(r, dias) {
     return `<li>${titulo}${donde}<br><span class="nota">${p.eventos === 1 ? '1 vez' : `${p.eventos} veces`} · última: ${esc(fecha(p.ultimaVez))}</span></li>`;
   }).join('');
   const resto = r.problemas - r.lista.length;
-  return `<p class="nota"><span class="chip chip-roja">${r.problemas === 1 ? '1 problema' : `${r.problemas} problemas`}</span> sin resolver, los más frecuentes:</p>
+  return `<p class="nota"><span class="chip chip-roja">${r.problemas === 1 ? '1 problema' : `${r.problemas} problemas`}</span> sin resolver${resto > 0 ? ', los más frecuentes' : ''}:</p>
       <ul style="margin:6px 0 0 18px">${items}</ul>
       ${resto > 0 ? `<p class="nota" style="margin-top:6px">…y ${resto} más en Sentry.</p>` : ''}`;
 }
