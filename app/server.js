@@ -376,6 +376,29 @@ function crearApp({ rutaDb, enviarPush } = {}) {
     res.json({ version: VERSION_SERVIDOR });
   });
 
+  // La ronda que este guardia tiene abierta en el servidor, para que la app la
+  // retome al entrar si el teléfono ya no la tiene (v1.25.1): Chrome borró los
+  // datos del sitio, el guardia cambió de teléfono o entró por otro navegador.
+  // Solo lo suyo y solo lo abierto: una ronda cerrada (por él, por el
+  // administrador o por abandono) no se retoma desde acá. Las marcas viajan sin
+  // GPS: la app solo las necesita para saber qué puntos ya están hechos.
+  app.get('/api/mi/ronda-en-curso', auth, (req, res) => {
+    if (req.usuario.rol !== 'guardia') return res.json({ ejecucion: null });
+    const abierta = store.ejecuciones
+      .listar({ condominioId: req.usuario.condominioId, estado: 'en_curso' })
+      .find(e => e.guardiaId === req.usuario.id);
+    if (!abierta) return res.json({ ejecucion: null });
+    res.json({
+      ejecucion: {
+        id: abierta.id,
+        rondaId: abierta.rondaId,
+        inicio: abierta.inicio,
+        comentario: abierta.comentario || '',
+        escaneos: (abierta.escaneos || []).map(e => ({ puntoId: e.puntoId, ts: e.ts, offline: Boolean(e.offline), medio: e.medio || null }))
+      }
+    });
+  });
+
   // ---------- Guardia: paquete de rondas descargable ----------
 
   app.get('/api/mi/paquete', auth, (req, res) => {
