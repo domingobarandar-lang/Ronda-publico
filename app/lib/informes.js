@@ -1,7 +1,7 @@
 // Informe de una ejecución: estructura de datos + versión en texto plano
 // (para el registro de avisos y la consola). El HTML imprimible lo arma el navegador en
 // public/informe.html a partir del JSON.
-const { OCULTAR_SIN_CONEXION } = require('./rondas'); // TEMPORAL, ver lib/rondas.js
+const { OCULTAR_SIN_CONEXION, minutos } = require('./rondas'); // OCULTAR_SIN_CONEXION: TEMPORAL, ver lib/rondas.js
 const { nombreGuardia } = require('./cuenta');
 const { TZ } = require('./fechas-chile');
 
@@ -42,6 +42,14 @@ function armarInforme(db, ejecucion) {
       // informe lo dice explícito para que el administrador sepa que ahí la
       // verificación es "pasó por la entrada", no "estuvo en el punto".
       anclado: Boolean(esc && esc.anclado),
+      // porCercania (v1.27): la marca entró con una lectura buena de hace unos
+      // minutos cerca del punto, porque la del momento no alcanzaba. Prueba que
+      // el guardia estuvo cerca, no que estaba parado en el punto.
+      porCercania: Boolean(esc && esc.porCercania),
+      // En esas marcas distanciaM y edadGpsMs son de la lectura cercana; esta es
+      // la del momento de marcar (null si no había). Solo ahí, para que las
+      // demás marcas queden con la misma forma de siempre.
+      ...(esc && esc.porCercania ? { distanciaAhoraM: esc.distanciaAhoraM != null ? esc.distanciaAhoraM : null } : {}),
       edadGpsMs: esc && esc.edadGpsMs != null ? esc.edadGpsMs : null,
       // Las marcas de antes de la v1.24 no lo guardaban: quedan sin etiqueta.
       medio: conChapitas && esc ? esc.medio || null : null,
@@ -78,6 +86,16 @@ function hora(ts) {
 // Cómo se ve el medio de una marca en el informe, el aviso y el panel.
 const MEDIOS = { nfc: '📶 NFC', qr: '📷 QR', manual: '⌨️ a mano' };
 
+// « (a 10 m hace 1 min; al marcar, a 45 m)»: dónde estuvo el teléfono y dónde
+// lo ubicaba el GPS al marcar. Es lo que el administrador necesita para juzgar
+// una marca por cercanía (CU-29). Mismo texto en public/informe.html.
+function detalleCercania(d) {
+  if (d.distanciaM == null) return '';
+  const hace = d.edadGpsMs != null ? ` hace ${minutos(d.edadGpsMs)}` : '';
+  const ahora = d.distanciaAhoraM != null ? `a ${d.distanciaAhoraM} m` : 'sin señal';
+  return ` (a ${d.distanciaM} m${hace}; al marcar, ${ahora})`;
+}
+
 function informeTexto(inf) {
   const lineas = [];
   lineas.push(`🛡️ Ronda "${inf.ronda}" — ${inf.condominio}`);
@@ -96,6 +114,7 @@ function informeTexto(inf) {
     if (d.offline) marcas.push('(offline)');
     if (d.lejos) marcas.push(`⚠️ a ${d.distanciaM} m ${d.anclado ? 'de la entrada' : 'del punto'}`);
     else if (d.anclado) marcas.push('📍 por entrada');
+    else if (d.porCercania) marcas.push(`📍 por cercanía${detalleCercania(d)}`);
     lineas.push(`✅ ${d.orden}. ${d.nombre} — ${hora(d.hora)}${marcas.length ? ' ' + marcas.join(' ') : ''}`);
   }
   if (inf.evaluacion && inf.evaluacion.observaciones.length) {

@@ -34,7 +34,16 @@ const NUEVOS = {
   nfcHuella: v => v === null,                   // punto del paquete
   manualEnNfc: v => v === 'rechazo',            // paquete: solo se usa en puntos con chapita
   medio: v => v === null || v === 'qr' || v === 'manual', // marca / detalle del informe
-  medios: v => Object.keys(v).every(m => m === 'qr' || m === 'manual') // informe semanal
+  medios: v => Object.keys(v).every(m => m === 'qr' || m === 'manual'), // informe semanal
+  // v1.27, cercanía reciente: los umbrales viajan en el paquete con sus valores
+  // por defecto, y ninguna marca de la v1.22 entra por cercanía (las que
+  // entraban, entraban por la lectura del momento; las rechazadas siguen
+  // rechazadas porque la app de la referencia no manda la lectura cercana).
+  lecturaBuenaM: v => v === 20,                 // paquete.gps
+  cercaniaM: v => v === 30,
+  cercaniaMin: v => v === 5,
+  errorExtraM: v => v === 20,
+  porCercania: v => v === false                 // detalle del informe
 };
 
 // Saca los campos nuevos verificando su valor, y anota dónde aparecieron.

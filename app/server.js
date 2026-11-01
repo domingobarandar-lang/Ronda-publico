@@ -537,12 +537,12 @@ function crearApp({ rutaDb, enviarPush } = {}) {
   app.post('/api/ejecuciones/:id/escaneos', enRonda, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
-    const { codigo, ts, offline, gps, nfc } = req.body || {};
+    const { codigo, ts, offline, gps, nfc, cercania } = req.body || {};
     // Una ronda sin señal que el sistema dio por abandonada: el teléfono del
     // guardia aparece con sus marcas y la ronda se reabre para recibirlas. La
     // reapertura se guarda solo si la marca entra (y no era repetida).
     const reabierta = ejecucion.guardiaId === req.usuario.id && motor.reabrirSiAutomatica(ejecucion);
-    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc });
+    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc, cercania });
     // Un QR (o una chapita ajena) en un punto con chapita NFC: queda en el
     // registro de rechazos igual que los del GPS. La app ya lo rechaza sin
     // encolar; llega acá desde una app vieja o un cliente que no es la app.
