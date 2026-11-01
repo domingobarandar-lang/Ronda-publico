@@ -13,9 +13,12 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.25.1';
+const VERSION_APP = 'v1.26.0';
 
 let estado = cargarEstado();
+// errores.js etiqueta con esto lo que manda a Sentry (v1.26): el condominio de
+// la sesión, para que /fabrica separe los errores por condominio.
+if (typeof window !== 'undefined') window.__erroresCondominio = () => (estado && estado.sesion && estado.sesion.condominio && estado.sesion.condominio.id) || null;
 let promptInstalacion = null; // evento beforeinstallprompt capturado (Chrome/Edge)
 let sincronizando = false;
 let stream = null;

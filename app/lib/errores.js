@@ -67,12 +67,16 @@ function avisarGanchos(datos) {
 
 // Registra un error del servidor. `contexto` dice dónde ("abandonadas",
 // "alarma-ronda"…); `error` es lo que se atrapó (Error u otra cosa).
-function reportar(contexto, error) {
+// `condominioId`, si se sabe, viaja a Sentry como etiqueta: es lo que deja a
+// /fabrica mostrar los errores de cada condominio (lib/sentry-lectura.js). El
+// id de un condominio no es un dato personal.
+function reportar(contexto, error, { condominioId } = {}) {
   try {
     const e = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error));
     emitir(`[error] [${limpiar(contexto, 60)}] ${limpiar(e.message, MAX_MENSAJE)}`
+      + (condominioId ? ` condominio=${limpiar(condominioId, 40)}` : '')
       + (e.stack ? ` :: ${limpiarPila(e.stack)}` : ''));
-    avisarGanchos({ contexto, error: e, origen: 'servidor' });
+    avisarGanchos({ contexto, error: e, origen: 'servidor', condominioId: condominioId ? limpiar(condominioId, 40) : null });
   } catch { /* reportar nunca lanza: lo usan los manejadores de último recurso */ }
 }
 

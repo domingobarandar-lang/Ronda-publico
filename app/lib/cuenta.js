@@ -71,6 +71,9 @@ function eliminarGuardia(store, guardia) {
       if (e.estado === 'en_curso') enCurso.push(e);
     }
     avisos = store.notificaciones.reescribirTextos(guardia.condominioId, t => anonimizarTexto(t, nombres));
+    // Los eventos de salud del producto (lib/salud.js) llevan solo su id
+    // interno; igual se suelta, como en sus rondas.
+    store.salud.anonimizarUsuario(guardia.id);
     store.guardar();
   });
   return { anonimizadas, avisos, enCurso };
