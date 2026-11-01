@@ -63,6 +63,7 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 | # | Fecha | Gravedad | Qué pasó | Cómo nos enteramos | Estado |
 |---|---|---|---|---|---|
 | INC-001 | 2026-10-31 | S2 | Rondas interrumpidas en el teléfono compartido de una garita ([análisis](#inc-001--rondas-interrumpidas-en-el-teléfono-compartido-de-la-garita)) | *Por completar* | Corrección en curso (v1.25) |
+| INC-002 | 2026-11-01 | S2 (estimada) | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Investigación; corrección propuesta |
 
 **Fallos anteriores**, reconstruidos del CHANGELOG y de los commits. No tienen análisis y la gravedad es estimada:
 
@@ -144,6 +145,46 @@ En la misma investigación salieron tres fallos:
 | 7 | Confirmar con el guardia de la garita por qué no tocaba «Terminar» (acción B4) | Producto | Pendiente |
 | 8 | Decidir si la alarma debe callar mientras hay una ronda en curso (patrón repetido) | Producto | Pendiente |
 | 9 | Avisar al administrador del condominio qué pasó y qué cambió | Comunicación | *Por completar* |
+
+### INC-002 — Marcas dudosas en los puntos bajo techo
+
+**Gravedad**: S2 estimada: el informe muestra marcas que no prueban la presencia, o el guardia no puede marcar un punto en el que está. Pasa a S1 si la fase 0 del ADR muestra puntos que no se pueden marcar nunca.
+**Condominio**: *por completar*.
+**Estado**: investigación. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
+
+#### Qué pasó
+
+En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el código salió una causa segura, cuyo peso en terreno falta medir: **en los puntos verificados por entrada (CU-19), la lectura buena de la entrada se pierde a los 20 s** si el teléfono sigue entregando lecturas adentro, y la marca se decide con una lectura de WiFi o de antena. Se rechaza (señal imprecisa o «lejos de la entrada») o se acepta con una lectura que no prueba nada. La otra causa probable son puntos semi-techados con ubicación exacta (rebote de la señal).
+
+#### Impacto
+
+*Por completar* con la fase 0 del ADR: qué puntos, cuántas marcas y rechazos de cada tipo, desde cuándo.
+
+#### Cronología
+
+| Fecha | Qué |
+|---|---|
+| 2026-07-29 | v1.10: verificación por entrada. Cada lectura nueva reemplaza a la anterior: la entrada solo se conserva si el teléfono se calla adentro. |
+| Agosto 2026 | v1.13 y v1.14: la lectura pasa a ser la mejor y después el promedio de una ventana de 20 s. La ventana cambia; la entrada se sigue perdiendo. |
+| *Por completar* | Primer aviso de marcas dudosas bajo techo y quién lo dio. |
+| 2026-11-01 | Revisión del código: se encuentra que la lectura de la entrada no se guarda aparte. |
+
+#### Cinco porqués
+
+1. ¿Por qué la marca bajo techo sale dudosa? → Se decide con una lectura tomada adentro, de ±40–300 m, en vez de la de la entrada.
+2. ¿Por qué no con la de la entrada? → La app guarda un solo fix, el promedio de los últimos 20 s. La ventana de 15 min del anclaje mide la edad de ese fix, no de la mejor lectura en la entrada.
+3. ¿Por qué se diseñó así? → Se supuso que bajo techo el teléfono deja de entregar lecturas. Android sigue entregando posiciones de WiFi y antena.
+4. ¿Por qué no se validó ese supuesto? → La prueba de terreno bajo techo de la v1.14 (QA.md, pendiente 2) no se hizo, y los tests del anclaje en la app solo cubren los textos y la espera, no un teléfono que sigue leyendo adentro.
+5. ¿Por qué no lo vimos antes? → Los rechazos se registran desde la v1.14, pero nadie los ha mirado por punto. No hay ninguna medida de «rechazos y marcas con señal imprecisa en puntos anclados».
+
+#### Acciones
+
+| # | Acción | Nivel | Estado |
+|---|---|---|---|
+| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Pendiente |
+| 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Propuesta |
+| 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Propuesta |
+| 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.26 por buena | Proceso | Pendiente |
 
 ## Plantilla
 
