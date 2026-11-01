@@ -95,12 +95,14 @@ function iniciar() {
 }
 
 // Gancho de errores.alReportar. Los reportes del navegador se omiten: el
-// navegador ya los manda directo a Sentry.
-function capturar({ contexto, error, origen }) {
+// navegador ya los manda directo a Sentry. La etiqueta `condominio` (v1.26) es
+// la que lee /fabrica para separar los errores por condominio.
+function capturar({ contexto, error, origen, condominioId }) {
   if (!activo || !sdk || origen === 'cliente') return;
   try {
     sdk.withScope(scope => {
       scope.setTag('contexto', errores.limpiar(contexto, 60));
+      if (condominioId) scope.setTag('condominio', errores.limpiar(condominioId, 40));
       sdk.captureException(error);
     });
   } catch { /* Sentry roto no puede tumbar el servidor */ }

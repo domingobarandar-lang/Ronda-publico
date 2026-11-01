@@ -174,6 +174,24 @@ test('navegador: sin DSN, sin SDK o sin señal no hay Sentry y errores.js funcio
   }
 });
 
+test('navegador: la etiqueta condominio la da la página (window.__erroresCondominio)', async () => {
+  const etiquetas = async proveedor => {
+    const b = navegador({ cfg: { dsn: 'https://k@o0.ingest.sentry.io/1' } });
+    if (proveedor) b.window.__erroresCondominio = proveedor;
+    await b.listo(); await b.listo();
+    b.window.__reportarError(new Error('con condominio'));
+    return b.llamadas.capturas[0].o.tags;
+  };
+  assert.equal((await etiquetas(() => 'aromos')).condominio, 'aromos');
+  assert.equal((await etiquetas(() => 'x'.repeat(80))).condominio.length, 40, 'recortado');
+  // Sin sesión, sin proveedor o con uno roto: sin etiqueta, y el reporte sale igual.
+  for (const proveedor of [() => null, null, () => { throw new Error('roto'); }]) {
+    const t = await etiquetas(proveedor);
+    assert.equal(t.condominio, undefined);
+    assert.equal(t.pagina, '/index.html');
+  }
+});
+
 test('navegador: un Sentry que lanza no rompe el reporte', async () => {
   const b = navegador({ cfg: { dsn: 'https://k@o0.ingest.sentry.io/1' } });
   b.window.Sentry.captureException = () => { throw new Error('sdk roto'); };

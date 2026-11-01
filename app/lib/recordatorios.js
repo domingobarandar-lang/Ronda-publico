@@ -127,7 +127,7 @@ async function revisar(store, push, ahora = Date.now()) {
       if (r.total) console.log(`[alarma-ronda] ${condominio.nombre}: ${r.ok}/${r.total} teléfonos`);
     } catch (e) {
       console.warn(`[alarma-ronda] ${condominio.nombre}: ${e.message}`);
-      errores.reportar('alarma-ronda', e);
+      errores.reportar('alarma-ronda', e, { condominioId: condominio.id });
     }
   }
 }

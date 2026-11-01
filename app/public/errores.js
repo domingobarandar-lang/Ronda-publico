@@ -98,6 +98,17 @@
   }
   window.__erroresFiltrarEvento = filtrarEvento;
 
+  // El condominio de la página (v1.26), como etiqueta de Sentry: /fabrica
+  // separa los errores por condominio con ella. Acá no se lee localStorage
+  // (ver arriba): lo dice la página con `window.__erroresCondominio`, una
+  // función que app.js y admin.js definen con la sesión que ya tienen.
+  function condominioActual() {
+    try {
+      var id = typeof window.__erroresCondominio === 'function' ? window.__erroresCondominio() : null;
+      return id ? recortar(id, 40) : null;
+    } catch (e) { return null; }
+  }
+
   // 'esperando' mientras llega la config; 'activo' o 'apagado' después.
   var estadoSentry = 'esperando';
   var pendientes = [];
@@ -110,7 +121,10 @@
         return;
       }
       var e = error instanceof Error ? error : new Error(carga.mensaje);
-      window.Sentry.captureException(e, { tags: { pagina: carga.pagina, origen: carga.origen, version: carga.version } });
+      var etiquetas = { pagina: carga.pagina, origen: carga.origen, version: carga.version };
+      var condominio = condominioActual();
+      if (condominio) etiquetas.condominio = condominio;
+      window.Sentry.captureException(e, { tags: etiquetas });
     } catch (x) { /* Sentry roto no cuenta */ }
   }
 

@@ -38,6 +38,9 @@ function condominioActivo() {
   return (sesion.condominioActivo && sesion.condominioActivo.id) ||
     (sesion.condominio && sesion.condominio.id) || null;
 }
+// errores.js etiqueta con esto lo que manda a Sentry (v1.26), para que
+// /fabrica separe los errores por condominio.
+if (typeof window !== 'undefined') window.__erroresCondominio = condominioActivo;
 
 async function api(ruta, opciones = {}) {
   const cabeceras = { 'content-type': 'application/json' };

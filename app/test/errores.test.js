@@ -63,6 +63,16 @@ test('reportar usa el filtro y avisa a los ganchos', async () => {
   assert.ok(vistos.includes('prueba'));
 });
 
+test('reportar con condominio: va en la línea y a los ganchos (etiqueta de Sentry)', async () => {
+  const vistos = [];
+  errores.alReportar(d => vistos.push(d));
+  const lineas = await capturar(() => errores.reportar('alarma-ronda', new Error('sin push'), { condominioId: 'aromos' }));
+  assert.ok(lineas[0].includes('[alarma-ronda] sin push condominio=aromos'), lineas[0]);
+  assert.equal(vistos.find(d => d.contexto === 'alarma-ronda').condominioId, 'aromos');
+  await capturar(() => errores.reportar('sin-condominio', new Error('x')));
+  assert.equal(vistos.find(d => d.contexto === 'sin-condominio').condominioId, null);
+});
+
 test('el limitador corta pasado el tope y se renueva con la ventana', () => {
   const permitir = errores.crearLimitador({ max: 3, ventanaMs: 1000 });
   assert.deepEqual([1, 2, 3, 4].map(() => permitir('ip', 0)), [true, true, true, false]);
