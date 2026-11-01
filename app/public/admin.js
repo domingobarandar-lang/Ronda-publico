@@ -818,6 +818,38 @@ function payloadDe(punto) {
   return `RQR:${punto.condominioId}:${punto.id}:${punto.codigoCorto}`;
 }
 
+// El enlace que va en la chapita junto al texto (v1.25.1). Si la chapita se
+// acerca cuando la app del guardia no la está escuchando (cerrada, en segundo
+// plano), Android abre este enlace —la app del guardia, o la app instalada—
+// en vez de su pantalla de etiquetas («la pantalla en blanco»). Va PRIMERO:
+// Android decide qué abrir mirando el primer registro. La app lee el registro
+// de texto, esté donde esté, así que las chapitas grabadas antes (solo texto)
+// siguen sirviendo, y la app de antes también lee las nuevas. El "#nfc" le
+// dice a la app que la abrió una chapita.
+function enlaceDeChapita() {
+  return `${location.origin}/#nfc`;
+}
+
+// Lo que Android deja escribir en una NTAG213 (Ndef.getMaxSize()).
+const CAPACIDAD_CHAPITA = 137;
+
+// Bytes del mensaje NDEF con estos registros (registros cortos: < 256 bytes).
+// URL: cabecera 3 + tipo "U" + 1 byte de prefijo ("https://" se abrevia) + el
+// resto. Texto: cabecera 3 + tipo "T" + estado + idioma "es" + el texto.
+function bytesChapita(enlace, texto) {
+  const largo = t => new TextEncoder().encode(t).length;
+  const urlB = enlace ? 3 + 1 + 1 + largo(enlace.replace(/^https?:\/\//, '')) : 0;
+  return urlB + 3 + 1 + 1 + 2 + largo(texto);
+}
+
+// Los registros que se graban: enlace + texto si caben, si no solo el texto
+// (como hasta la v1.25.0). El texto es lo que marca; el enlace es un resguardo.
+function registrosChapita(payload, enlace = enlaceDeChapita()) {
+  const texto = { recordType: 'text', lang: 'es', data: payload };
+  if (bytesChapita(enlace, payload) > CAPACIDAD_CHAPITA) return [texto];
+  return [{ recordType: 'url', data: enlace }, texto];
+}
+
 // Como normalizarSerie() de lib/codigos.js.
 function normalizarSerie(texto) {
   const limpio = String(texto == null ? '' : texto).replace(/[\s:-]/g, '').toUpperCase();
@@ -950,7 +982,8 @@ async function grabarChapita(punto) {
     // 2. Escribir.
     pintar('Grabando… no muevas el teléfono.');
     lector.onreading = null;
-    await lector.write({ records: [{ recordType: 'text', lang: 'es', data: payload }] }, { signal, overwrite: true });
+    const registros = registrosChapita(payload);
+    await lector.write({ records: registros }, { signal, overwrite: true });
 
     // 3. Verificar: Android avisa una chapita cuando ENTRA al campo, así que hay
     //    que alejarla y volver a acercarla.
@@ -974,6 +1007,9 @@ async function grabarChapita(punto) {
     await api(`/api/admin/puntos/${punto.id}/chapita`, { metodo: 'PUT', cuerpo: { serie } });
     grabacionNfc = null;
     terminarCaja(`✅ Chapita grabada (sin bloquear). "${punto.nombre}" ahora se marca con la chapita; los guardias lo reciben al actualizar rondas. `
+      + (registros.length > 1
+        ? 'Lleva el enlace a la app: si se acerca con la app cerrada, abre la app. '
+        : 'No cupo el enlace a la app (dirección muy larga): lleva solo el código, como antes. ')
       + 'Pruébala y, cuando sea la definitiva, toca “🔒 Bloquear chapita”.');
     cargarPuntos();
   } catch (err) {

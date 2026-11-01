@@ -10,7 +10,7 @@
   /* Versión de estos estilos. app.js la compara con la suya para detectar un
      estilos.css de otra versión servido por el service worker (shellMixto).
      Sube en cada release junto con package.json, sw.js, VERSION_APP e index.html. */
-  --version-app: "v1.25.0";
+  --version-app: "v1.25.1";
 
   /* Marca (violeta) */
   --marca: #a855f7;

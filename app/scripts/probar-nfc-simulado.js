@@ -28,15 +28,22 @@ fs.mkdirSync(capturas, { recursive: true });
 // La chapita de mentira: una serie fija y lo que el panel le escriba.
 // window.__tocar(texto, serie) es "acercar el teléfono" a una chapita.
 const LECTOR_SIMULADO = `
-  window.__chapita = { serie: '04:a2:3b:4c:5d:6e:80', texto: null, bloqueada: false };
+  window.__chapita = { serie: '04:a2:3b:4c:5d:6e:80', texto: null, url: null, tipos: [], bloqueada: false };
   window.NDEFReader = class {
     constructor() { window.__lector = this; }
-    async scan() {}
-    async write(mensaje) { window.__chapita.texto = mensaje.records[0].data; }
+    async scan({ signal } = {}) { window.__señal = signal; }
+    async write(mensaje) {
+      const de = tipo => (mensaje.records.find(r => r.recordType === tipo) || {}).data || null;
+      window.__chapita.texto = de('text');
+      window.__chapita.url = de('url');
+      window.__chapita.tipos = mensaje.records.map(r => r.recordType);
+    }
     async makeReadOnly() { window.__chapita.bloqueada = true; }
   };
   window.__tocar = (texto = window.__chapita.texto, serie = window.__chapita.serie) => {
     const records = texto == null ? [] : [{ recordType: 'text', encoding: 'utf-8', data: new TextEncoder().encode(texto) }];
+    // Una chapita grabada por la v1.25.1 trae antes el enlace a la app.
+    if (texto != null && window.__chapita.url) records.unshift({ recordType: 'url', data: new TextEncoder().encode(window.__chapita.url) });
     window.__lector.onreading({ serialNumber: serie, message: { records } });
   };`;
 
@@ -77,6 +84,10 @@ function revisar(nombre, ok, detalle = '') {
   const grabada = await panel.textContent('#chapita-estado');
   revisar('El panel graba y verifica la chapita, sin bloquearla', /Chapita grabada \(sin bloquear\)/.test(grabada), grabada.trim());
   revisar('La chapita quedó sin bloquear', !(await panel.evaluate(() => window.__chapita.bloqueada)));
+  const grabado = await panel.evaluate(() => window.__chapita);
+  revisar('La chapita lleva primero el enlace a la app y después el código (v1.25.1)',
+    grabado.tipos.join(',') === 'url,text' && grabado.url === `${base}/#nfc` && /^RQR:aromos:p-bombas:/.test(grabado.texto),
+    `${grabado.tipos.join(' + ')} · ${grabado.url}`);
   await panel.waitForSelector('[data-bloquear="p-bombas"]');
   const fila = panel.locator('tr', { has: panel.locator('[data-bloquear="p-bombas"]') });
   revisar('El punto con chapita ofrece "🔒 Bloquear chapita" y no los botones de ubicación',
@@ -122,6 +133,8 @@ function revisar(nombre, ok, detalle = '') {
   });
   await guardia.reload();
   await espera(800);
+  // La chapita es la que grabó el panel: con su enlace delante del texto.
+  await guardia.evaluate(u => { window.__chapita.url = u; }, grabado.url);
   await guardia.evaluate(() => bajarPaquete(true).then(() => iniciarRonda('ronda-nocturna')));
   await espera(600);
   for (const c of ['PRT234', 'EST456', 'QCH789', 'PSC234', 'BDG567']) await guardia.evaluate(c => procesarCodigo(c), c);
@@ -139,15 +152,36 @@ function revisar(nombre, ok, detalle = '') {
   await guardia.evaluate(() => window.__tocar(rondaActual().puntos[5].payload, '04:11:22:33:44:55:66'));
   await espera(200);
   revisar('Una copia de la chapita (otra serie) se rechaza', /no es la registrada/.test(await aviso()));
-  // Una lectura rechazada cierra la pantalla: el guardia vuelve a tocar Escanear.
-  await guardia.click('#btn-escanear');
-  await espera(200);
+  // v1.24.2: una lectura rechazada cierra la pantalla, pero el lector sigue
+  // escuchando: acercar la chapita sin volver a tocar Escanear igual marca, y
+  // Android no se la lleva a otra app.
+  revisar('Después de un rechazo el lector sigue escuchando (v1.25.1)',
+    !(await guardia.isVisible('#modal-nfc')) && (await guardia.evaluate(() => window.__señal && !window.__señal.aborted)));
   await guardia.evaluate(() => window.__tocar(rondaActual().puntos[5].payload, '04:a2:3b:4c:5d:6e:80'));
   await espera(300);
-  revisar('La chapita verdadera marca el punto', /Sala de bombas \(6\/8\)/.test(await aviso()));
+  revisar('La chapita verdadera marca el punto, sin volver a tocar Escanear', /Sala de bombas \(6\/8\)/.test(await aviso()));
+  revisar('Con la chapita todavía apoyada, el lector no se apaga (v1.25.1)',
+    await guardia.evaluate(() => window.__señal && !window.__señal.aborted));
   await espera(4500); // la cola se envía cada 4 s
   revisar('La marca llegó al servidor', (await guardia.evaluate(() => estado.cola.length)) === 0);
   await guardia.screenshot({ path: path.join(capturas, '3-guardia-marcada.png'), fullPage: true });
+
+  // 3. La chapita acercada con la app cerrada o en segundo plano: Android abre
+  //    su enlace (v1.25.1). Si la app estaba en una pestaña de Chrome, abre
+  //    OTRA pestaña: las dos tienen que quedar de acuerdo.
+  const url = grabado.url;
+  const otra = await ctx.newPage();
+  otra.on('dialog', d => d.accept());
+  await otra.goto(url);
+  await otra.waitForFunction(() => window.__appLista === true);
+  revisar('Abierta por la chapita: dice que hay que acercarla otra vez', /Abriste la app con la chapita/.test(await otra.textContent('#aviso')), await otra.textContent('#aviso'));
+  revisar('…y limpia la dirección (una recarga no lo repite)', !(await otra.evaluate(() => location.hash)));
+  await otra.evaluate(c => procesarCodigo(c), 'TRS345'); // marca en la pestaña nueva
+  await espera(500);
+  revisar('Dos pestañas: la otra se entera de la marca y no la pisa',
+    (await guardia.evaluate(() => estado.ejecucion.escaneos.length)) === (await otra.evaluate(() => estado.ejecucion.escaneos.length)),
+    `${await guardia.evaluate(() => estado.ejecucion.escaneos.length)} y ${await otra.evaluate(() => estado.ejecucion.escaneos.length)} marcas`);
+  await otra.close();
 
   await navegador.close();
   servidor.close();
