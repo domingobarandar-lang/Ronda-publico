@@ -63,6 +63,7 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 | # | Fecha | Gravedad | Qué pasó | Cómo nos enteramos | Estado |
 |---|---|---|---|---|---|
 | INC-001 | 2026-10-31 | S2 | Rondas interrumpidas en el teléfono compartido de una garita ([análisis](#inc-001--rondas-interrumpidas-en-el-teléfono-compartido-de-la-garita)) | *Por completar* | Corrección en curso (v1.25) |
+| INC-003 | 2026-11-02 | S3 | `/fabrica` (v1.26.0) contaba los rechazos sin ubicación, por ubicación vieja o por señal imprecisa como «QR, chapita o código equivocado», fallo del guardia, y no como GPS: escondía el problema del GPS bajo techo. `salud.dificultades` los separaba por `topeM`, que el teléfono no manda si no hubo distancia que medir, y el test le inventaba uno. Se calcula al vuelo con los rechazos guardados: al desplegar, la pantalla queda bien sin tocar la base | Revisión del código de la v1.27 (PR #31) | Corrección en curso (sin desplegar) |
 
 **Fallos anteriores**, reconstruidos del CHANGELOG y de los commits. No tienen análisis y la gravedad es estimada:
 

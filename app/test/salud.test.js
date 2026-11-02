@@ -12,6 +12,7 @@ const path = require('path');
 const { crearStore } = require('../lib/store');
 const salud = require('../lib/salud');
 const cuenta = require('../lib/cuenta');
+const { configGps } = require('../lib/rondas');
 
 const MIN = 60000;
 const DIA = 24 * 60 * MIN;
@@ -33,10 +34,19 @@ const guardia = (id, condominioId) => ({ id, condominioId, usuario: id, nombre: 
 const RONDA = { id: 'r1', condominioId: 'c1', nombre: 'Perímetro', puntoIds: ['p1', 'p2'] };
 const marca = puntoId => ({ puntoId, ts: iso(AHORA - DIA), medio: 'qr' });
 
-// Rechazos como los anota el servidor (anotarRechazo en server.js). Los de GPS
-// traen siempre topeM; los del medio, nunca.
-const gps = (extra = {}) => ({ puntoId: 'p1', ts: iso(AHORA - DIA), motivo: 'Sin ubicación', topeM: 40, ...extra });
-const medio = () => ({ puntoId: 'p1', ts: iso(AHORA - DIA), motivo: 'Este punto tiene chapita: acércala al teléfono.' });
+// Rechazos como los guarda el servidor (anotarRechazo en server.js): todos los
+// campos, en null lo que el teléfono no mandó. Cada uno trae lo que manda el
+// teléfono de verdad (registrarRechazo en public/app.js; el test «los rechazos
+// que arma el teléfono» los saca de ese código). Solo el de distancia trae tope.
+const rechazo = campos => ({ puntoId: 'p1', ts: iso(AHORA - DIA), motivo: '', distanciaM: null, topeM: null, acc: null, edadMs: null, ...campos });
+const sinUbicacion = () => rechazo({ motivo: '📍 Sin ubicación (permiso denegado): "Bodega" no se puede marcar hasta confirmar que estás ahí.' });
+const vieja = () => rechazo({ motivo: '📍 Tu ubicación es de hace 2 min: hace falta una más reciente para marcar "Bodega".', acc: 12, edadMs: 120000 });
+const imprecisa = () => rechazo({ motivo: '📍 Señal demasiado imprecisa (±350 m) para confirmar que estás en "Bodega". Espera unos segundos a que el GPS afine y vuelve a escanear.', acc: 350, edadMs: 3000 });
+const distancia = distanciaM => rechazo({ motivo: `📍 Estás a ${distanciaM} m de "Bodega" y el máximo es 40 m (señal ±25 m). Acércate, o espera unos segundos a que mejore la señal.`, distanciaM, topeM: 40, acc: 25, edadMs: 2000 });
+// Los del medio: los mismos textos en la app (motivoMedio) y en el servidor (medioDeLaMarca).
+const medio = () => rechazo({ motivo: 'Este punto se marca con la chapita NFC: acerca la parte trasera del teléfono a la chapita de "Bodega".' });
+const chapitaAjena = () => rechazo({ motivo: 'Esta chapita no es la registrada para "Bodega". Si la cambiaron, avisa al administrador.' });
+const aMano = () => rechazo({ motivo: 'En "Bodega" el código a mano no sirve: se marca con la chapita NFC. Si no lee, toca «La chapita no lee» para avisar al administrador.' });
 
 const causas = d => ({ app: [...d.app].sort(), usuario: [...d.usuario].sort(), rechazosGps: d.rechazosGps });
 
@@ -68,7 +78,7 @@ test('rondas por estado en los últimos 7 días, con porcentaje sobre las cerrad
 
 test('un condominio sin rondas da ceros, no NaN', () => {
   const store = nuevo();
-  store.ejecuciones.guardar(cerrada('x', 'c1', AHORA - DIA, 'completa', { rechazos: [gps()] }));
+  store.ejecuciones.guardar(cerrada('x', 'c1', AHORA - DIA, 'completa', { rechazos: [sinUbicacion()] }));
   const r = salud.resumen(store, 'vacio', AHORA);
   assert.deepEqual(r.rondas, {
     total: 0, cerradas: 0, completas: 0, incompletas: 0, sospechosas: 0, automaticas: 0, enCurso: 0,
@@ -86,22 +96,34 @@ test('un condominio sin rondas da ceros, no NaN', () => {
 
 test('GPS: lo que la señal podía arreglar es de la aplicación; lejos con buena señal, del usuario', () => {
   const opciones = { ronda: RONDA, precisionMaxM: 100 };
-  // Sin ubicación, ubicación vieja o imprecisa: siempre de la aplicación.
-  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps(), gps({ motivo: 'Ubicación vieja', edadMs: 60000 })] }, opciones)),
-    { app: ['gps'], usuario: [], rechazosGps: 2 });
+  // Sin ubicación, ubicación vieja o imprecisa: siempre de la aplicación,
+  // aunque no traigan tope (la v1.26.0 los contaba como medio equivocado).
+  for (const r of [sinUbicacion(), vieja(), imprecisa()]) {
+    assert.deepEqual(causas(salud.dificultades({ rechazos: [r] }, opciones)), { app: ['gps'], usuario: [], rechazosGps: 1 }, r.motivo);
+  }
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [sinUbicacion(), vieja(), imprecisa()] }, opciones)),
+    { app: ['gps'], usuario: [], rechazosGps: 3 });
+  // Un motivo de la señal con el texto del servidor (verificarPresencia en
+  // lib/rondas.js), sin 📍 ni números: también.
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [rechazo({ motivo: 'Sin señal GPS: no se puede confirmar que estás en "Bodega".' })] }, opciones)),
+    { app: ['gps'], usuario: [], rechazosGps: 1 });
   // Lejos pero dentro del error posible (tope 40 + 100 m): también.
-  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 140 })] }, opciones)),
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [distancia(140)] }, opciones)),
     { app: ['gps'], usuario: [], rechazosGps: 1 });
   // Más allá: el guardia no estaba en el punto.
-  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 141 })] }, opciones)),
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [distancia(141)] }, opciones)),
     { app: [], usuario: ['lejos'], rechazosGps: 0 });
   // El margen sale de GPS_PRECISION_MAX_M (configGps) si no se pasa.
-  assert.deepEqual(causas(salud.dificultades({ rechazos: [gps({ distanciaM: 120 })] }, { ronda: RONDA })),
+  assert.deepEqual(causas(salud.dificultades({ rechazos: [distancia(120)] }, { ronda: RONDA })),
     { app: ['gps'], usuario: [], rechazosGps: 1 });
 });
 
 test('medio equivocado y chapita que no lee', () => {
   const opciones = { ronda: RONDA };
+  // QR en un punto con chapita, chapita de otro punto y código a mano.
+  for (const r of [medio(), chapitaAjena(), aMano()]) {
+    assert.deepEqual(causas(salud.dificultades({ rechazos: [r] }, opciones)), { app: [], usuario: ['medio'], rechazosGps: 0 }, r.motivo);
+  }
   assert.deepEqual(causas(salud.dificultades({ rechazos: [medio(), medio()] }, opciones)),
     { app: [], usuario: ['medio'], rechazosGps: 0 });
   // «La chapita no lee» (reporte) y el teléfono que no entregó la serie.
@@ -112,6 +134,78 @@ test('medio equivocado y chapita que no lee', () => {
   // Una ronda sin rechazos ni nada raro no tiene dificultades.
   assert.deepEqual(causas(salud.dificultades({ escaneos: [marca('p1'), marca('p2')] }, opciones)),
     { app: [], usuario: [], rechazosGps: 0 });
+});
+
+// Los rechazos que encola el teléfono, armados con el fuente real de la app
+// (verificarPresencia, motivoMedio y registrarRechazo de public/app.js, como en
+// app-gps.test.js). El test de la v1.26.0 le inventaba un topeM a todos los
+// rechazos de GPS y no vio que el teléfono no lo manda sin distancia.
+const fuente = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
+
+function extraer(nombre) {
+  const i = fuente.indexOf(`function ${nombre}(`);
+  assert.ok(i !== -1, `public/app.js ya no define ${nombre}()`);
+  let nivel = 0;
+  for (let j = fuente.indexOf('{', i); j < fuente.length; j++) {
+    if (fuente[j] === '{') nivel++;
+    else if (fuente[j] === '}' && --nivel === 0) return fuente.slice(i, j + 1);
+  }
+  throw new Error(`llaves sin cerrar en ${nombre}()`);
+}
+
+function telefono() {
+  const nombres = ['cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos', 'gpsUltimo', 'verificarPresencia', 'medioDe', 'motivoMedio', 'registrarRechazo'];
+  return new Function('CFG', `
+    const estado = { paquete: { gps: CFG }, ejecucion: { id: 'e1' }, cola: [] };
+    let gpsActual = null;
+    const gpsMotivoFalla = 'permiso denegado';
+    const guardarEstado = () => {};
+    const sincronizar = () => {};
+    const pintarGps = () => {};
+    ${nombres.map(extraer).join('\n')}
+    return {
+      // Lo que encola al rechazar la marca por GPS con la lectura \`fix\`.
+      gps(punto, fix) { gpsActual = fix; registrarRechazo(punto, verificarPresencia(punto)); return estado.cola.pop(); },
+      // Lo que encola al rechazar el medio (un QR, una chapita o el código a mano).
+      medio(punto, texto, nfc) { registrarRechazo(punto, { motivo: motivoMedio(punto, texto, nfc) }); return estado.cola.pop(); }
+    };
+  `)(configGps());
+}
+
+test('los rechazos que arma el teléfono: la señal es de la aplicación aunque no traiga tope', () => {
+  const tel = telefono();
+  const bodega = { id: 'p1', nombre: 'Bodega', lat: -33.45, lon: -70.66 };
+  const ahora = Date.now();
+  // Una lectura a `dM` metros al norte del punto, tomada hace `edadS` segundos.
+  const lectura = (dM, acc, edadS = 0) => ({ lat: bodega.lat + dM / 111320, lon: bodega.lon, acc, ts: ahora - edadS * 1000 });
+  const de = r => causas(salud.dificultades({ rechazos: [r] }, { ronda: RONDA, precisionMaxM: 100 }));
+  const GPS = { app: ['gps'], usuario: [], rechazosGps: 1 };
+
+  const sinUbicacion = tel.gps(bodega, null);
+  const vieja = tel.gps(bodega, lectura(0, 10, 60));
+  const imprecisa = tel.gps(bodega, lectura(0, 300));
+  // La premisa que el test de antes daba por hecha: sin distancia no hay tope.
+  assert.deepEqual([sinUbicacion, vieja, imprecisa].map(r => r.topeM), [null, null, null]);
+  for (const r of [sinUbicacion, vieja, imprecisa]) assert.deepEqual(de(r), GPS, r.motivo);
+
+  // Con distancia sí hay tope: dentro del error posible es de la aplicación,
+  // más allá es que el guardia no estaba en el punto.
+  const cerca = tel.gps(bodega, lectura(80, 30));
+  const lejos = tel.gps(bodega, lectura(500, 10));
+  assert.ok(cerca.topeM != null && lejos.topeM != null);
+  assert.deepEqual(de(cerca), GPS, cerca.motivo);
+  assert.deepEqual(de(lejos), { app: [], usuario: ['lejos'], rechazosGps: 0 }, lejos.motivo);
+
+  // El medio en un punto con chapita: un QR, el código a mano y una chapita
+  // de otro punto son del guardia; el teléfono que no entrega la serie, de la
+  // aplicación.
+  const conChapita = { ...bodega, nfc: true, nfcHuella: 'a'.repeat(64) };
+  const qr = 'RQR:p1:K7Q2';
+  for (const r of [tel.medio(conChapita, qr, null), tel.medio(conChapita, 'K7Q2', null), tel.medio(conChapita, qr, { serie: '04:A1', huella: 'b'.repeat(64) })]) {
+    assert.deepEqual(de(r), { app: [], usuario: ['medio'], rechazosGps: 0 }, r.motivo);
+  }
+  const sinSerie = tel.medio(conChapita, qr, { serie: '' });
+  assert.deepEqual(de(sinSerie), { app: ['chapita'], usuario: [], rechazosGps: 0 }, sinSerie.motivo);
 });
 
 test('cerrada por el sistema: con todo marcado faltó «Terminar»; con puntos sin marcar, el teléfono', () => {
@@ -130,9 +224,9 @@ test('resumen: rondas con dificultades por lado y por causa, y el GPS aparte', (
   store.db.rondas.push(RONDA);
   const e = store.ejecuciones;
   // 1: dos rechazos de GPS (una ronda, dos rechazos).
-  e.guardar(cerrada('d1', 'c1', AHORA - 1 * DIA, 'completa', { rechazos: [gps(), gps({ distanciaM: 90 })] }));
+  e.guardar(cerrada('d1', 'c1', AHORA - 1 * DIA, 'completa', { rechazos: [sinUbicacion(), distancia(90)] }));
   // 2: GPS y además lejos: cuenta en los dos lados.
-  e.guardar(cerrada('d2', 'c1', AHORA - 2 * DIA, 'completa', { rechazos: [gps(), gps({ distanciaM: 500 })] }));
+  e.guardar(cerrada('d2', 'c1', AHORA - 2 * DIA, 'completa', { rechazos: [imprecisa(), distancia(500)] }));
   // 3: QR en un punto con chapita.
   e.guardar(cerrada('d3', 'c1', AHORA - 3 * DIA, 'completa', { rechazos: [medio()] }));
   // 4: marcó todo y no tocó «Terminar».
@@ -143,7 +237,7 @@ test('resumen: rondas con dificultades por lado y por causa, y el GPS aparte', (
   e.guardar(cerrada('d6', 'c1', AHORA - 6 * DIA, 'completa', { escaneos: [marca('p1'), marca('p2')] }));
   e.guardar(ejec('d7', 'c1', AHORA - 10 * MIN));
   // 8: de hace más de 7 días, con GPS: no cuenta.
-  e.guardar(cerrada('vieja', 'c1', AHORA - 9 * DIA, 'completa', { rechazos: [gps()] }));
+  e.guardar(cerrada('vieja', 'c1', AHORA - 9 * DIA, 'completa', { rechazos: [vieja()] }));
 
   const d = salud.resumen(store, 'c1', AHORA).dificultades;
   assert.deepEqual(d.app, { rondas: 3, porcentaje: 43, causas: { gps: 2, sesion: 0, telefono: 1, chapita: 0 } });
