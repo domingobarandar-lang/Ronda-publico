@@ -36,6 +36,7 @@ Flujo de demo sugerido: en el panel, pestaña **Puntos** → "Imprimir hoja de Q
 - **Presupuesto de error del GPS** *(v1.13)*: el tope deja de ser un número fijo: **se le suma la imprecisión de las dos medidas que se comparan**, la del punto y la del teléfono ahora. Esto arregla el caso en que el guardia estaba parado sobre el QR y la app le decía "acércate al punto": con dos fixes de ±20 m, exigir 20 m clavados era imposible de cumplir. El control no se debilita — el margen lo pone el sensor, no el guardia — y un fix demasiado impreciso (WiFi/antena) se descarta en vez de usarse para decidir.
 - **Medición honesta del GPS** *(v1.14)*: v1.13 planteó bien ese presupuesto y lo alimentó mal — las dos medidas eran "la mejor de N lecturas", que es elegir el error más favorable y llamarlo precisión. Ahora las dos se promedian con [`public/geo.js`](public/geo.js) (centroide ponderado por `1/acc²`, outliers descartados por mediana) y declaran el **máximo** entre la dispersión observada, el techo teórico y un piso físico: promediar mata el error aleatorio, no el multipath. El panel **mide 45 s en vez de 12** —calentando el receptor desde que se abre la pestaña— y guarda junto al punto cómo llegó a ese número; los puntos fijados antes salen marcados para re-medir, sin que ninguno cambie solo. En el teléfono, un rechazo por señal fría deja la marca **esperando hasta 15 s** y se registra sola si la señal entra: el criterio no se afloja, solo se le da tiempo a cumplirse. Y el GPS se enciende al entrar, con Wake Lock durante la ronda, porque con la pantalla apagada el navegador lo mata.
 - **Puntos bajo techo: verificación por entrada** *(v1.10)*: en subterráneos, salas de calderas e interiores el GPS no llega y los 20 m son imposibles. Para esos, el administrador usa **"🏠 Fijar entrada"**: se para en la puerta del recinto (o donde el teléfono todavía toma señal) y fija ahí el ancla. El guardia puede marcar ese punto si pasó por la entrada en los **últimos 15 min**, dentro de **40 m** — el teléfono usa el fix que alcanzó a tomar antes de perder señal, sin que el guardia haga nada extra. Es una prueba más débil a propósito ("pasó por la entrada", no "está en el punto") y el informe lo dice: `📍 por entrada`. Radio y ventana se ajustan por punto con "Ajustar".
+- **Cercanía reciente** *(v1.27, CU-29)*: bajo un alero o en un subterráneo el GPS falla justo cuando el guardia llega, aunque un minuto antes, caminando hacia el punto, tenía buena señal. La app guarda un rastro de sus lecturas y, **antes de rechazar**, lo revisa: la marca entra **«📍 por cercanía»** si hubo una lectura buena (±20 m o menos) a 30 m o menos del punto en los últimos 5 min y ninguna lectura posterior lo ubica a más de 30 + 20 m. Funciona en todos los puntos con ubicación, sin elegir 🏠, y en los 🏠 arregla la entrada que se perdía a los 20 s (INC-002). La caseta sigue rechazada. Decisión en `entrega/ADR-001-GPS-BAJO-TECHO.md`. En **Panel → Puntos** cada punto muestra su **señal de los últimos 30 días** (🟢 buena / 🟡 regular / 🔴 mala) con una recomendación de qué prueba usar (`lib/senal-puntos.js`); solo sugiere, la ubicación nunca cambia sola.
 - **Informe automático**: al cerrar cada ronda se genera el informe (Completa / Con observaciones / INCOMPLETA) y se avisa al administrador en el panel (pestaña Avisos). Si una ronda queda incompleta o sospechosa, además sale un push al teléfono.
 - **Notificación de ronda incompleta** *(v1.4)*: si un guardia termina su ronda sin escanear todos los puntos, al administrador le llega una notificación push al teléfono (con el nombre del guardia y los puntos que faltaron), aunque tenga el panel cerrado. Se activa con un botón en la pestaña **Avisos**; no requiere configurar nada (las claves VAPID se generan solas). Necesita HTTPS o localhost; en iPhone, instalar el panel en la pantalla de inicio primero.
 - **Base de datos SQLite** *(v1.17)*: el historial ya no se reescribe entero en cada marca. Configuración en memoria, ejecuciones y avisos en tablas propias; se importa sola desde el `db.json` anterior en el primer arranque, con respaldo diario por correo. Medido: 100 guardias a la vez sobre 100 mil rondas, ninguna marca perdida. El listado de informes del panel muestra las últimas 200.
@@ -74,6 +75,10 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 | `GPS_BLOQUEA` | `1` | `1` = rechaza la marca lejos/sin GPS. `0` = la acepta y solo la deja observada en el informe (comportamiento v1.8) |
 | `GPS_ANCLA_RADIO_M` | `40` | Radio alrededor del ancla en los puntos con verificación por entrada |
 | `GPS_ANCLA_VENTANA_MIN` | `15` | Minutos que vale la señal tomada en la entrada |
+| `GPS_LECTURA_BUENA_M` | `20` | Peor ± de una lectura que sirve para la cercanía reciente (v1.27) |
+| `GPS_CERCANIA_M` | `30` | A cuántos metros del punto tuvo que estar esa lectura |
+| `GPS_CERCANIA_MIN` | `5` | Minutos que vale esa lectura. `0` = sin cercanía, como hasta v1.26 |
+| `GPS_ERROR_EXTRA_M` | `20` | Cuánto se puede equivocar el GPS más de lo que declara (rebote en muros y losas): una lectura posterior más lejos que `GPS_CERCANIA_M` + esto desmiente la cercanía |
 | `GMAIL_CLIENT_ID` | — | Client ID del OAuth client de Google (tipo "Desktop app", Gmail API habilitada) |
 | `GMAIL_CLIENT_SECRET` | — | Client secret de ese mismo OAuth client |
 | `GMAIL_REFRESH_TOKEN` | — | Se saca UNA VEZ desde tu compu con `node scripts/obtener-refresh-token.js`. Sin las 3 credenciales el informe semanal por correo queda en pausa (no rompe nada) |
@@ -104,6 +109,7 @@ lib/respaldo.js  foto diaria de la base (VACUUM INTO, se guardan 14) y copia com
 lib/fechas-chile.js  días y horas en zona horaria de Chile (rangos del panel y del informe semanal)
 lib/rondas.js    motor: iniciar / escanear / cerrar / evaluar
 lib/informes.js  informe en datos y en texto
+lib/senal-puntos.js  señal GPS de cada punto en los últimos 30 días y qué prueba conviene (panel → Puntos)
 lib/fabrica.js          alta de condominios y de cuentas de administrador
 lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
 lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
@@ -113,6 +119,7 @@ scripts/exportar-json.js          vuelta atrás: regenera el db.json que lee la 
 scripts/restaurar-respaldo.js     valida un respaldo y lo deja listo para el próximo arranque
 scripts/respaldo-ahora.js         hace el respaldo del día ya (para probar el correo)
 scripts/prueba-carga.js           N guardias a la vez sobre una base de M rondas (por defecto 100 y 100 mil)
+scripts/diagnostico-gps.js        señal por punto de toda la base, en solo lectura (en producción, solo con permiso)
 lib/programador.js      reloj: cada hora revisa el respaldo del día y, los lunes, el informe semanal
 lib/notificar.js aviso al admin (panel + consola)
 lib/push.js      push al teléfono del admin cuando una ronda queda incompleta, y alarma de ronda a la garita

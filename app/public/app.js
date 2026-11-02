@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.26.0';
+const VERSION_APP = 'v1.27.0';
 
 let estado = cargarEstado();
 // errores.js etiqueta con esto lo que manda a Sentry (v1.26): el condominio de
