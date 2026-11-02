@@ -231,3 +231,22 @@ test('diagnostico-gps: cuenta por punto sin escribir nada en la base', () => {
   assert.equal(correr('scripts/diagnostico-gps.js', [], { DB_PATH: vacia }).status, 1);
   assert.ok(!fs.existsSync(vacia));
 });
+
+// Números de Condominio Piloto (noviembre 2026): un punto exterior 🟢 con 5
+// rechazos en 250 intentos salía «semi-techado», y una torre con 1 «imprecisa» en
+// 290, «bajo losa».
+test('diagnostico-gps: la clase del punto sale de la proporción, no de un rechazo suelto', () => {
+  const { clasificar } = require('../scripts/diagnostico-gps');
+  const cfg = require('../lib/rondas').configGps();
+  const p = { lat: -33.45, lon: -70.66, precisionM: 4, dispersionM: 2 };
+  const jardin = { anclaPerdida: 0, nivel: 'buena', marcas: 245, rechazosGps: 5, accP90: 9, rechazos: { imprecisa: 0, distancia: 5 } };
+  assert.deepEqual(clasificar(jardin, p, cfg), []);
+  const torre = { anclaPerdida: 0, nivel: 'regular', marcas: 271, rechazosGps: 19, accP90: 38, rechazos: { imprecisa: 1, distancia: 16 } };
+  assert.deepEqual(clasificar(torre, p, cfg), ['semi-techado']);
+  const losa = { ...torre, nivel: 'mala', rechazosGps: 50, rechazos: { imprecisa: 34, distancia: 16 } };
+  assert.deepEqual(clasificar(losa, p, cfg), ['bajo losa']);
+  // Fijado sin promediar, en un punto con problemas: también se dice.
+  assert.deepEqual(clasificar(torre, { ...p, dispersionM: null }, cfg), ['semi-techado', 'mal fijado']);
+  // Con chapita el GPS no decide: no hay techo que clasificar.
+  assert.deepEqual(clasificar({ ...torre, modo: 'nfc' }, p, cfg), []);
+});

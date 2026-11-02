@@ -33,13 +33,23 @@ function metodoFijado(p) {
 }
 
 // Qué clase de problema tiene el punto (ADR-001, fase 0, paso 2). Puede tener
-// más de uno.
+// más de uno. Se decide por proporción, no por un caso suelto: con un solo
+// rechazo, un punto 🟢 de 245 marcas salía «semi-techado», y uno con 1
+// «imprecisa» en 290 intentos, «bajo losa». Un punto con buena señal no tiene
+// techo que clasificar, y en uno con chapita o sin ubicación el GPS no decide
+// (lo mismo que recomendacion() en lib/senal-puntos.js). La entrada perdida sí
+// se cuenta siempre.
+const PROPORCION_LOSA = 0.1;
+
 function clasificar(s, p, cfg) {
   const clases = [];
   if (s.anclaPerdida) clases.push('ancla perdida');
-  if (s.rechazos.imprecisa || (s.accP90 != null && s.accP90 >= cfg.precisionMaxM)) clases.push('bajo losa');
-  else if (s.rechazos.distancia || (s.accMediana != null && s.accMediana > cfg.lecturaBuenaM)) clases.push('semi-techado');
-  if (s.nivel && s.nivel !== 'buena' && p.lat != null && (p.precisionM == null || p.dispersionM == null)) clases.push('mal fijado');
+  if (!s.nivel || s.nivel === 'buena' || s.modo === 'nfc' || s.modo === 'ninguna') return clases;
+  const intentos = s.marcas + s.rechazosGps;
+  const imprecisas = intentos ? s.rechazos.imprecisa / intentos : 0;
+  if (imprecisas >= PROPORCION_LOSA || (s.accP90 != null && s.accP90 >= cfg.precisionMaxM)) clases.push('bajo losa');
+  else clases.push('semi-techado');
+  if (p.lat != null && (p.precisionM == null || p.dispersionM == null)) clases.push('mal fijado');
   return clases;
 }
 

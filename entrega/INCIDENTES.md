@@ -148,9 +148,9 @@ En la misma investigación salieron tres fallos:
 
 ### INC-002 — Marcas dudosas en los puntos bajo techo
 
-**Gravedad**: S2 estimada: el informe muestra marcas que no prueban la presencia, o el guardia no puede marcar un punto en el que está. Pasa a S1 si la fase 0 del ADR muestra puntos que no se pueden marcar nunca.
-**Condominio**: *por completar*.
-**Estado**: corrección en curso (v1.27: cercanía reciente, CU-29). Falta el diagnóstico con datos de producción y la prueba de terreno. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
+**Gravedad**: S2. El guardia no puede marcar a la primera un punto en el que está, y el informe muestra marcas al borde del tope. La fase 0 no encontró puntos que no se puedan marcar nunca (sería S1): el 86 % de los rechazos termina con el punto marcado en la misma ronda.
+**Condominio**: Condominio Piloto (los cuatro interiores de las torres). Los Aromos, sin rechazos del GPS.
+**Estado**: corrección en curso (v1.27: cercanía reciente, CU-29). Diagnóstico de producción hecho el 2026-11-02; falta la prueba de terreno. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
 
 #### Qué pasó
 
@@ -158,7 +158,11 @@ En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el códig
 
 #### Impacto
 
-*Por completar* con la fase 0 del ADR: qué puntos, cuántas marcas y rechazos de cada tipo, desde cuándo.
+Medido con `scripts/diagnostico-gps.js` en solo lectura, del 2026-10-03 al 2026-11-02 (tabla completa en el [ADR-001, fase 0](ADR-001-GPS-BAJO-TECHO.md#fase-0--diagnóstico-por-punto-1-día-sin-deploy)):
+
+- **Condominio Piloto, 284 rondas.** Las cuatro torres concentran 114 rechazos del GPS en 1.190 intentos (10 %); la peor es la Torre 1, con 17 %. 103 de esos rechazos son por distancia. La Torre 3 tiene además 58 de 271 marcas aceptadas al borde del tope.
+- **La causa en producción es la segunda: rebote en puntos semi-techados con ubicación exacta.** Los rechazos declaran ±5–9 m y ubican al guardia a 42–52 m. La de la entrada perdida no tuvo impacto todavía: no hay ningún punto 🏠 en producción.
+- Para el guardia: 106 de 123 rechazos por distancia terminaron con el punto marcado en la misma ronda, a los 7–62 s. Para el administrador: marcas al borde del tope que no se distinguen de una marca hecha desde lejos.
 
 #### Cronología
 
@@ -169,6 +173,7 @@ En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el códig
 | *Por completar* | Primer aviso de marcas dudosas bajo techo y quién lo dio. |
 | 2026-11-01 | Revisión del código: se encuentra que la lectura de la entrada no se guarda aparte. |
 | 2026-11-01 | v1.27.0 (PR, sin desplegar): rastro de lecturas en la app y cercanía reciente para todos los puntos con ubicación; los 🏠 usan la lectura de la entrada los 15 min completos. Señal por punto en el panel y `scripts/diagnostico-gps.js`. |
+| 2026-11-02 | Diagnóstico en producción, en solo lectura y con permiso: las torres de Condominio Piloto son semi-techadas, y el 80 % de sus rechazos por distancia cumple la condición 2 de la cercanía. No hay puntos 🏠. |
 
 #### Cinco porqués
 
@@ -182,7 +187,7 @@ En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el códig
 
 | # | Acción | Nivel | Estado |
 |---|---|---|---|
-| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Script listo (`scripts/diagnostico-gps.js`); falta correrlo en producción, con permiso |
+| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Hecho el 2026-11-02 (`scripts/diagnostico-gps.js`); repetir dos semanas después del deploy |
 | 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Hecho en la v1.27 (sin desplegar) |
 | 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Hecho en la v1.27 (sin desplegar) |
 | 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.27 por buena | Proceso | Pendiente |

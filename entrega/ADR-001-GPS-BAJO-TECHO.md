@@ -1,6 +1,6 @@
 # ADR-001: Marcas dudosas bajo techo — qué se puede mejorar del GPS y qué no
 
-**Estado:** Aceptado. Fases 1 y 2 implementadas en la v1.27.0 (CU-29); el script de la fase 0 está listo y no se ha corrido en producción; la fase 3 espera sus datos.
+**Estado:** Aceptado. Fases 1 y 2 implementadas en la v1.27.0 (CU-29). Fase 0 corrida en producción el 2026-11-02 (resultados abajo): confirma la cercanía y no justifica todavía la fase 3.
 **Fecha:** 2026-11-01
 **Deciden:** José (producto y soporte), operación en terreno
 **Relacionado:** CU-16, CU-18, CU-19, CU-23, CU-24, CU-28 en [SPEC.md](../SPEC.md) · [INC-002](INCIDENTES.md#inc-002--marcas-dudosas-en-los-puntos-bajo-techo)
@@ -158,9 +158,30 @@ Fuera de alcance según el SPEC. **Las balizas Bluetooth y la posición por WiFi
 
 ### Fase 0 — Diagnóstico por punto (1 día, sin deploy)
 
-1. [x] Script de **solo lectura** sobre la base de producción (pedir permiso antes, como en INC-001) que dé, por punto y en los últimos 30 días: modo, `precisionM` y versión con que se fijó, marcas, mediana y p90 del `acc` de las marcas, rechazos por tipo (imprecisa, distancia, vencida, sin señal), y cuántas marcas aceptadas quedaron a más del 80 % del tope. → `app/scripts/diagnostico-gps.js` (v1.27), con la misma cuenta que el panel (`lib/senal-puntos.js`). **Falta correrlo en producción, con permiso.**
-2. [ ] Clasificar cada punto problema (el script ya pone la clase; falta leerla con los datos de producción): **bajo losa** (lecturas de ±100 m o más), **semi-techado** (±20–60 m, rechazos por distancia), **mal fijado** (`precisionM` vacía o método antiguo), o **por entrada con el ancla perdida** (rechazos con `edadMs` de pocos segundos en un punto anclado: la señal de la entrada debería traer minutos).
-3. [ ] Completar la sección de impacto de INC-002 con esos números.
+1. [x] Script de **solo lectura** sobre la base de producción (pedir permiso antes, como en INC-001) que dé, por punto y en los últimos 30 días: modo, `precisionM` y versión con que se fijó, marcas, mediana y p90 del `acc` de las marcas, rechazos por tipo (imprecisa, distancia, vencida, sin señal), y cuántas marcas aceptadas quedaron a más del 80 % del tope. → `app/scripts/diagnostico-gps.js` (v1.27), con la misma cuenta que el panel (`lib/senal-puntos.js`). Corrido en producción el 2026-11-02, con permiso.
+2. [x] Clasificar cada punto problema: **bajo losa** (lecturas de ±100 m o más), **semi-techado** (±20–60 m, rechazos por distancia), **mal fijado** (`precisionM` vacía o método antiguo), o **por entrada con el ancla perdida** (rechazos con `edadMs` de pocos segundos en un punto anclado: la señal de la entrada debería traer minutos). La clase sale de la proporción de rechazos, no de un caso suelto, y solo en puntos 🟡/🔴 donde decide el GPS.
+3. [x] Completar la sección de impacto de INC-002 con esos números.
+
+#### Resultados en producción (2026-10-03 a 2026-11-02)
+
+Condominio Piloto, 284 rondas. Los Aromos, 21 rondas y ningún rechazo del GPS.
+
+| Punto | Señal | ± típico / p90 | Rechazos del GPS | Por distancia | Marcas al borde del tope |
+|---|---|---|---|---|---|
+| Torre 1 — interior | 🟡 | 14 / 45 m | 54 de 321 (17 %) | 48 | 0 |
+| Torre 4 — interior | 🟡 | 11 / 25 m | 24 de 294 (8 %) | 23 | 30 |
+| Torre 3 — interior | 🟡 | 14 / 38 m | 19 de 290 (7 %) | 16 | 58 |
+| Torre 2 — interior | 🟡 | 20 / 57 m | 17 de 285 (6 %) | 16 | 24 |
+| Portería | 🟡 | 14 / 40 m | 6 de 277 | 5 | 4 |
+| Los 4 puntos exteriores | 🟢 | 7–8 / 9–10 m | 2 a 5 de ~248 | 2 a 5 | 13–21 |
+
+- **Todos los puntos son 📍 exactos: no hay ningún 🏠 en producción.** La lectura de la entrada que se perdía (INC-002) todavía no afectó a nadie; afectaría al primer punto que se fije por entrada.
+- **No hay puntos bajo losa:** 5 rechazos por señal imprecisa en todo el mes. Las cuatro torres son **semi-techadas**.
+- **La falla es el rebote, no la falta de señal.** Los rechazos por distancia de las torres declaran un ± de 5–9 m (mediana) y ubican al guardia a 42–52 m, entre 5 y 15 m más allá del tope. Una lectura con un ± tan chico no viene de un guardia caminando (eso inflaría la dispersión): es una lectura quieta que rebota, el caso de la cercanía y de `GPS_ERROR_EXTRA_M`.
+- **El guardia estaba ahí.** El 86 % de los rechazos por distancia (106 de 123) terminó con el punto marcado en la misma ronda, a los 7–62 s (mediana por torre). Hoy cada falla le cuesta al guardia un reintento.
+- **Lo que puede rescatar la cercanía:** el 80 % de esos rechazos (98 de 123) cumple la condición 2 (la lectura no lo ubica a más de 30 + 20 m descontando su ±). La condición 1, una lectura buena a 30 m o menos en los 5 min anteriores, no se puede medir con la base, porque el rastro no se guarda. Eso lo dice la prueba de terreno y, después del deploy, la cuenta «por cercanía» del panel.
+
+**Umbrales:** se quedan los cuatro defaults. Con `GPS_ERROR_EXTRA_M` = 20 entra el 80 % de los rechazos del rebote. El 20 % restante son lecturas de 60 a 300 m que la cercanía no debe aceptar.
 
 ### Fase 1 — Cercanía reciente (v1.27)
 
@@ -189,6 +210,8 @@ Fuera de alcance según el SPEC. **Las balizas Bluetooth y la posición por WiFi
 2. [x] En el panel, por punto: «señal en este punto: buena / regular / mala», calculada con el `acc` de sus marcas y sus rechazos de los últimos 30 días, y una recomendación según la tabla (`GET /api/admin/puntos/senal`, `lib/senal-puntos.js`). Mala: ± típico sobre 20 m o 1 de cada 4 intentos rechazado. Buena: p90 hasta 20 m, menos de 1 de cada 10 rechazado y hasta 1 de cada 4 marcas por cercanía. Con menos de 3 intentos no opina. Solo sugiere: **la ubicación del punto nunca se mueve sola** con las marcas de los guardias (se podría ir corriendo hacia la caseta de a pocos metros).
 
 ### Fase 3 — GPS con señal (solo si la fase 0 lo justifica)
+
+**Con los datos del 2026-11-02, no se justifica todavía.** El peso por antigüedad arregla el promedio que queda atrás cuando el guardia llega caminando, y eso se vería como rechazos con un ± inflado. Los de producción traen ±5–9 m: son rebote. Se vuelve a mirar dos semanas después del deploy de la v1.27, con el diagnóstico: cuántas marcas entran por cercanía en cada torre y cuántos rechazos quedan.
 
 1. [ ] Peso por antigüedad en `consolidarFixes()` (vida media de unos 5 s), sin tocar `precisionHonesta()` ni la medición del panel.
 2. [ ] Ajustes de Android y comparación Chrome vs. Fully en terreno; GNSS de doble frecuencia en la próxima compra.
