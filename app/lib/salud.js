@@ -66,6 +66,24 @@ function anotarReingreso(store, usuario, ahora = Date.now()) {
   }
 }
 
+// Los motivos de la señal: los del teléfono empiezan con 📍; los del servidor
+// (verificarPresencia en lib/rondas.js) se reconocen por el texto.
+const MOTIVO_SENAL = /^📍|Sin (señal|ubicación)|antigüedad de la ubicación|imprecisa/;
+
+// ¿Fue la señal la que rechazó la marca? Se mira lo que guardó anotarRechazo()
+// en server.js. El tope no sirve para saberlo: el teléfono (registrarRechazo en
+// public/app.js) lo manda solo cuando hubo distancia que medir. «Sin
+// ubicación» llega con el puro motivo, y «ubicación vieja» y «señal imprecisa»
+// con la señal (acc, edadMs) pero sin tope. La v1.26.0 miraba el tope y esos
+// tres contaban como medio equivocado: el GPS bajo techo quedaba anotado como
+// error del guardia.
+//
+// Los del medio (medioDeLaMarca en lib/rondas.js, motivoMedio en
+// public/app.js) llegan sin ningún número y con un motivo sin 📍.
+function esGps(r) {
+  return r.distanciaM != null || r.acc != null || r.edadMs != null || MOTIVO_SENAL.test(r.motivo || '');
+}
+
 // Las dificultades técnicas de UNA ronda, por lado y por causa. Devuelve
 // { app: Set, usuario: Set, rechazosGps }.
 //
@@ -84,16 +102,15 @@ function anotarReingreso(store, usuario, ahora = Date.now()) {
 //             código a mano donde no sirve.
 //   terminar  marcó todos los puntos pero no tocó «Terminar ronda».
 //
-// Los rechazos de GPS siempre traen `topeM` (verificarPresencia lo pone en
-// todos sus veredictos); los del medio nunca.
+// Qué rechazo es de la señal y cuál del medio se lee en lo que trae (esGps).
 function dificultades(ejecucion, { ronda, reingreso = false, precisionMaxM = configGps().precisionMaxM } = {}) {
   const app = new Set();
   const usuario = new Set();
   let rechazosGps = 0;
   for (const r of ejecucion.rechazos || []) {
     if (r.reporte === 'chapita' || /número de serie de la chapita/i.test(r.motivo || '')) { app.add('chapita'); continue; }
-    if (r.topeM == null) { usuario.add('medio'); continue; }
-    if (r.distanciaM != null && r.distanciaM > r.topeM + precisionMaxM) { usuario.add('lejos'); continue; }
+    if (!esGps(r)) { usuario.add('medio'); continue; }
+    if (r.distanciaM != null && r.topeM != null && r.distanciaM > r.topeM + precisionMaxM) { usuario.add('lejos'); continue; }
     app.add('gps');
     rechazosGps++;
   }

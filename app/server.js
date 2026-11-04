@@ -625,22 +625,26 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
     const { fin, comentario } = req.body || {};
-    // Ronda con todos los puntos que el sistema ya cerró porque nadie tocó
-    // «Terminar ronda» (v1.25): el toque tardío no la reabre. No trae nada
-    // nuevo, y reabrirla mandaba el informe dos veces y contaba la espera como
-    // ronda. Si trae un comentario, se guarda y se avisa aparte.
+    // Ronda con todos los puntos que el sistema ya cerró porque el «Terminar
+    // ronda» no llegó (v1.25). Si el toque es del guardia, sí la terminó y
+    // así queda (motor.terminarTarde, INC-004), con un aviso corto que corrige
+    // el del cierre automático. No se reabre: reabrirla mandaba el informe dos
+    // veces. El toque de otro (un administrador) no la cambia.
     if (ejecucion.cierreAutomatico && motor.todosMarcados(ejecucion, motor.rondaDe(db, ejecucion))) {
+      if (ejecucion.guardiaId !== req.usuario.id) return res.json(armarInforme(db, ejecucion));
+      const { minutos, aTiempo } = motor.terminarTarde(db, ejecucion, { fin, comentario });
+      const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
+      const inf = armarInforme(db, ejecucion);
+      const sinSenal = aTiempo ? ' (el teléfono estaba sin señal y el aviso llegó tarde)' : '';
       const texto = motor.limpiarComentario(comentario);
-      if (texto && texto !== ejecucion.comentario) {
-        ejecucion.comentario = texto;
-        const condominio = db.condominios.find(c => c.id === ejecucion.condominioId);
-        const inf = armarInforme(db, ejecucion);
-        store.transaccion(() => {
-          store.ejecuciones.guardar(ejecucion);
-          registrarAviso(store, condominio, `💬 Comentario de ${inf.guardia} sobre su ronda "${inf.ronda}" del ${hora(inf.inicio)}: ${texto}`);
-        });
-      }
-      return res.json(armarInforme(db, ejecucion));
+      store.transaccion(() => {
+        store.ejecuciones.guardar(ejecucion);
+        registrarAviso(store, condominio,
+          `✅ ${inf.guardia} sí tocó «Terminar ronda» en su ronda "${inf.ronda}" del ${hora(inf.inicio)}, `
+          + `${minutos} min después de la última marca${sinSenal}. Queda como terminada por el guardia.`
+          + (texto ? `\n💬 Comentario: ${texto}` : ''));
+      });
+      return res.json(inf);
     }
     // El cierre de verdad, del teléfono, reemplaza al automático: trae la hora
     // real de término y el informe se rehace con todo lo que llegó.
@@ -655,8 +659,12 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   // puede despertar al administrador con veinte avisos viejos.
   async function cerrarAbandonadas(ahora = Date.now()) {
     const cerradas = [];
-    for (const ejecucion of store.ejecuciones.listar({ estado: 'en_curso' })) {
-      if (!motor.estaAbandonada(db, ejecucion, ahora)) continue;
+    for (const { id } of store.ejecuciones.listar({ estado: 'en_curso' })) {
+      // Releída justo antes de cerrarla: mientras se esperaba el push de la
+      // anterior pudo llegar su «Terminar» o sus marcas, y cerrar la copia
+      // leída al principio los pisaba (INC-004).
+      const ejecucion = store.ejecuciones.obtener(id);
+      if (!ejecucion || ejecucion.estado !== 'en_curso' || !motor.estaAbandonada(db, ejecucion, ahora)) continue;
       const ultima = motor.ultimaActividad(ejecucion);
       await cerrarYNotificar(ejecucion, {
         automatico: true,

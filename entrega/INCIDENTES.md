@@ -63,7 +63,9 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 | # | Fecha | Gravedad | Qué pasó | Cómo nos enteramos | Estado |
 |---|---|---|---|---|---|
 | INC-001 | 2026-10-31 | S2 | Rondas interrumpidas en el teléfono compartido de una garita ([análisis](#inc-001--rondas-interrumpidas-en-el-teléfono-compartido-de-la-garita)) | *Por completar* | Corrección en curso (v1.25) |
-| INC-002 | 2026-11-01 | S2 (estimada) | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Corrección en curso (v1.27) |
+| INC-002 | 2026-11-01 | S2 | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Corrección en curso (v1.27) |
+| INC-003 | 2026-11-02 | S3 | `/fabrica` (v1.26.0) contaba los rechazos sin ubicación, por ubicación vieja o por señal imprecisa como «QR, chapita o código equivocado», fallo del guardia, y no como GPS: escondía el problema del GPS bajo techo. `salud.dificultades` los separaba por `topeM`, que el teléfono no manda si no hubo distancia que medir, y el test le inventaba uno. Se calcula al vuelo con los rechazos guardados: al desplegar, la pantalla queda bien sin tocar la base | Revisión del código de la v1.27 (PR #31) | Corrección en curso (sin desplegar) |
+| INC-004 | 2026-11-04 | S2 | El cierre automático de la ronda completa (v1.25, 15 min) cortaba al guardia que todavía no tocaba «Terminar», y su «Terminar» tardío se descartaba: el informe decía «no tocó Terminar ronda» ([análisis](#inc-004--el-cierre-automático-cortaba-al-guardia-que-todavía-no-tocaba-terminar)) | José, mirando el panel | Corrección en curso (sin desplegar) |
 
 **Fallos anteriores**, reconstruidos del CHANGELOG y de los commits. No tienen análisis y la gravedad es estimada:
 
@@ -76,7 +78,7 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 
 ### Patrones abiertos
 
-- **Una ronda abierta calla la alarma del condominio.** Van dos: v1.17.1 (ronda colgada tras un apagón) e INC-001 (ronda completa sin «Terminar»). Cada vez se arregló cerrando antes la ronda; no se ha decidido si la alarma debería depender de que haya una ronda en curso.
+- **Una ronda abierta calla la alarma del condominio.** Van dos: v1.17.1 (ronda colgada tras un apagón) e INC-001 (ronda completa sin «Terminar»). Cada vez se arregló cerrando antes la ronda; no se ha decidido si la alarma debería depender de que haya una ronda en curso. INC-004 es el costo de ese camino: cerrar antes terminó cortando al guardia que todavía no terminaba.
 - **La sesión de 1:30 h** (revisión de la auditoría de la v1.14, 2026-08-16) arregló un problema de seguridad y dejó dos fallos después: v1.20.3 en el panel e INC-001 en el teléfono del guardia. Un cambio de seguridad también tiene que probarse contra el turno real.
 - **El teléfono compartido de la garita, con Fully Kiosk**, aparece en v1.21.0, v1.22.0 (la alarma no sonaba ahí) e INC-001. Es el ambiente más frágil y el que nadie recarga a mano: cada versión debería probarse ahí antes de darse por buena.
 
@@ -137,7 +139,7 @@ En la misma investigación salieron tres fallos:
 | # | Acción | Nivel | Estado |
 |---|---|---|---|
 | 1 | La sesión se renueva con la actividad de la ronda (iniciar, marcar, cerrar) | Código | En curso, v1.25 |
-| 2 | Una ronda con todos los puntos marcados se cierra a los 15 min de la última marca (`RONDA_COMPLETA_CIERRE_MIN`), con el motivo real | Código | En curso, v1.25 |
+| 2 | Una ronda con todos los puntos marcados se cierra a los 15 min de la última marca (`RONDA_COMPLETA_CIERRE_MIN`), con el motivo real | Código | En producción desde la v1.25. Cortaba al guardia: pasa a 30 min en INC-004 |
 | 3 | Los avisos se formatean en hora de Chile | Código | En curso, v1.25 |
 | 4 | Correr `npm test` también con `TZ=UTC`, como Railway, para que un error de zona horaria falle en el computador | Detección | Pendiente |
 | 5 | Señales de salud del producto en `/fabrica`: rondas cerradas automáticamente, rondas con dificultades técnicas (aplicación o usuario, GPS aparte, sesión cortada) y errores de Sentry por condominio | Detección | En revisión, v1.26.0 |
@@ -191,6 +193,58 @@ Medido con `scripts/diagnostico-gps.js` en solo lectura, del 2026-10-03 al 2026-
 | 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Hecho en la v1.27 (sin desplegar) |
 | 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Hecho en la v1.27 (sin desplegar) |
 | 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.27 por buena | Proceso | Pendiente |
+
+### INC-004 — El cierre automático cortaba al guardia que todavía no tocaba «Terminar»
+
+**Gravedad**: S2. El informe y el aviso al administrador dijeron que el guardia no tocó «Terminar ronda» cuando sí lo tocó, y en `/fabrica` cuenta como fallo del guardia.
+**Condominio**: Condominio Piloto, teléfono compartido de la garita (Android 16 con Fully Kiosk, alterna entre el wifi de la garita y datos móviles).
+**Estado**: corrección en curso (rama `claude/auto-close-rounds-spr-c599ef`, sin desplegar).
+
+#### Qué pasó
+
+José vio en el panel rondas de 12 o 13 minutos que el sistema había cerrado solo y que figuraban como «el guardia marcó todos los puntos pero no tocó «Terminar ronda»», mientras el guardia seguía con la ronda abierta en el teléfono, agregando su observación. Los 12 o 13 minutos son del inicio a la última marca: el cierre automático usa la última marca como hora de término, y por eso parecía que el sistema la había cortado a esa altura.
+
+Desde la v1.25.0, una ronda con todos los puntos marcados se cerraba sola a los 15 min de la última marca (entre 15 y 20, por el barrido de cada 5 min). Si el «Terminar» del guardia llegaba después, el servidor lo descartaba: solo guardaba el comentario, si traía uno. Además, la observación del guardia viaja junto con el «Terminar», así que mientras la escribe el servidor no ve ninguna actividad.
+
+#### Impacto
+
+- Desde la v1.25, **2 rondas completas** cerradas por el sistema, las dos en Condominio Piloto:
+  - **3/11 a las 02:31** (`f79e7f9f`): última marca a las 02:48:47 y cierre automático cerca de las 03:06. El «Terminar» del guardia llegó a las **03:08:02**, 19 min después de la última marca, y se descartó. El informe y el aviso dicen algo que no pasó.
+  - **4/11 a las 13:20** (`d0eccd0f`): 9 puntos en 12,8 min, casi todo sin señal (las 8 marcas guardadas llegaron juntas a las 13:34:30). Cierre automático cerca de las 13:52. A las 14:06 el teléfono tuvo señal y no traía ningún «Terminar», y hasta las 15:24 no llegó ninguno.
+- **Antes de la v1.25**, de 422 rondas completas terminadas por el guardia, 4 tardaron más de 15 min entre la última marca y «Terminar». Con la v1.25 las habría cortado.
+- En `/fabrica` las dos cuentan como «fallo del usuario: no tocó «Terminar ronda»».
+
+#### Cronología
+
+| Fecha y hora | Qué |
+|---|---|
+| 2026-10-31 | v1.25.0 (INC-001 B): la ronda completa se cierra a los 15 min de la última marca y el «Terminar» tardío ya no la reabre. |
+| 2026-11-03 03:08 | El «Terminar» del guardia llega un minuto después del cierre automático y se descarta. |
+| 2026-11-04 13:52 | El sistema cierra la ronda de las 13:20 mientras el guardia sigue con ella abierta en el teléfono. |
+| 2026-11-04 | José lo ve en el panel. Investigación con la base (solo lectura) y los logs HTTP de Railway del teléfono de la garita. |
+| *Por completar* | Corrección en producción. |
+
+#### Cinco porqués
+
+1. ¿Por qué el informe dice que el guardia no terminó la ronda? → El sistema la cerró a los 15 min (18 con el barrido) de la última marca, y el «Terminar» que llegó después se descartó.
+2. ¿Por qué 15 min no alcanzaban? → Después del último punto, el guardia vuelve a la garita y escribe su observación, que solo viaja con «Terminar»: el servidor no ve nada mientras tanto. El 99 % toca «Terminar» antes de 9 min, pero hay una cola: 4 de 422 pasaron de 15 min.
+3. ¿Por qué se descartaba el «Terminar» tardío? → La v1.25 supuso que un «Terminar» tardío era de un guardia que se olvidó y volvió mucho después: reabrir mandaba el informe dos veces y contaba la espera como ronda. No distinguía al guardia que tocó un minuto después del cierre, ni al teléfono sin señal que tocó a tiempo.
+4. ¿Por qué se eligieron 15 min? → Se eligieron sin medir cuánto tarda el guardia en tocar «Terminar» en rondas reales, aunque los datos ya estaban en la base.
+5. ¿Por qué no lo vimos antes? → Un «Terminar» descartado no dejaba rastro (salvo que trajera comentario): ni el registro de errores ni `/fabrica` lo cuentan. Nos enteramos por José.
+
+#### Acciones
+
+| # | Acción | Nivel | Estado |
+|---|---|---|---|
+| 1 | El plazo pasa a 30 min (`RONDA_COMPLETA_CIERRE_MIN`), elegido con los 422 cierres reales: cubre el 99,5 % y no atrasa la alarma de un condominio que suena cada hora | Código | Sin desplegar |
+| 2 | El «Terminar» del guardia que llega después del cierre automático cuenta (`terminarTarde` en `lib/rondas.js`): si lo tocó dentro del plazo (teléfono sin señal), queda como un cierre normal; si no, el fin sigue siendo la última marca y una observación dice cuánto tardó. Un aviso corto corrige el anterior, sin reabrir la ronda ni mandar push. Si la hora del toque en el teléfono es anterior a la última marca (reloj atrasado), el fin no se mueve | Código | Sin desplegar |
+| 3 | Tests que reproducen los dos casos y fallan con el código anterior (`test/abandonadas.test.js`) | Detección | Hecho |
+| 4 | Corregir en la base la ronda del 3/11 a las 02:31, cuyo «Terminar» se descartó | Datos | Pendiente: escribir en producción necesita autorización |
+| 5 | Contar en `/fabrica` los «Terminar» que llegan después del cierre automático: ahora la ronda queda terminada por el guardia y sale de «cerradas automáticamente». Para eso hay que guardar el «Terminar» tardío como dato (hoy queda solo la observación y el aviso) | Detección | Pendiente |
+| 6 | Preguntar al guardia de la garita qué hacía entre la última marca y el «Terminar» (junto con INC-001, acción 7) | Producto | Pendiente |
+| 7 | Antes de fijar un plazo que corta al guardia, medir la distribución real en la base, como se hizo aquí | Proceso | Pendiente |
+| 8 | El barrido relee cada ronda justo antes de cerrarla (`cerrarAbandonadas`). Cerraba la copia leída al empezar: un «Terminar» o unas marcas que llegaban mientras esperaba el push de otra ronda quedaban pisados, con el mismo «no tocó «Terminar ronda»». Lo encontró la revisión previa al PR, no un caso real | Código | Sin desplegar |
+| 9 | El aviso «✅ … sí tocó «Terminar ronda»» no dice si el estado cambió al evaluar con la hora del toque (por ejemplo, una alerta «demasiado rápida» que deja de valer) | Producto | Pendiente |
 
 ## Plantilla
 

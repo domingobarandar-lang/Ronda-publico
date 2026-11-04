@@ -99,6 +99,36 @@ test('/fabrica: sesión cortada a mitad de ronda y rondas por estado, por condom
   assert.equal(store.salud.listar('aromos', 'reingreso-en-ronda', '2000-01-01', '9999-12-31').length, 1);
 });
 
+test('/fabrica: sin ubicación, vieja o imprecisa es del GPS aunque el teléfono no mande tope; el medio equivocado, del guardia', async () => {
+  const jorge = await login('jorge', '5555');
+  const inicio = new Date(Date.now() - 20 * 60000).toISOString();
+  const r = await api('/api/ejecuciones', { metodo: 'POST', token: jorge.token, cuerpo: { id: 'salud-0002', rondaId: 'ronda-mirador', inicio } });
+  assert.equal(r.status, 201);
+
+  // Los cuerpos que manda la cola del teléfono (sincronizar en public/app.js):
+  // el tope viaja solo cuando hubo distancia que medir.
+  const rechazo = (hace, campos) => ({
+    puntoId: 'p-m-subterraneo', ts: new Date(Date.now() - hace * 60000).toISOString(),
+    motivo: null, distanciaM: null, topeM: null, acc: null, edadMs: null, reporte: null, ...campos
+  });
+  const cuerpos = [
+    rechazo(5, { motivo: '📍 Sin ubicación (buscando señal): "Subterráneo" no se puede marcar hasta confirmar que estás ahí.' }),
+    rechazo(4, { motivo: '📍 Tu ubicación es de hace 3 min: hace falta una más reciente para marcar "Subterráneo".', acc: 8, edadMs: 180000 }),
+    rechazo(3, { motivo: '📍 Señal demasiado imprecisa (±900 m) para confirmar que estás en "Subterráneo". Espera unos segundos a que el GPS afine y vuelve a escanear.', acc: 900, edadMs: 1000 }),
+    rechazo(2, { puntoId: 'p-m-terraza', motivo: 'Este punto se marca con la chapita NFC: acerca la parte trasera del teléfono a la chapita de "Terraza".' })
+  ];
+  for (const cuerpo of cuerpos) {
+    assert.equal((await api('/api/ejecuciones/salud-0002/rechazos', { metodo: 'POST', token: jorge.token, cuerpo })).status, 201);
+  }
+
+  const jefe = await login('fabrica', '87654321');
+  const { datos } = await api('/api/fabrica/condominios', { token: jefe.token });
+  const d = datos.condominios.find(c => c.id === 'mirador').salud.dificultades;
+  assert.deepEqual(d.app.causas, { gps: 1, sesion: 0, telefono: 0, chapita: 0 });
+  assert.deepEqual(d.usuario.causas, { lejos: 0, medio: 1, terminar: 0 });
+  assert.deepEqual(d.gps, { rondas: 1, porcentaje: 100, rechazos: 3 });
+});
+
 test('/fabrica: errores de Sentry por condominio y los que no tienen, solo para la fábrica', async () => {
   const jefe = await login('fabrica', '87654321');
   const { status, datos } = await api('/api/fabrica/sentry', { token: jefe.token });

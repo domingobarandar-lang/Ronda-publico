@@ -628,11 +628,15 @@ function cerrarEjecucion(db, ejecucion, { fin, automatico = false, comentario } 
   } else {
     delete ejecucion.cierreAutomatico;
   }
-  ejecucion.estado = ev.faltantes.length ? 'incompleta'
+  ejecucion.estado = estadoDe(ev);
+  return { ejecucion };
+}
+
+function estadoDe(ev) {
+  return ev.faltantes.length ? 'incompleta'
     : ev.sospechas.length ? 'sospechosa'
     : ev.observaciones.length ? 'completa_obs'
     : 'completa';
-  return { ejecucion };
 }
 
 // ---------- Rondas abandonadas ----------
@@ -661,9 +665,13 @@ function umbralAbandonoMs(ronda) {
 // esperarla dos horas: pasaba en el teléfono compartido de la garita, donde la
 // ronda quedaba abierta hasta que el siguiente guardia tomaba el teléfono, el
 // informe no salía y la alarma de ronda del condominio quedaba callada.
-// RONDA_COMPLETA_CIERRE_MIN (15 por defecto) desde la última marca.
+// RONDA_COMPLETA_CIERRE_MIN (30 por defecto) desde la última marca. Eran 15 y
+// cortaban al guardia que todavía escribía su observación (INC-004): de 422
+// rondas terminadas por el guardia, el 99 % tocó «Terminar» antes de 9 min y
+// solo 2 pasaron de 30. Con más de ~40 min, la ronda abierta empieza a callar
+// la alarma de un condominio que suena cada hora.
 function umbralCompletaMs() {
-  return (numEnv('RONDA_COMPLETA_CIERRE_MIN', 15) || 15) * 60000;
+  return (numEnv('RONDA_COMPLETA_CIERRE_MIN', 30) || 30) * 60000;
 }
 
 // Todos los puntos de la ronda tienen marca. Sin ronda (la eliminaron) no se
@@ -703,6 +711,35 @@ function reabrirSiAutomatica(ejecucion) {
   ejecucion.evaluacion = null;
   delete ejecucion.cierreAutomatico;
   return true;
+}
+
+// El guardia tocó «Terminar ronda» en una ronda completa que el sistema ya
+// había cerrado sola (INC-004). Sí la terminó: deja de contar como cerrada por
+// el sistema. No se reabre, así que el informe no sale dos veces.
+// - Tocó dentro del plazo: el teléfono estaba sin señal y el cierre llegó
+//   tarde. Queda como si hubiera llegado a tiempo, con su hora de término.
+// - Tocó después: el fin sigue siendo la última marca (la espera no es ronda)
+//   y una observación dice cuánto tardó.
+// `fin` es la hora del toque en el teléfono. Si es anterior a la última marca
+// (el reloj del teléfono se atrasó), el fin no se mueve: dejarlo antes de las
+// marcas acortaba la ronda hasta «demasiado rápida», sin alerta.
+// Devuelve null si no corresponde.
+function terminarTarde(db, ejecucion, { fin, comentario } = {}) {
+  const ronda = rondaDe(db, ejecucion);
+  if (ejecucion.estado === 'en_curso' || !ejecucion.cierreAutomatico || !todosMarcados(ejecucion, ronda)) return null;
+  const tocado = limpiarTs(fin);
+  const espera = Date.parse(tocado) - ultimaActividad(ejecucion);
+  const minutos = Math.max(0, Math.round(espera / 60000));
+  const aTiempo = espera < umbralCompletaMs();
+  const texto = limpiarComentario(comentario);
+  if (texto) ejecucion.comentario = texto;
+  if (aTiempo && espera > 0) ejecucion.fin = tocado;
+  delete ejecucion.cierreAutomatico;
+  const ev = evaluar(db, ejecucion, ronda);
+  if (!aTiempo) ev.observaciones.unshift(`El guardia tocó «Terminar ronda» ${minutos} min después de la última marca.`);
+  ejecucion.evaluacion = ev;
+  ejecucion.estado = estadoDe(ev);
+  return { minutos, aTiempo };
 }
 
 // `ronda` puede venir null: la eliminaron mientras la ejecución estaba abierta.
@@ -886,7 +923,7 @@ function nombres(db, puntoIds) {
 
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
-  estaAbandonada, ultimaActividad, umbralAbandonoMs, umbralCompletaMs, todosMarcados, rondaDe, reabrirSiAutomatica,
+  estaAbandonada, ultimaActividad, umbralAbandonoMs, umbralCompletaMs, todosMarcados, rondaDe, reabrirSiAutomatica, terminarTarde,
   distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM, minutos,
   OCULTAR_SIN_CONEXION, MAX_COMENTARIO, MANUAL_EN_PUNTO_NFC, esPuntoNfc, limpiarComentario
 };

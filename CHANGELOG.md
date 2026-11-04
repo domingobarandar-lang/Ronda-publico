@@ -2,7 +2,7 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
-## 1.27.0 — 2026-11-02 · Cercanía reciente: menos marcas dudosas bajo techo
+## 1.27.0 — 2026-11-04 · Cercanía reciente: menos marcas dudosas bajo techo, y el cierre automático ya no corta al guardia (INC-004)
 
 Decisión y opciones en `entrega/ADR-001-GPS-BAJO-TECHO.md`; incidente INC-002 en `entrega/INCIDENTES.md`. Caso de uso nuevo CU-29 en SPEC.md.
 
@@ -18,6 +18,15 @@ Decisión y opciones en `entrega/ADR-001-GPS-BAJO-TECHO.md`; incidente INC-002 e
 - **Compatibilidad con los condominios de QR** (`test/compat-qr.test.js`): mismas respuestas, avisos, rondas guardadas e informe semanal que la v1.22. Los campos nuevos se declaran con su valor neutro: los cuatro umbrales del paquete con sus defaults y `porCercania: false` en el detalle del informe. Ninguna marca de la referencia entra por cercanía.
 - **Fully Kiosk:** no usa ninguna API nueva del navegador (el rastro sale del mismo `watchPosition`). Falta la prueba de terreno en el teléfono de la garita: un punto semi-techado y uno bajo techo, escaneando 1-3 min después de perder la señal.
 - Tests: `test/app-gps.test.js` (rastro, cercanía en la app: alero, subterráneo, caseta, ida y vuelta, bordes, 🏠 con lecturas malas adentro, marca retenida, envío), `test/cercania.test.js` (servidor e informe), `test/paridad-gps.test.js` (la rama nueva en toda la grilla, app y servidor deciden lo mismo), `test/senal-puntos.test.js` (señal por punto y su API) y `test/scripts.test.js` (el diagnóstico no escribe en la base).
+
+### El cierre automático ya no corta al guardia que todavía no termina (INC-004)
+
+Con la v1.25, una ronda con todos los puntos marcados se cerraba sola a los 15 min de la última marca, y el «Terminar» que llegaba después se descartaba. En Condominio Piloto cortó al guardia que todavía estaba con su observación: el 3/11 su «Terminar» llegó un minuto después del cierre y el informe dijo que no lo había tocado. Solo cambia el servidor; la app del guardia no se actualiza.
+
+- **El plazo pasa de 15 a 30 min** (`RONDA_COMPLETA_CIERRE_MIN`, sin variable vale 30). En 422 rondas reales, el 99 % de los guardias tocó «Terminar» antes de 9 min y solo 2 pasaron de 30. Con más de ~40 min, la ronda abierta empieza a callar la alarma de un condominio que suena cada hora.
+- **El «Terminar» del guardia que llega después del cierre automático cuenta** (`terminarTarde` en `lib/rondas.js`). Si lo tocó dentro del plazo y el teléfono estaba sin señal, la ronda queda como si hubiera llegado a tiempo, con su hora de término. Si lo tocó después, el fin sigue siendo la última marca (la espera no cuenta como ronda) y la observación «El guardia tocó «Terminar ronda» N min después de la última marca» reemplaza a «no tocó «Terminar ronda»». En los dos casos deja de contar como cerrada automáticamente en `/fabrica`, no se reabre, el informe no sale de nuevo y no hay push: llega un solo aviso corto, «✅ … sí tocó «Terminar ronda» en su ronda … Queda como terminada por el guardia», con su comentario si trae uno. Reemplaza al aviso «💬 Comentario de …» de la v1.25. El «Terminar» de otra persona (un administrador) no cambia la ronda. Si la hora del teléfono es anterior a la última marca (reloj atrasado), el fin no se mueve: la ronda no se acorta.
+- **El barrido ya no pisa un «Terminar» que llega mientras trabaja.** Leía todas las rondas en curso al empezar y cerraba esas copias; si mientras esperaba el push de una llegaba el «Terminar» o las marcas de otra, las pisaba. Ahora relee cada ronda justo antes de cerrarla.
+- Tests: `test/abandonadas.test.js` (los 30 min, el «Terminar» tardío, el que tocó a tiempo sin señal, el de un administrador, el reintento de la cola, el borde del plazo, el reloj atrasado y el «Terminar» que llega durante el barrido).
 
 ## 1.26.0 — 2026-11-01 · La pantalla de la operación muestra la salud del producto y los errores de Sentry por condominio
 

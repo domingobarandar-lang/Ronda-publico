@@ -176,6 +176,34 @@ test('API: la marca por cercanía entra, queda guardada y el informe la etiqueta
   await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
 });
 
+// Para el estado de la ronda, la marca por cercanía es una marca normal: la
+// ronda completa queda «completa», sin observaciones ni sospechas ni aviso,
+// igual que con la lectura del momento. Solo la línea del punto lo dice.
+test('motor: una ronda completa con una marca por cercanía queda «completa», sin observaciones', () => {
+  const db = datosSemilla();
+  Object.assign(db.puntos.find(p => p.id === 'p-porteria'), { lat: LAT, lon: LON, precisionM: 5 });
+  const ronda = db.rondas.find(r => r.id === 'ronda-express');
+  const MIN = 60000;
+  const fin = Date.parse('2026-11-04T15:00:00.000Z');
+  const armar = (id, enPorteria) => ({
+    id, rondaId: ronda.id, condominioId: ronda.condominioId, guardiaId: 'u-pedro',
+    inicio: new Date(fin - 10 * MIN).toISOString(), fin: null, estado: 'en_curso', evaluacion: null,
+    escaneos: ronda.puntoIds.map((puntoId, i) => ({
+      puntoId, ts: new Date(fin - (ronda.puntoIds.length - 1 - i) * 2 * MIN).toISOString(), offline: false, gps: null, medio: 'qr',
+      ...(puntoId === 'p-porteria' ? enPorteria : {})
+    }))
+  });
+  const directa = armar('e-directa', { gps: lectura(5, 8, 2000) });
+  const porCercania = armar('e-cercania', { gps: lectura(45, 15, 0), cercania: lectura(10, 8, 50000) });
+  for (const e of [directa, porCercania]) motor.cerrarEjecucion(db, e, { fin: new Date(fin).toISOString() });
+
+  assert.equal(directa.estado, 'completa');
+  assert.equal(porCercania.estado, 'completa');
+  assert.deepEqual(porCercania.evaluacion.observaciones, []);
+  assert.deepEqual(porCercania.evaluacion.sospechas, []);
+  assert.equal(porCercania.escaneos.find(e => e.puntoId === 'p-porteria').porCercania, true);
+});
+
 test('API: una marca que entró por la lectura del momento no cambia en nada', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
