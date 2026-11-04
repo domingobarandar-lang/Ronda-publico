@@ -21,7 +21,7 @@ desplegar. Se aplica a mano (`railway config apply`) y desde ahí la configuraci
 
 ## Para aplicarlo (lo decide el usuario; nada de esto se hizo)
 
-1. `npm install railway` donde se vaya a correr el CLI (lo pide `railway/iac`; no va en `app/`).
+1. En la raíz del repo, `npm install --no-save railway` (el SDK que importa `railway/iac`). No va en `app/`: así no entra en el build del servicio, y `node_modules/` ya está en `.gitignore`.
 2. `railway config plan` y revisar: solo debería cambiar el start command. Si propone borrar variables o el volumen, **no aplicar**.
 3. `railway config apply`. Después, borrar `app/railway.json` en un PR aparte y desplegar.
 
