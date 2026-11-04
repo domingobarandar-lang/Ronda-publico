@@ -2,6 +2,15 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-04 · El cierre automático ya no corta al guardia que todavía no termina (INC-004)
+
+Con la v1.25, una ronda con todos los puntos marcados se cerraba sola a los 15 min de la última marca, y el «Terminar» que llegaba después se descartaba. En Condominio Piloto cortó al guardia que todavía estaba con su observación: el 3/11 su «Terminar» llegó un minuto después del cierre y el informe dijo que no lo había tocado. Solo cambia el servidor; la app del guardia no se actualiza.
+
+- **El plazo pasa de 15 a 30 min** (`RONDA_COMPLETA_CIERRE_MIN`, sin variable vale 30). En 422 rondas reales, el 99 % de los guardias tocó «Terminar» antes de 9 min y solo 2 pasaron de 30. Con más de ~40 min, la ronda abierta empieza a callar la alarma de un condominio que suena cada hora.
+- **El «Terminar» del guardia que llega después del cierre automático cuenta** (`terminarTarde` en `lib/rondas.js`). Si lo tocó dentro del plazo y el teléfono estaba sin señal, la ronda queda como si hubiera llegado a tiempo, con su hora de término. Si lo tocó después, el fin sigue siendo la última marca (la espera no cuenta como ronda) y la observación «El guardia tocó «Terminar ronda» N min después de la última marca» reemplaza a «no tocó «Terminar ronda»». En los dos casos deja de contar como cerrada automáticamente en `/fabrica`, no se reabre, el informe no sale de nuevo y no hay push: llega un solo aviso corto, «✅ … sí tocó «Terminar ronda» en su ronda … Queda como terminada por el guardia», con su comentario si trae uno. Reemplaza al aviso «💬 Comentario de …» de la v1.25. El «Terminar» de otra persona (un administrador) no cambia la ronda. Si la hora del teléfono es anterior a la última marca (reloj atrasado), el fin no se mueve: la ronda no se acorta.
+- **El barrido ya no pisa un «Terminar» que llega mientras trabaja.** Leía todas las rondas en curso al empezar y cerraba esas copias; si mientras esperaba el push de una llegaba el «Terminar» o las marcas de otra, las pisaba. Ahora relee cada ronda justo antes de cerrarla.
+- Tests: `test/abandonadas.test.js` (los 30 min, el «Terminar» tardío, el que tocó a tiempo sin señal, el de un administrador, el reintento de la cola, el borde del plazo, el reloj atrasado y el «Terminar» que llega durante el barrido).
+
 ## 1.26.0 — 2026-11-01 · La pantalla de la operación muestra la salud del producto y los errores de Sentry por condominio
 
 Los fallos más caros no son errores de código. El corte de rondas por sesión vencida (INC-001) era un 401, comportamiento esperado: ni el registro de errores (v1.20) ni Sentry (v1.20.1) podían verlo. Ahora la ficha de cada condominio en `/fabrica` muestra, para los últimos 7 días, cómo terminan sus rondas, cuáles tuvieron dificultades técnicas y de quién fue el fallo (`lib/salud.js`), y sus errores de código en Sentry (`lib/sentry-lectura.js`). El panel del administrador y la app del guardia no cambian a la vista: la app sube de número de versión y le dice a Sentry de qué condominio es cada error.
