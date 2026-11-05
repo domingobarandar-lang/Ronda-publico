@@ -147,6 +147,7 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 ## Deploy a producción (cuando José apruebe)
 
 - **Railway** (o VPS): `npm install && npm start`, variable `PORT` la pone la plataforma. Railway da HTTPS solo — necesario para la cámara. Costo estimado: plan chico (~US$5/mes). **Runtime sin LLM: el uso diario cuesta $0 en APIs.**
+- **Configuración del servicio** (comando de arranque, repo, volumen, variables): guardada en Railway, con su copia en [`.railway/railway.ts`](../.railway/railway.ts). Railway no lee ese archivo al desplegar; se aplica con `railway config plan` + `apply`, y **lo que el archivo no declara, el `apply` lo borra**. Ver [RAILWAY-IAC.md](RAILWAY-IAC.md) antes de tocarlo. Desde el 2026-11-05 ya no hay `app/railway.json`.
 - Un servidor sirve a **varios condominios** a la vez. Se dan de alta desde la pantalla de fábrica (ver arriba): no hace falta desplegar nada por cada condominio nuevo. Requiere `FABRICA_USUARIO` y `FABRICA_PIN` en las variables del servicio.
 - **Aislamiento entre condominios**: cada guardia ve únicamente las rondas y los QR de su condominio, y cada cuenta de administrador, únicamente su condominio. La excepción es la cuenta de **acceso total** de la operación (selector en la barra del panel), que se configura solo desde el entorno del servidor.
 - **Datos y respaldo**: todo el estado vive en una base SQLite en el volumen (`/data/rondas.sqlite`). La app saca una foto diaria y la manda por correo a `RESPALDO_TO` — ver la sección **Base de datos** más abajo.
