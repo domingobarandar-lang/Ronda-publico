@@ -19,7 +19,10 @@ export default defineRailway(() => {
 
   const rondasQR = service("rondas-QR", {
     source: github("domingobarandar-lang/rondas-qr", { checkSuites: false, rootDirectory: "app" }),
-    start: "node seed.js --si-vacio && node server.js",
+    // Sin seed: con la base vacía (volumen perdido, DB_PATH mal escrito) el
+    // seed crearía las cuentas de demo, con PIN publicados en git, y la app
+    // arrancaría «sana» escondiendo la pérdida. La demo es `npm run demo`.
+    start: "node server.js",
     // Reinicio: ON_FAILURE con 10 reintentos, el valor por defecto de Railway.
     // No se declara: Railway guarda el defecto vacío y el plan lo vería como
     // un cambio pendiente para siempre.
@@ -40,7 +43,6 @@ export default defineRailway(() => {
       GMAIL_CLIENT_SECRET: preserve(),
       GMAIL_FROM: preserve(),
       GMAIL_REFRESH_TOKEN: preserve(),
-      INFORME_CONDOMINIOS: preserve(),
       INFORME_DIA: preserve(),
       INFORME_HORA: preserve(),
       INFORME_TO: preserve(),
