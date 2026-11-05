@@ -24,10 +24,6 @@
     const esc = t => String(t == null ? '' : t).replace(/</g, '&lt;');
     const fecha = ts => ts ? new Date(ts).toLocaleString('es-CL') : '—';
     const horaCorta = ts => ts ? new Date(ts).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '';
-    // Marca por cercanía (CU-29). Mismo texto que detalleCercania() de lib/informes.js.
-    const minutos = ms => { const m = Math.round(ms / 60000); return m >= 1 ? `${m} min` : `${Math.round(ms / 1000)} s`; };
-    const cercania = d => d.distanciaM == null ? '' : ` (a ${d.distanciaM} m${d.edadGpsMs != null ? ` hace ${minutos(d.edadGpsMs)}` : ''}; `
-      + `al marcar, ${d.distanciaAhoraM != null ? `a ${d.distanciaAhoraM} m` : 'sin señal'})`;
 
     (async () => {
       const cont = document.getElementById('contenido');
@@ -75,7 +71,7 @@
         ${inf.detalle.map(d => `
           <div class="detalle-punto">
             <div style="width:26px; text-align:right; color:var(--texto-suave)">${d.orden}.</div>
-            <div style="flex:1">${esc(d.nombre)}${d.lejos ? ` <span class="faltante">⚠️ a ${d.distanciaM} m del punto</span>` : ''}${!d.lejos && d.porCercania && !d.anclado ? ` <span class="nota" title="El GPS no alcanzaba al marcar; el teléfono estuvo cerca del punto poco antes">📍 por cercanía${cercania(d)}</span>` : ''}</div>
+            <div style="flex:1">${esc(d.nombre)}${d.lejos ? ` <span class="faltante">⚠️ a ${d.distanciaM} m del punto</span>` : ''}</div>
             <div>
               ${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (MEDIOS[d.medio] ? ` <span class="nota">${MEDIOS[d.medio]}</span>` : '') + (d.offline ? ' <span class="nota">(offline)</span>' : '')}
               ${d.gps ? ` <a class="nota" href="https://maps.google.com/?q=${d.gps.lat},${d.gps.lon}" target="_blank" title="Dónde se hizo la marca">🗺️</a>` : ''}

@@ -116,7 +116,7 @@ test('motor: GPS_CERCANIA_MIN=0 la apaga', () => {
   }
 });
 
-test('API: la marca por cercanía entra, queda guardada y el informe la etiqueta', async () => {
+test('API: la marca por cercanía entra, queda guardada y en el informe es una marca normal', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
   const fijar = await api('/api/admin/puntos/p-porteria', {
@@ -157,8 +157,9 @@ test('API: la marca por cercanía entra, queda guardada y el informe la etiqueta
   const inventada = await marcar({ gps: lectura(45, 15, 0), cercania: lectura(35, 8, 50000) });
   assert.equal(inventada.esc.status, 422);
 
-  // El cierre no la informa como "lejos del punto" ni como sospechosa: la
-  // marca queda con la distancia de la cercana y la etiqueta. Esto prueba
+  // El cierre no la informa como "lejos del punto" ni como sospechosa, y el
+  // informe no la distingue de una marca cualquiera: el dato queda en la marca
+  // (con la distancia de la cercana) para el conteo del panel. Esto prueba
   // también que la lectura cercana quedó guardada en la marca: evaluar() la
   // vuelve a mirar al cerrar, y sin ella la marca saldría "a 45 m del punto".
   const cierre = await api(`/api/ejecuciones/${alero.ejecucionId}/cerrar`, { metodo: 'POST', token: pedro.token });
@@ -170,7 +171,9 @@ test('API: la marca por cercanía entra, queda guardada y el informe la etiqueta
   assert.equal(cierre.datos.evaluacion.gpsLejos.length, 0);
   assert.equal(cierre.datos.evaluacion.sospechas.length, 0);
   assert.equal(detalle.distanciaAhoraM, 45);
-  assert.match(informeTexto(cierre.datos), /Portería — .* 📍 por cercanía \(a 10 m hace 1 min; al marcar, a 45 m\)/);
+  const linea = informeTexto(cierre.datos).split('\n').find(l => l.includes('Portería'));
+  assert.match(linea, /^✅ \d+\. Portería — /);
+  assert.doesNotMatch(linea, /cercanía|⚠️|m del punto/, 'el informe la muestra como una marca normal');
   assert.equal(detalle.gps.acc, 15, 'la lectura del momento también queda en la marca');
 
   await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
@@ -178,7 +181,7 @@ test('API: la marca por cercanía entra, queda guardada y el informe la etiqueta
 
 // Para el estado de la ronda, la marca por cercanía es una marca normal: la
 // ronda completa queda «completa», sin observaciones ni sospechas ni aviso,
-// igual que con la lectura del momento. Solo la línea del punto lo dice.
+// igual que con la lectura del momento.
 test('motor: una ronda completa con una marca por cercanía queda «completa», sin observaciones', () => {
   const db = datosSemilla();
   Object.assign(db.puntos.find(p => p.id === 'p-porteria'), { lat: LAT, lon: LON, precisionM: 5 });

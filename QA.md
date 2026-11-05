@@ -115,7 +115,7 @@ Origen: marcas dudosas bajo techo (INC-002, ADR-001). Ver CU-29 en el SPEC.
 | Bordes: a 30 m sí, a 35 m no; ±20 sí, ±25 no, sin ± no; 5 min sí, 6 min no; momento a 70 m ±15 no, a 65 m ±15 sí | CU-29 | ✅ |
 | 🏠 con lecturas malas adentro durante 12 min: entra con la de la entrada (INC-002); a los 16 min, no | CU-19, CU-29 | ✅ |
 | Una app sin cercanía (v1.25) → 422 como siempre; una lectura «cercana» inventada a 35 m → 422 | CU-29 | ✅ |
-| El informe dice «📍 por cercanía (a 10 m hace 1 min; al marcar, a 45 m)»; no es «lejos» ni sospecha | CU-29 | ✅ |
+| En el informe es una marca normal, sin etiqueta: no es «lejos» ni sospecha, y una ronda completa queda «Completa» | CU-29 | ✅ |
 | `GPS_CERCANIA_MIN=0` → vuelve la v1.25 | CU-29 | ✅ |
 | App y servidor deciden lo mismo en toda la grilla de la rama nueva | CU-29 | ✅ |
 | Señal por punto: buena / regular / mala y la recomendación; solo el administrador, solo su condominio, últimos 30 días | CU-29 | ✅ |

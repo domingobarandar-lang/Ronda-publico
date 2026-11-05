@@ -924,6 +924,6 @@ function nombres(db, puntoIds) {
 module.exports = {
   iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
   estaAbandonada, ultimaActividad, umbralAbandonoMs, umbralCompletaMs, todosMarcados, rondaDe, reabrirSiAutomatica, terminarTarde,
-  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM, minutos,
+  distanciaM, verificarPresencia, configGps, modoVerificacion, umbralesDe, margenM,
   OCULTAR_SIN_CONEXION, MAX_COMENTARIO, MANUAL_EN_PUNTO_NFC, esPuntoNfc, limpiarComentario
 };
