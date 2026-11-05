@@ -8,6 +8,8 @@ Railway deja de leer `railway.json` el 1/12. El comando de arranque, lo único q
 
 - **`.railway/railway.ts` declara el proyecto completo**: repo y Root Directory `app`, volumen en `/data`, las 19 variables con `preserve()` y el comando de arranque. Lo que el archivo no declara, `railway config apply` lo borra. El archivo del PR #35 (el de `railway config migrate`) traía solo el arranque y su plan proponía borrar las variables y soltar el volumen; no se llegó a aplicar.
 - `entrega/RAILWAY-IAC.md`: dónde vive la configuración, la tabla de equivalencia y cómo correr el plan en Windows (hay un bug del SDK con Git Bash).
+- **Producción arranca sin seed** (`node server.js`). Con datos en la base, `seed.js --si-vacio` no hacía nada, pero si alguna vez arrancaba con la base vacía (volumen perdido, `DB_PATH` mal escrito, una restauración fallida) creaba la demo, con cuentas cuyos PIN están en git, y la app arrancaba «sana» escondiendo la pérdida. `npm run demo` no cambia.
+- **Se borra `INFORME_CONDOMINIOS`** de Railway (valía `piloto-sf`): con esa lista blanca, un condominio nuevo no recibía el informe del lunes. Ahora va a todos los que tengan correo cargado. Quedan 18 variables en `railway.ts`.
 
 ## 1.27.0 — 2026-11-04 · Cercanía reciente: menos marcas dudosas bajo techo, y el cierre automático ya no corta al guardia (INC-004)
 

@@ -1,8 +1,9 @@
 // Datos semilla de demo: dos condominios con guardias, puntos y rondas.
 // Uso:
 //   node seed.js            → siembra la demo en la base (data/rondas.sqlite)
-//   node seed.js --si-vacio → siembra solo si la base está vacía (npm run demo
-//                             y el arranque en Railway)
+//   node seed.js --si-vacio → siembra solo si la base está vacía (npm run demo).
+//                             Producción arranca con `node server.js`, sin seed:
+//                             las cuentas de demo tienen PIN publicados aquí.
 const { crearStore, VACIA } = require('./lib/store');
 const { hashPin } = require('./lib/auth');
 
@@ -87,9 +88,9 @@ function datosSemilla() {
 }
 
 // "Vacía" se decide mirando el CONTENIDO, no si existe un archivo: desde la
-// v1.17 el db.json se importa y se renombra, y mirar el archivo haría que el
-// arranque de Railway (`seed.js --si-vacio && server.js`) sembrara la demo
-// encima de producción en el deploy siguiente. Abrir el store ya importa el
+// v1.17 el db.json se importa y se renombra, y mirar el archivo haría que
+// `seed.js --si-vacio` sembrara la demo encima de datos reales (hasta
+// 2026-11 ese era también el arranque de Railway). Abrir el store ya importa el
 // db.json si lo hay, así que esto ve los datos reales.
 function estaVacia(store) {
   return !store.db.condominios.length && !store.db.usuarios.length && !store.ejecuciones.contar();
