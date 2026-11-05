@@ -63,6 +63,7 @@ El orden es **parar el daño → restaurar el servicio → guardar evidencia**. 
 | # | Fecha | Gravedad | Qué pasó | Cómo nos enteramos | Estado |
 |---|---|---|---|---|---|
 | INC-001 | 2026-10-31 | S2 | Rondas interrumpidas en el teléfono compartido de una garita ([análisis](#inc-001--rondas-interrumpidas-en-el-teléfono-compartido-de-la-garita)) | *Por completar* | Corrección en curso (v1.25) |
+| INC-002 | 2026-11-01 | S2 | Marcas dudosas en los puntos bajo techo ([análisis](#inc-002--marcas-dudosas-en-los-puntos-bajo-techo), [ADR-001](ADR-001-GPS-BAJO-TECHO.md)) | *Por completar* | Corrección en curso (v1.27) |
 | INC-003 | 2026-11-02 | S3 | `/fabrica` (v1.26.0) contaba los rechazos sin ubicación, por ubicación vieja o por señal imprecisa como «QR, chapita o código equivocado», fallo del guardia, y no como GPS: escondía el problema del GPS bajo techo. `salud.dificultades` los separaba por `topeM`, que el teléfono no manda si no hubo distancia que medir, y el test le inventaba uno. Se calcula al vuelo con los rechazos guardados: al desplegar, la pantalla queda bien sin tocar la base | Revisión del código de la v1.27 (PR #31) | Corrección en curso (sin desplegar) |
 | INC-004 | 2026-11-04 | S2 | El cierre automático de la ronda completa (v1.25, 15 min) cortaba al guardia que todavía no tocaba «Terminar», y su «Terminar» tardío se descartaba: el informe decía «no tocó Terminar ronda» ([análisis](#inc-004--el-cierre-automático-cortaba-al-guardia-que-todavía-no-tocaba-terminar)) | José, mirando el panel | Corrección en curso (sin desplegar) |
 
@@ -146,6 +147,52 @@ En la misma investigación salieron tres fallos:
 | 7 | Confirmar con el guardia de la garita por qué no tocaba «Terminar» (acción B4) | Producto | Pendiente |
 | 8 | Decidir si la alarma debe callar mientras hay una ronda en curso (patrón repetido) | Producto | Pendiente |
 | 9 | Avisar al administrador del condominio qué pasó y qué cambió | Comunicación | *Por completar* |
+
+### INC-002 — Marcas dudosas en los puntos bajo techo
+
+**Gravedad**: S2. El guardia no puede marcar a la primera un punto en el que está, y el informe muestra marcas al borde del tope. La fase 0 no encontró puntos que no se puedan marcar nunca (sería S1): el 86 % de los rechazos termina con el punto marcado en la misma ronda.
+**Condominio**: Condominio Piloto (los cuatro interiores de las torres). Los Aromos, sin rechazos del GPS.
+**Estado**: corrección en curso (v1.27: cercanía reciente, CU-29). Diagnóstico de producción hecho el 2026-11-02; falta la prueba de terreno. Plan y opciones en [ADR-001](ADR-001-GPS-BAJO-TECHO.md).
+
+#### Qué pasó
+
+En los puntos bajo techo siguen apareciendo marcas dudosas. Al revisar el código salió una causa segura, cuyo peso en terreno falta medir: **en los puntos verificados por entrada (CU-19), la lectura buena de la entrada se pierde a los 20 s** si el teléfono sigue entregando lecturas adentro, y la marca se decide con una lectura de WiFi o de antena. Se rechaza (señal imprecisa o «lejos de la entrada») o se acepta con una lectura que no prueba nada. La otra causa probable son puntos semi-techados con ubicación exacta (rebote de la señal).
+
+#### Impacto
+
+Medido con `scripts/diagnostico-gps.js` en solo lectura, del 2026-10-03 al 2026-11-02 (tabla completa en el [ADR-001, fase 0](ADR-001-GPS-BAJO-TECHO.md#fase-0--diagnóstico-por-punto-1-día-sin-deploy)):
+
+- **Condominio Piloto, 284 rondas.** Las cuatro torres concentran 114 rechazos del GPS en 1.190 intentos (10 %); la peor es la Torre 1, con 17 %. 103 de esos rechazos son por distancia. La Torre 3 tiene además 58 de 271 marcas aceptadas al borde del tope.
+- **La causa en producción es la segunda: rebote en puntos semi-techados con ubicación exacta.** Los rechazos declaran ±5–9 m y ubican al guardia a 42–52 m. La de la entrada perdida no tuvo impacto todavía: no hay ningún punto 🏠 en producción.
+- Para el guardia: 106 de 123 rechazos por distancia terminaron con el punto marcado en la misma ronda, a los 7–62 s. Para el administrador: marcas al borde del tope que no se distinguen de una marca hecha desde lejos.
+
+#### Cronología
+
+| Fecha | Qué |
+|---|---|
+| 2026-07-29 | v1.10: verificación por entrada. Cada lectura nueva reemplaza a la anterior: la entrada solo se conserva si el teléfono se calla adentro. |
+| Agosto 2026 | v1.13 y v1.14: la lectura pasa a ser la mejor y después el promedio de una ventana de 20 s. La ventana cambia; la entrada se sigue perdiendo. |
+| *Por completar* | Primer aviso de marcas dudosas bajo techo y quién lo dio. |
+| 2026-11-01 | Revisión del código: se encuentra que la lectura de la entrada no se guarda aparte. |
+| 2026-11-01 | v1.27.0 (PR, sin desplegar): rastro de lecturas en la app y cercanía reciente para todos los puntos con ubicación; los 🏠 usan la lectura de la entrada los 15 min completos. Señal por punto en el panel y `scripts/diagnostico-gps.js`. |
+| 2026-11-02 | Diagnóstico en producción, en solo lectura y con permiso: las torres de Condominio Piloto son semi-techadas, y el 80 % de sus rechazos por distancia cumple la condición 2 de la cercanía. No hay puntos 🏠. |
+
+#### Cinco porqués
+
+1. ¿Por qué la marca bajo techo sale dudosa? → Se decide con una lectura tomada adentro, de ±40–300 m, en vez de la de la entrada.
+2. ¿Por qué no con la de la entrada? → La app guarda un solo fix, el promedio de los últimos 20 s. La ventana de 15 min del anclaje mide la edad de ese fix, no de la mejor lectura en la entrada.
+3. ¿Por qué se diseñó así? → Se supuso que bajo techo el teléfono deja de entregar lecturas. Android sigue entregando posiciones de WiFi y antena.
+4. ¿Por qué no se validó ese supuesto? → La prueba de terreno bajo techo de la v1.14 (QA.md, pendiente 2) no se hizo, y los tests del anclaje en la app solo cubren los textos y la espera, no un teléfono que sigue leyendo adentro.
+5. ¿Por qué no lo vimos antes? → Los rechazos se registran desde la v1.14, pero nadie los ha mirado por punto. No hay ninguna medida de «rechazos y marcas con señal imprecisa en puntos anclados».
+
+#### Acciones
+
+| # | Acción | Nivel | Estado |
+|---|---|---|---|
+| 1 | Diagnóstico por punto con los datos de producción, en solo lectura (ADR-001, fase 0) | Detección | Hecho el 2026-11-02 (`scripts/diagnostico-gps.js`); repetir dos semanas después del deploy |
+| 2 | Cercanía reciente para todos los puntos con ubicación (rastro de lecturas buenas), con tests de un teléfono que sigue leyendo adentro (fase 1) | Código | Hecho en la v1.27 (sin desplegar) |
+| 3 | Indicador de señal por punto en el panel y tabla de decisión del modo de cada punto (fase 2) | Detección / Proceso | Hecho en la v1.27 (sin desplegar) |
+| 4 | Prueba de terreno bajo techo en el teléfono de la garita antes de dar la v1.27 por buena | Proceso | Pendiente |
 
 ### INC-004 — El cierre automático cortaba al guardia que todavía no tocaba «Terminar»
 

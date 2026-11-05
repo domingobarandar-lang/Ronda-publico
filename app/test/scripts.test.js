@@ -177,3 +177,76 @@ test('migracion-rsf borra las rondas y avisos de mirador y es idempotente', () =
   assert.deepEqual(aplicar(store), [], 'la segunda vez no hace nada');
   store.cerrar();
 });
+
+test('diagnostico-gps: cuenta por punto sin escribir nada en la base', () => {
+  const { diagnosticar, formatear } = require('../scripts/diagnostico-gps');
+  const dir = carpeta();
+  const ruta = path.join(dir, 'rondas.sqlite');
+  const store = crearStore(ruta, silencio);
+  Object.assign(store.db, datosSemilla());
+  const bombas = store.db.puntos.find(p => p.id === 'p-bombas');
+  Object.assign(bombas, { lat: -33.45, lon: -70.66, precisionM: 6, dispersionM: 3, verificacion: 'anclaje' });
+  store.guardar();
+  const ahora = Date.parse('2026-10-20T12:00:00.000Z');
+  const lectura = acc => ({ lat: -33.45, lon: -70.66, acc, edadMs: 2000 });
+  store.ejecuciones.guardar({
+    id: 'e-1', rondaId: 'ronda-nocturna', condominioId: 'aromos', guardiaId: 'u-pedro',
+    inicio: '2026-10-15T03:00:00.000Z', fin: null, estado: 'completa', evaluacion: null,
+    escaneos: [1, 2, 3].map(i => ({ puntoId: 'p-bombas', ts: `2026-10-15T03:0${i}:00.000Z`, gps: lectura(60) })),
+    rechazos: [{ puntoId: 'p-bombas', ts: '2026-10-15T03:00:30.000Z', motivo: '📍 Señal demasiado imprecisa (±150 m)…', acc: 150, edadMs: 3000 }]
+  });
+  // Fuera del período: no cuenta.
+  store.ejecuciones.guardar({
+    id: 'e-vieja', rondaId: 'ronda-nocturna', condominioId: 'aromos', guardiaId: 'u-pedro',
+    inicio: '2026-08-01T03:00:00.000Z', fin: null, estado: 'completa', evaluacion: null,
+    escaneos: [{ puntoId: 'p-bombas', ts: '2026-08-01T03:01:00.000Z', gps: lectura(6) }]
+  });
+  store.cerrar();
+  const antes = fs.readFileSync(ruta);
+
+  const d = diagnosticar({ rutaDb: ruta, dias: 30, condominioId: 'aromos', ahora });
+  assert.equal(d.condominios.length, 1);
+  assert.equal(d.condominios[0].ejecuciones, 1);
+  const s = d.condominios[0].puntos.find(p => p.puntoId === 'p-bombas');
+  assert.equal(s.marcas, 3);
+  assert.equal(s.accMediana, 60);
+  assert.equal(s.rechazos.imprecisa, 1);
+  assert.equal(s.anclaPerdida, 1);
+  assert.equal(s.nivel, 'mala');
+  assert.deepEqual(s.clases, ['ancla perdida', 'bajo losa']);
+  assert.equal(s.fijado, 'promediado (v1.14+)');
+  const texto = formatear(d);
+  assert.match(texto, /🔴 Sala de bombas · 🏠 entrada/);
+  assert.match(texto, /1 con la entrada perdida/);
+
+  assert.ok(antes.equals(fs.readFileSync(ruta)), 'la base no cambió');
+  assert.ok(!fs.existsSync(`${ruta}.restaurar`));
+
+  // Por línea de comandos, con DB_PATH como el servidor.
+  const r = correr('scripts/diagnostico-gps.js', ['--json', '--dias', '3650'], { DB_PATH: ruta });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).condominios.length, 2);
+  // Sin base no crea una vacía.
+  const vacia = path.join(carpeta(), 'rondas.sqlite');
+  assert.equal(correr('scripts/diagnostico-gps.js', [], { DB_PATH: vacia }).status, 1);
+  assert.ok(!fs.existsSync(vacia));
+});
+
+// Números de Condominio Piloto (noviembre 2026): un punto exterior 🟢 con 5
+// rechazos en 250 intentos salía «semi-techado», y una torre con 1 «imprecisa» en
+// 290, «bajo losa».
+test('diagnostico-gps: la clase del punto sale de la proporción, no de un rechazo suelto', () => {
+  const { clasificar } = require('../scripts/diagnostico-gps');
+  const cfg = require('../lib/rondas').configGps();
+  const p = { lat: -33.45, lon: -70.66, precisionM: 4, dispersionM: 2 };
+  const jardin = { anclaPerdida: 0, nivel: 'buena', marcas: 245, rechazosGps: 5, accP90: 9, rechazos: { imprecisa: 0, distancia: 5 } };
+  assert.deepEqual(clasificar(jardin, p, cfg), []);
+  const torre = { anclaPerdida: 0, nivel: 'regular', marcas: 271, rechazosGps: 19, accP90: 38, rechazos: { imprecisa: 1, distancia: 16 } };
+  assert.deepEqual(clasificar(torre, p, cfg), ['semi-techado']);
+  const losa = { ...torre, nivel: 'mala', rechazosGps: 50, rechazos: { imprecisa: 34, distancia: 16 } };
+  assert.deepEqual(clasificar(losa, p, cfg), ['bajo losa']);
+  // Fijado sin promediar, en un punto con problemas: también se dice.
+  assert.deepEqual(clasificar(torre, { ...p, dispersionM: null }, cfg), ['semi-techado', 'mal fijado']);
+  // Con chapita el GPS no decide: no hay techo que clasificar.
+  assert.deepEqual(clasificar({ ...torre, modo: 'nfc' }, p, cfg), []);
+});

@@ -44,21 +44,36 @@ function constante(nombre) {
 function montarApp(cfg) {
   const nombres = [
     'cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos',
-    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'limitePendiente', 'evaluarPendiente', 'esperaSirve'
+    'gpsUltimo', 'verificarPresencia', 'consolidarFixes', 'agregarFix', 'limitePendiente', 'evaluarPendiente', 'esperaSirve',
+    // Cercanía reciente (v1.27)
+    'presenciaDirecta', 'presenciaPorCercania', 'cercaniaPara', 'topeCercaniaM', 'limiteCercaniaM',
+    'lecturaCompatible', 'accLectura', 'anotarRastro', 'ubicacionParaMarca', 'gpsParaMarca', 'gpsFresco'
   ];
   const codigo = `
     let estado = { paquete: { gps: CFG } };
     let gpsActual = null;
     let gpsMotivoFalla = null;
     let bufferFixes = [];
+    let rastro = [];
     const BUFFER_MAX = ${constante('BUFFER_MAX')};
     const VENTANA_PENDIENTE_MS = ${constante('VENTANA_PENDIENTE_MS')};
+    const RASTRO_PASO_MS = ${constante('RASTRO_PASO_MS')};
+    const RASTRO_MAX = ${constante('RASTRO_MAX')};
     ${nombres.map(extraer).join('\n')}
     return {
       consolidarFixes, evaluarPendiente, verificarPresencia, gpsUltimo, esperaSirve,
+      cercaniaPara, ubicacionParaMarca, anotarRastro,
       fijarGps: g => { gpsActual = g; },
       alimentar: fixes => { bufferFixes = []; for (const f of fixes) agregarFix(f); return bufferFixes; },
-      ventanaMs: VENTANA_PENDIENTE_MS
+      // Simula lo que hace el watch: cada fix consolidado pasa a ser gpsActual y
+      // queda anotado en el rastro.
+      caminar: fixes => { for (const f of fixes) { gpsActual = f; anotarRastro(f); } },
+      rastro: () => rastro,
+      olvidarRastro: () => { rastro = []; },
+      fijarPaquete: gps => { estado = { paquete: { gps } }; },
+      ventanaMs: VENTANA_PENDIENTE_MS,
+      rastroMax: RASTRO_MAX,
+      rastroPasoMs: RASTRO_PASO_MS
     };
   `;
   return new Function('CFG', 'geo', codigo)(cfg, geo);
@@ -433,4 +448,198 @@ test('recorte del lector: nunca se sale del cuadro ni devuelve basura', () => {
   // Video todavía sin dimensiones: null, y el lector cae al cuadro completo.
   assert.equal(v121.recorteEscaner(0, 0, cajaVideo, cajaMarco), null);
   assert.equal(v121.recorteEscaner(1080, 1920, { left: 0, top: 0, width: 0, height: 0 }, cajaMarco), null);
+});
+
+// ---------- Cercanía reciente (CU-29, v1.27) ----------
+// Antes de rechazar, la app mira el rastro: ¿hubo una lectura buena cerca del
+// punto hace poco, y nada lo ubica más lejos de lo que el GPS se puede
+// equivocar? Los casos son los del ADR-001 (entrega/ADR-001-GPS-BAJO-TECHO.md).
+
+// Un trayecto: [metros al norte del punto, ±, hace cuántos segundos], en orden.
+function caminar(pasos, ahora = Date.now()) {
+  app.olvidarRastro();
+  app.caminar(pasos.map(([dLatM, acc, edadS]) => fix(dLatM, acc, edadS, ahora)));
+}
+
+const BOMBAS = {
+  nombre: 'Sala de bombas',
+  lat: LAT,
+  lon: LON,
+  verificacion: 'anclaje',
+  radioM: 40,
+  ventanaMs: 15 * 60000,
+  precisionM: 8
+};
+
+test('cercanía: bajo el alero, el GPS lo ubica a 45 m estando encima → entra', () => {
+  caminar([[50, 8, 90], [12, 8, 60], [10, 8, 50], [45, 15, 0]]);
+  // Sin la cercanía es el rechazo de siempre: tope 20 + 5 + 15 = 40 m.
+  assert.equal(app.verificarPresencia(PUNTO, app.gpsUltimo(), null).ok, false);
+  const v = app.verificarPresencia(PUNTO);
+  assert.equal(v.ok, true);
+  assert.equal(v.porCercania, true);
+  assert.equal(v.distanciaM, 10, 'la distancia es la de la lectura cercana');
+  assert.equal(v.distanciaAhoraM, 45);
+  assert.ok(v.edadMs >= 49000 && v.edadMs <= 52000, `la cercana es de hace ${v.edadMs} ms`);
+});
+
+test('cercanía: en el subterráneo, sin señal y con lecturas de ±150 m → entra', () => {
+  caminar([[40, 8, 120], [12, 8, 90], [60, 150, 60], [30, 200, 30], [100, 150, 0]]);
+  const v = app.verificarPresencia(PUNTO);
+  assert.equal(v.ok, true);
+  assert.equal(v.porCercania, true);
+  assert.equal(v.distanciaM, 12);
+});
+
+test('cercanía: pasó cerca y escaneó la foto desde la caseta → NO entra', () => {
+  // A cielo abierto, volviendo a la caseta, las lecturas buenas lo delatan.
+  caminar([[25, 8, 180], [80, 10, 120], [120, 8, 60], [150, 10, 0]]);
+  const v = app.verificarPresencia(PUNTO);
+  assert.equal(v.ok, false);
+  assert.ok(!v.porCercania);
+  assert.match(v.motivo, /Estás a 150 m/, 'el motivo es el del rechazo directo');
+  assert.equal(app.cercaniaPara(PUNTO), null);
+});
+
+test('cercanía: se fue lejos y volvió a 40 m → NO entra (la lectura de 150 m lo desmiente)', () => {
+  caminar([[10, 8, 200], [150, 8, 150], [40, 8, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  assert.equal(app.cercaniaPara(PUNTO), null);
+});
+
+test('cercanía: la lectura del momento a 70 m con ±15 desmiente (70 − 15 > 30 + 20)', () => {
+  caminar([[10, 8, 60], [70, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  // Y justo en el borde sí: 65 − 15 = 50.
+  caminar([[10, 8, 60], [65, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, true);
+});
+
+test('cercanía: una lectura cercana de hace más de 5 minutos no cuenta', () => {
+  caminar([[10, 8, 6 * 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  caminar([[10, 8, 4 * 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, true);
+});
+
+test('cercanía: una lectura de ±90 m pegada al punto no es una lectura buena', () => {
+  caminar([[2, 90, 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  // Ni una que no declara precisión: es de calidad desconocida, no perfecta.
+  caminar([[2, null, 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+});
+
+test('cercanía: una lectura buena a 31 m no es "cerca" en un punto exacto', () => {
+  caminar([[31, 5, 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  caminar([[29, 5, 60], [45, 15, 0]]);
+  assert.equal(app.verificarPresencia(PUNTO).ok, true);
+});
+
+test('INC-002: en un punto bajo techo la entrada ya no se pierde a los 20 s', () => {
+  // Pasa por la entrada con ±6 m, baja, y el teléfono sigue entregando lecturas
+  // de WiFi y antena. Hasta la v1.25 la de la entrada salía del buffer a los 20 s
+  // y la marca se decidía con una lectura de adentro.
+  caminar([[5, 6, 180], [80, 150, 150], [60, 200, 100], [90, 120, 50], [70, 150, 0]]);
+  assert.equal(app.verificarPresencia(BOMBAS, app.gpsUltimo(), null).ok, false, 'el escenario no reproduce INC-002');
+  const v = app.verificarPresencia(BOMBAS);
+  assert.equal(v.ok, true);
+  assert.equal(v.porCercania, true);
+  assert.equal(v.anclado, true);
+  assert.equal(v.distanciaM, 5);
+});
+
+test('cercanía en un punto bajo techo: la entrada vale 15 min, no 5', () => {
+  caminar([[5, 6, 12 * 60], [70, 150, 0]]);
+  assert.equal(app.verificarPresencia(BOMBAS).ok, true);
+  caminar([[5, 6, 16 * 60], [70, 150, 0]]);
+  assert.equal(app.verificarPresencia(BOMBAS).ok, false);
+});
+
+test('cercanía: lo que viaja con la marca es lo mismo con que se decidió', () => {
+  caminar([[50, 8, 90], [12, 8, 60], [10, 8, 50], [45, 15, 0]]);
+  const u = app.ubicacionParaMarca(PUNTO);
+  assert.ok(u.cercania, 'la marca por cercanía no lleva la lectura cercana');
+  assert.equal(u.gps.acc, 15, 'la lectura del momento también viaja: el servidor la vuelve a mirar');
+  // El servidor, con lo mismo que le llega en la marca, decide igual.
+  const enElServidor = motor.verificarPresencia({ nombre: 'Portería', lat: LAT, lon: LON, precisionM: 5 }, u.gps, cfg, u.cercania);
+  assert.equal(enElServidor.ok, true);
+  assert.equal(enElServidor.porCercania, true);
+
+  // Con buena señal en el punto la marca queda como antes: sin lectura cercana.
+  caminar([[12, 8, 60], [3, 6, 0]]);
+  const directa = app.ubicacionParaMarca(PUNTO);
+  assert.equal(directa.cercania, null);
+  assert.equal(directa.gps.acc, 6);
+});
+
+test('cercanía: la marca que espera señal también la usa', () => {
+  caminar([[12, 8, 60], [10, 8, 50], [45, 15, 0]]);
+  const desde = Date.now();
+  const r = app.evaluarPendiente(pendiente(desde), app.gpsUltimo(), desde + 1000);
+  assert.equal(r.accion, 'aceptar');
+  assert.equal(r.veredicto.porCercania, true);
+});
+
+test('cercanía: GPS_CERCANIA_MIN=0 la apaga (vuelve a la v1.25)', () => {
+  app.fijarPaquete({ ...cfg, cercaniaMin: 0 });
+  try {
+    caminar([[12, 8, 60], [10, 8, 50], [45, 15, 0]]);
+    assert.equal(app.verificarPresencia(PUNTO).ok, false);
+    assert.equal(app.cercaniaPara(PUNTO), null);
+  } finally {
+    app.fijarPaquete(cfg);
+  }
+});
+
+test('cercanía: un paquete viejo sin los umbrales nuevos usa los mismos defaults que el servidor', () => {
+  const viejo = { ...cfg };
+  for (const clave of ['lecturaBuenaM', 'cercaniaM', 'cercaniaMin', 'errorExtraM']) delete viejo[clave];
+  app.fijarPaquete(viejo);
+  try {
+    caminar([[12, 8, 60], [10, 8, 50], [45, 15, 0]]);
+    assert.equal(app.verificarPresencia(PUNTO).ok, true);
+    caminar([[10, 8, 60], [70, 15, 0]]);
+    assert.equal(app.verificarPresencia(PUNTO).ok, false);
+  } finally {
+    app.fijarPaquete(cfg);
+  }
+  assert.deepEqual(
+    [cfg.lecturaBuenaM, cfg.cercaniaM, cfg.cercaniaMin, cfg.errorExtraM],
+    [20, 30, 5, 20],
+    'si cambian los defaults del servidor, cambian también los de cfgGps() en la app'
+  );
+});
+
+test('rastro: uno por tramo, en orden y con techo', () => {
+  const ahora = Date.now();
+  app.olvidarRastro();
+  // Un fix por segundo durante 100 s: queda uno por tramo de 2 s.
+  app.caminar(Array.from({ length: 100 }, (_, i) => fix(0, 8, 100 - i, ahora)));
+  const n = app.rastro().length;
+  assert.ok(n >= 49 && n <= 51, `quedaron ${n} lecturas`);
+  // Un fix más viejo que el último no se anota: cercaniaPara() recorre en orden.
+  const ultimo = app.rastro()[n - 1];
+  app.anotarRastro(fix(0, 8, 500, ahora));
+  assert.equal(app.rastro()[app.rastro().length - 1], ultimo);
+  // El techo: el doble de RASTRO_MAX lecturas separadas por un tramo.
+  app.olvidarRastro();
+  const total = app.rastroMax * 2;
+  app.caminar(Array.from({ length: total }, (_, i) => fix(0, 8, ((total - i) * app.rastroPasoMs) / 1000, ahora)));
+  assert.equal(app.rastro().length, app.rastroMax);
+});
+
+test('rastro: no viaja en `estado`, se borra con la sesión y con otro guardia', () => {
+  assert.match(fuente, /^let rastro = \[\];$/m, 'rastro debe ser variable de módulo');
+  assert.ok(!/estado\.rastro/.test(fuente), 'el rastro se coló dentro de `estado`');
+  assert.match(extraer('detenerGps'), /rastro = \[\];/);
+  assert.match(extraer('iniciarSesionGuardia'), /estado\.sesion\.usuario !== r\.usuario\) rastro = \[\];/);
+  // Y lo alimenta el watch con el fix consolidado, no con la lectura cruda.
+  assert.match(extraer('iniciarGps'), /gpsActual = consolidado;\s*anotarRastro\(consolidado\);/);
+});
+
+test('la marca por cercanía viaja con su lectura cercana hasta el servidor', () => {
+  assert.match(extraer('registrarMarca'), /const \{ gps, cercania \} = ubicacionParaMarca\(punto\);/);
+  assert.match(extraer('sincronizar'), /evento\.cercania \? \{ cercania: evento\.cercania \}/);
 });

@@ -32,15 +32,36 @@ function extraer(nombre) {
 // Monta las funciones del teléfono en un ámbito con las globales que usan
 // (estado, gpsActual, gpsMotivoFalla), sin necesitar DOM ni localStorage.
 function montarApp(cfg) {
-  const nombres = ['cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos', 'gpsUltimo', 'verificarPresencia'];
+  const nombres = [
+    'cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos', 'gpsUltimo', 'verificarPresencia',
+    // Cercanía reciente (v1.27)
+    'presenciaDirecta', 'presenciaPorCercania', 'cercaniaPara', 'topeCercaniaM', 'limiteCercaniaM',
+    'lecturaCompatible', 'accLectura'
+  ];
   const codigo = `
     let estado = { paquete: { gps: CFG } };
     let gpsActual = null;
     let gpsMotivoFalla = null;
+    let rastro = [];
     ${nombres.map(extraer).join('\n')}
     return { verificarPresencia, gpsUltimo, fijarGps: g => { gpsActual = g; } };
   `;
   return new Function('CFG', codigo)(cfg);
+}
+
+// El punto como lo ve el teléfono: con los umbrales ya resueltos por el
+// servidor, igual que en /api/mi/paquete.
+function comoEnElPaquete(punto, cfg) {
+  const u = motor.umbralesDe(punto, cfg);
+  return {
+    nombre: punto.nombre,
+    lat: punto.lat,
+    lon: punto.lon,
+    verificacion: motor.modoVerificacion(punto),
+    radioM: u.radioM,
+    ventanaMs: u.ventanaMs,
+    precisionM: u.precisionM
+  };
 }
 
 test('la app del guardia y el servidor deciden lo mismo en toda la grilla', () => {
@@ -90,6 +111,62 @@ test('la app del guardia y el servidor deciden lo mismo en toda la grilla', () =
   }
 
   assert.deepEqual(divergencias, [], `${divergencias.length} de ${puntos.length * fixes.length} escenarios divergen`);
+});
+
+// La cercanía reciente (v1.27) es una rama más de la misma decisión, y se barre
+// igual: la lectura del momento por la lectura cercana, en los dos lados.
+// La cercana la manda el teléfono ya armada; acá se le pasa explícita a los
+// dos, que es lo que hace el servidor con la que le llega en la marca.
+test('cercanía: la app y el servidor deciden lo mismo en toda la grilla', () => {
+  const cfg = motor.configGps();
+  const app = montarApp(cfg);
+
+  const base = { nombre: 'Punto', lat: -33.45, lon: -70.66 };
+  const puntos = [
+    { ...base, precisionM: 5 },
+    { ...base },
+    { ...base, precisionM: 5, radioM: 35 },
+    { ...base, precisionM: 8, verificacion: 'anclaje' },
+    { ...base, verificacion: 'anclaje', radioM: 60, ventanaMin: 30 }
+  ];
+  const metros = m => m / 111320;
+  const ahoras = [null];
+  for (const dM of [0, 40, 70, 150, 1100]) {
+    for (const acc of [null, 8, 15, 60, 150]) {
+      for (const edadMs of [0, 30000, 10 * 60000]) ahoras.push({ lat: -33.45 + metros(dM), lon: -70.66, acc, edadMs });
+    }
+  }
+  const cercanas = [];
+  for (const dM of [0, 12, 29, 31, 45, 80]) {
+    for (const acc of [null, 0, 8, 20, 21, 40]) {
+      for (const edadMs of [null, 0, 60000, 4.9 * 60000, 5.1 * 60000, 16 * 60000]) {
+        cercanas.push({ lat: -33.45 + metros(dM), lon: -70.66, acc, edadMs });
+      }
+    }
+  }
+
+  const divergencias = [];
+  let porCercania = 0;
+  for (const punto of puntos) {
+    const enElPaquete = comoEnElPaquete(punto, cfg);
+    for (const gps of ahoras) {
+      if (gps) app.fijarGps({ lat: gps.lat, lon: gps.lon, acc: gps.acc, ts: Date.now() - gps.edadMs });
+      else app.fijarGps(null);
+      for (const cercania of cercanas) {
+        const servidor = motor.verificarPresencia(punto, gps, cfg, cercania);
+        const enElTelefono = app.verificarPresencia(enElPaquete, app.gpsUltimo(), cercania);
+        if (Boolean(servidor.ok) !== Boolean(enElTelefono.ok)) {
+          divergencias.push(`punto ${JSON.stringify(punto)} + gps ${JSON.stringify(gps)} + cercana ${JSON.stringify(cercania)}: `
+            + `servidor ${servidor.ok ? 'acepta' : 'rechaza'}, app ${enElTelefono.ok ? 'acepta' : 'rechaza'}`);
+        }
+        if (servidor.porCercania) porCercania++;
+      }
+    }
+  }
+  assert.deepEqual(divergencias.slice(0, 10), [], `${divergencias.length} escenarios divergen`);
+  // Que la grilla de verdad pase por la rama nueva: si nunca acepta por cercanía,
+  // la paridad de arriba no prueba nada.
+  assert.ok(porCercania > 100, `solo ${porCercania} escenarios entraron por cercanía`);
 });
 
 // El piso de precisión (v1.14) es lo único que protege al servidor de un acc que

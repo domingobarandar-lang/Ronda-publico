@@ -59,6 +59,14 @@ const { TZ } = require('./fechas-chile');
 //   GPS_ANCLA_RADIO_M   (40)  radio por defecto alrededor del ancla
 //   GPS_ANCLA_VENTANA_MIN (15) antigüedad máxima del fix en un punto anclado
 //
+// Y cuatro para la cercanía reciente (CU-29, ver presenciaPorCercania):
+//   GPS_LECTURA_BUENA_M (20)  peor ± de una lectura que sirve de prueba de que
+//                             el guardia estuvo cerca
+//   GPS_CERCANIA_M      (30)  a cuánto del punto tuvo que estar esa lectura
+//   GPS_CERCANIA_MIN    (5)   cuánto vale esa lectura. 0 = sin cercanía (v1.25)
+//   GPS_ERROR_EXTRA_M   (20)  cuánto se puede equivocar el GPS MÁS de lo que
+//                             declara, por el rebote en muros y losas
+//
 // Se leen en cada llamada a propósito: lib/env.js carga el .env DESPUÉS de que
 // este módulo se requiere, así que cachearlos al importar tomaría los defaults.
 function numEnv(nombre, porDefecto) {
@@ -77,6 +85,10 @@ function configGps() {
     frescoMs: numEnv('GPS_FRESCO_MS', 20000),
     anclaRadioM: numEnv('GPS_ANCLA_RADIO_M', 40),
     anclaVentanaMin: numEnv('GPS_ANCLA_VENTANA_MIN', 15),
+    lecturaBuenaM: numEnv('GPS_LECTURA_BUENA_M', 20),
+    cercaniaM: numEnv('GPS_CERCANIA_M', 30),
+    cercaniaMin: numEnv('GPS_CERCANIA_MIN', 5),
+    errorExtraM: numEnv('GPS_ERROR_EXTRA_M', 20),
     bloquea: !apagado
   };
 }
@@ -230,7 +242,100 @@ function minutos(ms) {
 // Devuelve null si no hay nada que verificar — el punto no tiene ubicación
 // fijada. Sigue siendo la salida para donde no hay señal Y tampoco se puede
 // anclar; para el resto de los puntos bajo techo está el modo 'anclaje'.
-function verificarPresencia(punto, gps, cfg = configGps()) {
+//
+// `cercania` (v1.27) es la lectura buena que el teléfono tomó cerca del punto
+// hace poco. Solo se mira cuando la lectura del momento no alcanza: antes de
+// rechazar. Ver presenciaPorCercania().
+function verificarPresencia(punto, gps, cfg = configGps(), cercania = null) {
+  const directa = presenciaDirecta(punto, gps, cfg);
+  if (!directa || directa.ok || !cercania) return directa;
+  return presenciaPorCercania(punto, gps, cercania, cfg) || directa;
+}
+
+// ---------- Cercanía reciente (CU-29, v1.27) ----------
+// Bajo un alero o en un subterráneo el GPS falla justo cuando el guardia llega:
+// lo ubica a 45 m estando encima, o pasa a WiFi y antena con ±150 m. Pero un
+// minuto antes, caminando hacia el punto, el teléfono sí tenía buena señal. La
+// cercanía usa esa lectura ANTES de rechazar, y la marca entra si se cumplen
+// las dos:
+//
+//   1. Estuvo cerca hace poco: una lectura buena (±lecturaBuenaM o mejor) a
+//      cercaniaM o menos del punto, de hace cercaniaMin o menos.
+//   2. Nada lo ubica más lejos de lo que el GPS se puede equivocar: la lectura
+//      del momento —buena o mala— no está a más de cercaniaM + errorExtraM del
+//      punto, descontando su propio ±. Las lecturas malas no sirven para
+//      aprobar, pero sí para desmentir.
+//
+// La condición 2 separa "el GPS está fallando" de "el guardia se fue": el
+// rebote corre una lectura que se ve buena decenas de metros, no cientos. Quien
+// pasa cerca y vuelve a la caseta a escanear la foto deja una lectura que
+// ninguna falla explica. Las lecturas INTERMEDIAS, entre la cercana y la del
+// momento, solo las ve el teléfono, que es el que guarda el rastro: la app
+// revisa que ninguna lo desmienta antes de mandar la cercana (cercaniaPara en
+// public/app.js).
+//
+// Es un control más débil que el exacto, a propósito: prueba que el guardia
+// estuvo a cercaniaM hace minutos, no que está parado en el punto. La
+// alternativa bajo techo es rechazar a quien sí fue.
+//
+// En un punto anclado es el mismo mecanismo con los números del anclaje: la
+// lectura cercana es la de la ENTRADA, vale ventanaMs y se mide con el tope de
+// siempre (radioM + margen). Es lo que CU-19 prometía y no cumplía: la app
+// guardaba un solo fix, y un teléfono que seguía entregando lecturas adentro
+// pisaba el de la entrada a los 20 s (INC-002).
+//
+// Devuelve el veredicto aprobado, o null si la cercanía no alcanza: quien llama
+// se queda con el rechazo directo, que es el que explica qué pasó.
+function presenciaPorCercania(punto, gps, cercania, cfg) {
+  if (!(cfg.cercaniaMin > 0)) return null;
+  const cercana = limpiarGps(cercania, cfg);
+  // Sin ± declarado no es una lectura buena: es una de calidad desconocida.
+  if (!cercana || cercana.acc == null || cercana.acc > cfg.lecturaBuenaM || cercana.edadMs == null) return null;
+  const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto, cfg);
+  if (cercana.edadMs > (anclado ? ventanaMs : cfg.cercaniaMin * 60000)) return null;
+  const lugar = { lat: punto.lat, lon: punto.lon };
+  const d = distanciaM(cercana, lugar);
+  const topeM = topeCercaniaM(anclado, radioM, precisionM, cercana.acc, cfg);
+  if (d > topeM) return null;
+  const ahora = limpiarGps(gps, cfg);
+  const distanciaAhoraM = ahora ? distanciaM(ahora, lugar) : null;
+  if (ahora && !lecturaCompatible(distanciaAhoraM, ahora.acc, limiteCercaniaM(anclado, radioM, cfg), cfg)) return null;
+  return {
+    ok: true,
+    modo: modoVerificacion(punto),
+    sinGps: false,
+    porCercania: true,
+    distanciaM: d,
+    topeM,
+    edadMs: cercana.edadMs,
+    precisionM: cercana.acc,
+    distanciaAhoraM,
+    motivo: `Marcado por cercanía: a ${d} m ${anclado ? 'de la entrada' : 'del punto'} hace ${minutos(cercana.edadMs)}.`
+  };
+}
+
+// A cuánto del punto tiene que estar la lectura cercana. En un punto exacto,
+// cercaniaM: la lectura ya es buena, no se le suma margen. En uno anclado, el
+// tope de siempre alrededor de la entrada (CU-19).
+function topeCercaniaM(anclado, radioM, precisionM, acc, cfg) {
+  return anclado ? radioM + margenM(precisionM, acc, cfg) : cfg.cercaniaM;
+}
+
+// Hasta dónde puede ubicarlo una lectura posterior a la cercana sin desmentirla:
+// el radio de la cercanía más lo que el GPS se equivoca de más.
+function limiteCercaniaM(anclado, radioM, cfg) {
+  return (anclado ? radioM : cfg.cercaniaM) + cfg.errorExtraM;
+}
+
+// ¿Esta lectura es compatible con que el guardia siga cerca? Sin ± declarado se
+// asume precisionSupuestaM, como en margenM(): ni 0 ni infinito.
+function lecturaCompatible(distancia, acc, limiteM, cfg) {
+  return distancia - (acc != null ? acc : cfg.precisionSupuestaM) <= limiteM;
+}
+
+// La verificación de siempre (v1.9-v1.25): la lectura del momento contra el
+// punto, con el presupuesto de error de CU-23.
+function presenciaDirecta(punto, gps, cfg) {
   const modo = modoVerificacion(punto);
   if (modo === 'ninguna') return null;
   const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto, cfg);
@@ -434,7 +539,7 @@ function medioDeLaMarca(punto, interpretado, nfc) {
   return { medio: 'nfc' };
 }
 
-function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc }) {
+function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc, cercania }) {
   if (ejecucion.estado !== 'en_curso') return { error: 'La ronda ya está cerrada.', codigo: 409 };
   const interpretado = interpretarCodigo(codigo);
   if (!interpretado) return { error: 'Código no reconocido.', codigo: 422 };
@@ -475,7 +580,7 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc }) {
   // idempotente aunque el guardia ya se haya alejado del punto.
   const cfg = configGps();
   if (cfg.bloquea) {
-    const presencia = verificarPresencia(punto, gps, cfg);
+    const presencia = verificarPresencia(punto, gps, cfg, cercania);
     if (presencia && !presencia.ok) {
       return { error: presencia.motivo, codigo: 422, presencia };
     }
@@ -488,6 +593,11 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc }) {
     gps: limpiarGps(gps, cfg),
     medio: medio.medio
   };
+  // La lectura cercana (v1.27) se guarda junto a la del momento: es la prueba
+  // con que entró la marca, y evaluar() la necesita para no informarla como
+  // "lejos del punto" al cerrar. Solo viene cuando la app la usó.
+  const cercana = limpiarGps(cercania, cfg);
+  if (cercana) marca.cercania = cercana;
   // Se anota en la marca, no se deduce después: si mañana el punto vuelve a QR,
   // el informe de hoy tiene que seguir diciendo que esta marca fue a mano en un
   // punto que tenía chapita.
@@ -678,11 +788,21 @@ function evaluar(db, ejecucion, ronda) {
   const cfg = configGps();
   for (const esc of ejecucion.escaneos) {
     const punto = db.puntos.find(p => p.id === esc.puntoId);
-    const presencia = verificarPresencia(punto, esc.gps, cfg);
+    const presencia = verificarPresencia(punto, esc.gps, cfg, esc.cercania);
     if (!presencia) continue;
     // "anclado" viaja al informe para no mentir: en esos puntos la distancia es
     // a la ENTRADA del recinto, no al punto, y la marca es una prueba más débil.
     esc.anclado = presencia.modo === 'anclaje';
+    // Igual con la cercanía (v1.27): la distancia que queda en la marca es la de
+    // la lectura cercana, y el informe dice "por cercanía". Se borra si al
+    // reevaluar ya no aplica, para que una reapertura no deje la etiqueta vieja.
+    if (presencia.porCercania) {
+      esc.porCercania = true;
+      esc.distanciaAhoraM = presencia.distanciaAhoraM;
+    } else {
+      delete esc.porCercania;
+      delete esc.distanciaAhoraM;
+    }
     if (presencia.sinGps) {
       // Señal demasiado imprecisa no es lo mismo que ubicación apagada: hubo
       // ubicación, no alcanzó para verificar. Se informa aparte para no acusar

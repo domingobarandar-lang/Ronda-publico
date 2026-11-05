@@ -207,11 +207,15 @@ function extraer(nombre) {
 
 function montarApp(cfg) {
   const nombres = ['cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos',
-    'gpsUltimo', 'gpsFresco', 'gpsParaMarca', 'verificarPresencia'];
+    'gpsUltimo', 'gpsFresco', 'gpsParaMarca', 'verificarPresencia',
+    // Cercanía reciente (v1.27): verificarPresencia() la mira antes de rechazar.
+    'presenciaDirecta', 'presenciaPorCercania', 'cercaniaPara', 'topeCercaniaM', 'limiteCercaniaM',
+    'lecturaCompatible', 'accLectura'];
   const codigo = `
     let estado = { paquete: { gps: CFG } };
     let gpsActual = null;
     let gpsMotivoFalla = null;
+    let rastro = [];
     ${nombres.map(extraer).join('\n')}
     return { verificarPresencia, gpsParaMarca, fijarGps: g => { gpsActual = g; } };
   `;

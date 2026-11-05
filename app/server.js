@@ -10,6 +10,7 @@ const { codigoCorto, id, payloadQR, normalizarSerie, huellaSerie } = require('./
 const motor = require('./lib/rondas');
 const { armarInforme, informeTexto, hora } = require('./lib/informes');
 const { generarInformeSemanal } = require('./lib/informe-semanal');
+const { resumenSenal } = require('./lib/senal-puntos');
 const correo = require('./lib/correo');
 const { normalizarCorreos, correosDelCondominio, esCorreo } = require('./lib/destinatarios');
 const fabrica = require('./lib/fabrica');
@@ -543,12 +544,12 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   app.post('/api/ejecuciones/:id/escaneos', enRonda, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
-    const { codigo, ts, offline, gps, nfc } = req.body || {};
+    const { codigo, ts, offline, gps, nfc, cercania } = req.body || {};
     // Una ronda sin señal que el sistema dio por abandonada: el teléfono del
     // guardia aparece con sus marcas y la ronda se reabre para recibirlas. La
     // reapertura se guarda solo si la marca entra (y no era repetida).
     const reabierta = ejecucion.guardiaId === req.usuario.id && motor.reabrirSiAutomatica(ejecucion);
-    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc });
+    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc, cercania });
     // Un QR (o una chapita ajena) en un punto con chapita NFC: queda en el
     // registro de rechazos igual que los del GPS. La app ya lo rechaza sin
     // encolar; llega acá desde una app vieja o un cliente que no es la app.
@@ -695,6 +696,20 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
 
   app.get('/api/admin/puntos', ...admin, (req, res) => {
     res.json(db.puntos.filter(p => p.condominioId === miCondominio(req)));
+  });
+
+  // Señal en cada punto (ADR-001, fase 2): con las marcas y los rechazos de
+  // los últimos 30 días, para que el administrador elija la prueba de cada punto
+  // con un dato en vez de a ojo. Aparte de /api/admin/puntos porque recorre
+  // ejecuciones: si falla o tarda, la tabla de puntos carga igual.
+  const DIAS_SENAL = 30;
+  const LIMITE_SENAL = 3000;
+  app.get('/api/admin/puntos/senal', ...admin, (req, res) => {
+    const condominioId = miCondominio(req);
+    const desde = new Date(Date.now() - DIAS_SENAL * 86400000).toISOString();
+    const ejecuciones = store.ejecuciones.listar({ condominioId, desde, limite: LIMITE_SENAL });
+    const puntos = db.puntos.filter(p => p.condominioId === condominioId);
+    res.json({ dias: DIAS_SENAL, desde, ejecuciones: ejecuciones.length, puntos: resumenSenal(puntos, ejecuciones) });
   });
 
   app.post('/api/admin/puntos', ...admin, (req, res) => {

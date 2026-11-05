@@ -154,10 +154,14 @@ function extraer(nombre) {
 }
 
 function telefono() {
-  const nombres = ['cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos', 'gpsUltimo', 'verificarPresencia', 'medioDe', 'motivoMedio', 'registrarRechazo'];
+  const nombres = ['cfgGps', 'umbralesDe', 'margenM', 'distanciaM', 'minutos', 'gpsUltimo', 'verificarPresencia', 'medioDe', 'motivoMedio', 'registrarRechazo',
+    // La cercanía reciente (v1.27): con el rastro vacío no rescata nada y el
+    // rechazo es el de la lectura del momento.
+    'presenciaDirecta', 'presenciaPorCercania', 'cercaniaPara', 'topeCercaniaM', 'limiteCercaniaM', 'lecturaCompatible', 'accLectura'];
   return new Function('CFG', `
     const estado = { paquete: { gps: CFG }, ejecucion: { id: 'e1' }, cola: [] };
     let gpsActual = null;
+    const rastro = [];
     const gpsMotivoFalla = 'permiso denegado';
     const guardarEstado = () => {};
     const sincronizar = () => {};

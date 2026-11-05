@@ -13,7 +13,7 @@ const CLAVE = 'rondasqr';
 // fija sw-shell.test.js). Es lo que la app compara con el servidor para
 // recargarse sola (revisarVersion) y con la página y los estilos para saber si
 // el service worker le sirvió una mezcla de versiones (shellMixto).
-const VERSION_APP = 'v1.26.0';
+const VERSION_APP = 'v1.27.0';
 
 let estado = cargarEstado();
 // errores.js etiqueta con esto lo que manda a Sentry (v1.26): el condominio de
@@ -37,6 +37,9 @@ let wakeLockMotivo = null;
 // sería escribir el disco del teléfono a ese ritmo. Mismo precedente que
 // gpsActual. Se pierden al recargar, que es lo correcto: son datos del momento.
 let bufferFixes = [];
+// Rastro de los fixes consolidados de los últimos minutos (v1.27): la memoria de
+// la cercanía reciente. Mismo criterio que el buffer.
+let rastro = [];
 let marcaPendiente = null;
 let pendienteTimer = null;
 // QR ya leído cuya marca no se pudo confirmar por señal (v1.21). Mismo criterio
@@ -70,10 +73,12 @@ let gpsPermisoNegado = false;
 //                         │                 (matemática en public/geo.js)
 //                         ▼
 //                     gpsActual ─▶ gpsUltimo() ─▶ verificarPresencia()
-//                                       │              │
-//                              piso de precisión       ▼
-//                              (espejo del servidor)  ¿ok?  ──sí──▶ registrarMarca()
-//                                                      │
+//                         │             │              │
+//                         ▼    piso de precisión       ▼
+//                     rastro[]  (espejo del servidor) ¿ok?  ──sí──▶ registrarMarca()
+//                         │                            │
+//                         └──▶ cercaniaPara() ──────▶  no: ¿estuvo cerca hace poco?
+//                                                      │      (antes de rechazar, v1.27)
 //                                                      no
 //                                                      ▼
 //                                              ¿la espera sirve?
@@ -81,10 +86,11 @@ let gpsPermisoNegado = false;
 //                                                  (15 s, se acepta sola si entra)
 //                                          no ──▶ rechazarMarca() + telemetría
 //
-// El buffer y la espera viven FUERA del espejo cliente/servidor a propósito:
-// verificarPresencia() sigue recibiendo UN fix y devolviendo un veredicto,
-// exactamente igual que lib/rondas.js, y paridad-gps.test.js los sigue barriendo
-// a los dos con la misma grilla.
+// El buffer, el rastro y la espera viven FUERA del espejo cliente/servidor a
+// propósito: verificarPresencia() sigue recibiendo un fix —y desde v1.27 la
+// lectura cercana— y devolviendo un veredicto, exactamente igual que
+// lib/rondas.js, y paridad-gps.test.js los sigue barriendo a los dos con la
+// misma grilla.
 
 // Umbrales que manda el servidor en el paquete. Los defaults calzan con
 // configGps() de lib/rondas.js para que un paquete viejo en caché no acepte
@@ -98,6 +104,10 @@ function cfgGps() {
     precisionSupuestaM: Number.isFinite(c.precisionSupuestaM) ? c.precisionSupuestaM : 15,
     precisionMinM: Number.isFinite(c.precisionMinM) ? c.precisionMinM : 3,
     frescoMs: Number.isFinite(c.frescoMs) ? c.frescoMs : 20000,
+    lecturaBuenaM: Number.isFinite(c.lecturaBuenaM) ? c.lecturaBuenaM : 20,
+    cercaniaM: Number.isFinite(c.cercaniaM) ? c.cercaniaM : 30,
+    cercaniaMin: Number.isFinite(c.cercaniaMin) ? c.cercaniaMin : 5,
+    errorExtraM: Number.isFinite(c.errorExtraM) ? c.errorExtraM : 20,
     bloquea: c.bloquea !== false
   };
 }
@@ -157,7 +167,10 @@ function iniciarGps() {
       // perder el ancla de un punto bajo techo.
       agregarFix(fix);
       const consolidado = consolidarFixes(bufferFixes, Date.now());
-      if (consolidado) gpsActual = consolidado;
+      if (consolidado) {
+        gpsActual = consolidado;
+        anotarRastro(consolidado);
+      }
       gpsMotivoFalla = null;
       // Una marca esperando señal se resuelve con el fix nuevo, no en el próximo
       // tick: si ya alcanza, el guardia no tiene que esperar el segundo entero.
@@ -193,6 +206,34 @@ function agregarFix(fix) {
   const tsMax = bufferFixes.reduce((max, f) => Math.max(max, f.ts), 0);
   bufferFixes = bufferFixes.filter(f => tsMax - f.ts <= cfgGps().frescoMs);
   if (bufferFixes.length > BUFFER_MAX) bufferFixes = bufferFixes.slice(-BUFFER_MAX);
+}
+
+// ---------- Rastro de la cercanía reciente (v1.27) ----------
+// Cada fix consolidado queda anotado un rato: es lo que permite, antes de
+// rechazar una marca, mirar si el guardia estuvo cerca del punto hace poco (ver
+// presenciaPorCercania en lib/rondas.js). Se anota el CONSOLIDADO y no la
+// lectura cruda: trae el ± honesto de precisionHonesta(), y la lectura de
+// rebote suelta ya la botó filtrarOutliers().
+//
+// Uno por tramo de RASTRO_PASO_MS: dentro del mismo tramo, el nuevo reemplaza
+// al anterior. El consolidado es un promedio de 20 s y cambia despacio, así que
+// el tramo no bota nada que importe. RASTRO_MAX es una hora a ese paso: cubre
+// los 15 min del anclaje con holgura, y una ventana más larga (el panel acepta
+// hasta 120 min) solo se acorta si el teléfono entregó lecturas todo ese rato.
+const RASTRO_PASO_MS = 2000;
+const RASTRO_MAX = 1800;
+
+function anotarRastro(fix) {
+  if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lon) || !Number.isFinite(fix.ts)) return;
+  const entrada = { lat: fix.lat, lon: fix.lon, acc: Number.isFinite(fix.acc) ? fix.acc : null, ts: fix.ts };
+  const ultimo = rastro[rastro.length - 1];
+  // El rastro va en orden: cercaniaPara() lo recorre hacia atrás y corta en la
+  // primera lectura fuera de la ventana.
+  if (ultimo && entrada.ts < ultimo.ts) return;
+  const tramo = ts => Math.floor(ts / RASTRO_PASO_MS);
+  if (ultimo && tramo(entrada.ts) === tramo(ultimo.ts)) rastro[rastro.length - 1] = entrada;
+  else rastro.push(entrada);
+  if (rastro.length > RASTRO_MAX) rastro = rastro.slice(-RASTRO_MAX);
 }
 
 // Convierte el buffer en UN fix, que es lo único que ve el resto de la app —y el
@@ -246,6 +287,10 @@ function detenerGps() {
   gpsUltimaLecturaMs = 0;
   gpsPermisoNegado = false;
   bufferFixes = [];
+  // El rastro es de quien camina con el teléfono: con la sesión se va, para que
+  // el guardia que entra después en un teléfono compartido no herede la
+  // cercanía del anterior.
+  rastro = [];
   liberarWakeLock();
 }
 
@@ -424,6 +469,18 @@ function gpsParaMarca(punto) {
   return g.edadMs <= umbralesDe(punto).ventanaMs ? g : null;
 }
 
+// Qué viaja con la marca (v1.27): la lectura del momento y, si la marca entra
+// por cercanía, también la lectura cercana. La regla de gpsParaMarca() vale para
+// las dos: si sirvió para decidir, sirve para viajar. Por cercanía, la del
+// momento viaja aunque esté vieja o sea mala, porque también decidió (no
+// desmintió a la cercana) y el servidor la vuelve a mirar.
+function ubicacionParaMarca(punto) {
+  if (punto.lat == null || punto.lon == null) return { gps: gpsFresco(), cercania: null };
+  if (presenciaDirecta(punto, gpsUltimo()).ok) return { gps: gpsParaMarca(punto), cercania: null };
+  const cercania = cercaniaPara(punto);
+  return cercania ? { gps: gpsUltimo(), cercania } : { gps: gpsParaMarca(punto), cercania: null };
+}
+
 // Espejo de verificarPresencia() de lib/rondas.js. null = el punto no tiene
 // ubicación fijada, no hay nada que verificar.
 //
@@ -432,7 +489,97 @@ function gpsParaMarca(punto) {
 // pantalla. Sin argumento usa el último conocido, que es el caso normal.
 // Los campos del veredicto (distancia, tope, señal) alimentan la decisión de
 // reintentar y el registro de rechazos: sin ellos el motivo es solo un texto.
-function verificarPresencia(punto, fix = gpsUltimo()) {
+//
+// `cercania` (v1.27): la lectura cercana, como la recibe el servidor. Sin
+// argumento se busca en el rastro, y solo si la lectura del momento no alcanza;
+// null explícito la apaga.
+function verificarPresencia(punto, fix = gpsUltimo(), cercania) {
+  const directa = presenciaDirecta(punto, fix);
+  if (!directa || directa.ok) return directa;
+  const cercana = cercania === undefined ? cercaniaPara(punto) : cercania;
+  return (cercana && presenciaPorCercania(punto, fix, cercana)) || directa;
+}
+
+// ---------- Cercanía reciente (CU-29, v1.27) ----------
+// Espejo de presenciaPorCercania() de lib/rondas.js, donde está la explicación
+// larga: antes de rechazar, ¿hubo una lectura buena cerca del punto hace poco, y
+// la del momento no lo ubica más lejos de lo que el GPS se puede equivocar?
+function presenciaPorCercania(punto, fix, cercania) {
+  const cfg = cfgGps();
+  if (!(cfg.cercaniaMin > 0) || !cercania) return null;
+  const acc = accLectura(cercania.acc);
+  if (acc == null || acc > cfg.lecturaBuenaM || !Number.isFinite(cercania.edadMs) || cercania.edadMs < 0) return null;
+  const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto);
+  if (cercania.edadMs > (anclado ? ventanaMs : cfg.cercaniaMin * 60000)) return null;
+  const d = distanciaM(cercania, punto);
+  const topeM = topeCercaniaM(anclado, radioM, precisionM, acc);
+  if (d > topeM) return null;
+  const distanciaAhoraM = fix ? distanciaM(fix, punto) : null;
+  if (fix && !lecturaCompatible(distanciaAhoraM, fix.acc, limiteCercaniaM(anclado, radioM))) return null;
+  return {
+    ok: true,
+    porCercania: true,
+    anclado,
+    distanciaM: d,
+    topeM,
+    acc,
+    edadMs: cercania.edadMs,
+    distanciaAhoraM,
+    motivo: `📍 Marcado por cercanía: a ${d} m ${anclado ? 'de la entrada' : 'del punto'} hace ${minutos(cercania.edadMs)}.`
+  };
+}
+
+// La lectura cercana para este punto, o null. Es la parte de la cercanía que
+// solo puede revisar el teléfono, porque el servidor no ve el rastro: busca la
+// ÚLTIMA lectura buena cerca del punto dentro de la ventana, y ninguna lectura
+// posterior puede desmentirla. La última y no la mejor: si el guardia se alejó
+// con buena señal, las lecturas de después lo dicen.
+function cercaniaPara(punto, ahora = Date.now()) {
+  const cfg = cfgGps();
+  if (!(cfg.cercaniaMin > 0) || punto.lat == null || punto.lon == null) return null;
+  const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto);
+  const ventana = anclado ? ventanaMs : cfg.cercaniaMin * 60000;
+  const limite = limiteCercaniaM(anclado, radioM);
+  // Hacia atrás, de la más nueva a la más vieja: cada lectura revisada antes de
+  // dar con la cercana es posterior a ella.
+  for (let i = rastro.length - 1; i >= 0; i--) {
+    const f = rastro[i];
+    if (ahora - f.ts > ventana) return null;
+    const acc = accLectura(f.acc);
+    const d = distanciaM(f, punto);
+    if (acc != null && acc <= cfg.lecturaBuenaM && d <= topeCercaniaM(anclado, radioM, precisionM, acc)) {
+      return { lat: f.lat, lon: f.lon, acc, edadMs: Math.max(0, ahora - f.ts) };
+    }
+    if (!lecturaCompatible(d, acc, limite)) return null;
+  }
+  return null;
+}
+
+// A cuánto del punto tiene que estar la lectura cercana. En un punto exacto,
+// cercaniaM; en uno anclado, el tope de siempre alrededor de la entrada.
+function topeCercaniaM(anclado, radioM, precisionM, acc) {
+  return anclado ? radioM + margenM(precisionM, acc) : cfgGps().cercaniaM;
+}
+
+// Espejos de limiteCercaniaM() y lecturaCompatible() de lib/rondas.js.
+function limiteCercaniaM(anclado, radioM) {
+  const cfg = cfgGps();
+  return (anclado ? radioM : cfg.cercaniaM) + cfg.errorExtraM;
+}
+
+function lecturaCompatible(distancia, acc, limiteM) {
+  return distancia - (acc != null ? acc : cfgGps().precisionSupuestaM) <= limiteM;
+}
+
+// El ± de una lectura con el piso de precisión, como gpsUltimo() y limpiarGps().
+// null = no declarada (desconocida, no perfecta).
+function accLectura(acc) {
+  return Number.isFinite(acc) && acc >= 0 ? Math.max(Math.round(acc), cfgGps().precisionMinM) : null;
+}
+
+// La verificación de siempre (v1.9-v1.25): la lectura del momento contra el
+// punto. Espejo de presenciaDirecta() de lib/rondas.js.
+function presenciaDirecta(punto, fix) {
   if (punto.lat == null || punto.lon == null) return null;
   const cfg = cfgGps();
   const { anclado, radioM, ventanaMs, precisionM } = umbralesDe(punto);
@@ -852,6 +999,9 @@ async function iniciarSesionGuardia(usuario, pin) {
     throw err;
   }
   const traspaso = cambiarDeGuardia(r.usuario);
+  // Otro guardia en el mismo teléfono sin que el anterior saliera (sesión
+  // vencida): la cercanía del anterior no es suya.
+  if (!estado.sesion || estado.sesion.usuario !== r.usuario) rastro = [];
   estado.sesion = r;
   guardarEstado();
   pedirAlmacenamientoPersistente();
@@ -1792,9 +1942,12 @@ function registrarMarca(punto, codigo, nfc = null) {
   if (marcaRetenida && marcaRetenida.punto.id === punto.id) marcaRetenida = null;
 
   const ts = new Date().toISOString();
-  const gps = gpsParaMarca(punto);
+  const { gps, cercania } = ubicacionParaMarca(punto);
+  // La lectura cercana solo aparece cuando la hay: una marca que entró por la
+  // lectura del momento queda exactamente igual que antes de la v1.27.
+  const conCercania = cercania ? { cercania } : {};
   const medio = medioDe(punto, codigo, nfc);
-  ejecucion.escaneos.push({ puntoId: punto.id, ts, offline: !navigator.onLine, gps, medio });
+  ejecucion.escaneos.push({ puntoId: punto.id, ts, offline: !navigator.onLine, gps, medio, ...conCercania });
   estado.cola.push({
     tipo: 'escaneo',
     ejecucionId: ejecucion.id,
@@ -1802,6 +1955,7 @@ function registrarMarca(punto, codigo, nfc = null) {
     ts,
     offline: !navigator.onLine,
     gps,
+    ...conCercania,
     // La serie de la chapita viaja con la marca: el servidor la exige en los
     // puntos NFC. Sin chapita, null (un QR o el código a mano).
     nfc: nfc ? { serie: nfc.serie || null } : null
@@ -1968,7 +2122,10 @@ async function sincronizar() {
         } else if (evento.tipo === 'escaneo') {
           await api(`/api/ejecuciones/${evento.ejecucionId}/escaneos`, {
             metodo: 'POST',
-            cuerpo: { codigo: evento.codigo, ts: evento.ts, offline: evento.offline, gps: evento.gps || null, nfc: evento.nfc || null }
+            cuerpo: {
+              codigo: evento.codigo, ts: evento.ts, offline: evento.offline, gps: evento.gps || null, nfc: evento.nfc || null,
+              ...(evento.cercania ? { cercania: evento.cercania } : {})
+            }
           });
         } else if (evento.tipo === 'rechazo') {
           await api(`/api/ejecuciones/${evento.ejecucionId}/rechazos`, {
