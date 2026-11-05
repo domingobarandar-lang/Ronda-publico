@@ -2,6 +2,13 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-05 · La configuración de Railway pasa a `.railway/railway.ts`
+
+Railway deja de leer `railway.json` el 1/12. El comando de arranque, lo único que venía de `app/railway.json`, ahora está guardado en el servicio (aplicado con `railway config apply`; la configuración que ya tenía, como el reinicio `ON_FAILURE`, no cambió). Su copia en código es `.railway/railway.ts`, y `app/railway.json` se borra. La app no cambia.
+
+- **`.railway/railway.ts` declara el proyecto completo**: repo y Root Directory `app`, volumen en `/data`, las 19 variables con `preserve()` y el comando de arranque. Lo que el archivo no declara, `railway config apply` lo borra. El archivo del PR #35 (el de `railway config migrate`) traía solo el arranque y su plan proponía borrar las variables y soltar el volumen; no se llegó a aplicar.
+- `entrega/RAILWAY-IAC.md`: dónde vive la configuración, la tabla de equivalencia y cómo correr el plan en Windows (hay un bug del SDK con Git Bash).
+
 ## 1.27.0 — 2026-11-04 · Cercanía reciente: menos marcas dudosas bajo techo, y el cierre automático ya no corta al guardia (INC-004)
 
 Decisión y opciones en `entrega/ADR-001-GPS-BAJO-TECHO.md`; incidente INC-002 en `entrega/INCIDENTES.md`. Caso de uso nuevo CU-29 en SPEC.md.
