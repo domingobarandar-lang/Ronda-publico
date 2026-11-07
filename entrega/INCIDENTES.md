@@ -1,4 +1,4 @@
-# Incidentes — Rondas QR
+# Incidentes — Ronda
 
 Público: José (soporte y producto). Qué hacer cuando algo falla en producción y el registro de lo que ya falló.
 

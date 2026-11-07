@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e0e13">
-  <title>Eliminar tu cuenta — Rondas QR</title>
-  <meta name="description" content="Cómo eliminar tu cuenta de guardia de Rondas QR, desde la app o desde esta página.">
+  <title>Eliminar tu cuenta — Ronda</title>
+  <meta name="description" content="Cómo eliminar tu cuenta de guardia de Ronda, desde la app o desde esta página.">
   <link rel="icon" href="icono.svg" type="image/svg+xml">
   <link rel="stylesheet" href="estilos.css">
   <style>
@@ -21,16 +21,16 @@
        cuenta dentro de la app pueda pedir su eliminación sin tenerla instalada.
        La política de privacidad enlaza acá: no mover esta ruta. -->
   <header class="cabecera">
-    <div class="cabecera-titulo">🛡️ Rondas QR</div>
+    <div class="cabecera-titulo">🛡️ Ronda</div>
   </header>
 
   <main>
     <h1>Eliminar tu cuenta</h1>
-    <p class="nota">Esta página es para los guardias que crearon su usuario en la app Rondas QR. Las cuentas de administrador no se eliminan desde acá: usa el contacto de más abajo.</p>
+    <p class="nota">Esta página es para los guardias que crearon su usuario en la app Ronda. Las cuentas de administrador no se eliminan desde acá: usa el contacto de más abajo.</p>
 
     <h2>Desde la app</h2>
     <ol>
-      <li>Abre Rondas QR y entra con tu usuario y PIN.</li>
+      <li>Abre Ronda y entra con tu usuario y PIN.</li>
       <li>En la pantalla de rondas, baja hasta el final y toca <strong>Eliminar mi cuenta</strong>.</li>
       <li>Escribe tu PIN y confirma.</li>
     </ol>
@@ -120,7 +120,7 @@
         const { correo, telefono } = await (await fetch('/api/cuenta/contacto')).json();
         if (!correo && !telefono) return;
         const p = $('contacto');
-        const asunto = 'Quiero eliminar mi cuenta de Rondas QR';
+        const asunto = 'Quiero eliminar mi cuenta de Ronda';
         if (telefono) {
           const mensaje = `https://wa.me/${telefono.replace(/^\+/, '')}?text=${encodeURIComponent(asunto)}`;
           p.replaceChildren('Escríbenos por ', enlace(mensaje, 'WhatsApp'), ' o llámanos al ', enlace(`tel:${telefono}`, telefono));

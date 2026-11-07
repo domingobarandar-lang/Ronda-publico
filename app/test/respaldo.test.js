@@ -13,7 +13,7 @@ const { construirMime } = require('../lib/correo');
 const silencio = () => {};
 
 function base() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-respaldo-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-respaldo-'));
   const store = crearStore(path.join(dir, 'rondas.sqlite'), { log: silencio });
   store.db.condominios.push({ id: 'c1', nombre: 'Uno' });
   store.guardar();
@@ -46,7 +46,7 @@ test('antes de la hora no hace nada; a la hora saca la foto y la manda comprimid
   assert.equal(enviados.length, 1);
   const correo = enviados[0];
   assert.deepEqual(correo.to, ['operacion@ejemplo.cl']);
-  assert.match(correo.subject, /Respaldo Rondas QR — 2026-09-27/);
+  assert.match(correo.subject, /Respaldo Ronda — 2026-09-27/);
   assert.match(correo.texto, /1 condominios.*1 rondas/s);
   assert.equal(correo.adjuntos[0].filename, 'rondas-2026-09-27.sqlite.gz');
   assert.equal(correo.adjuntos[0].contentType, 'application/gzip');

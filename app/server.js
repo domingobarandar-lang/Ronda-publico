@@ -1,4 +1,4 @@
-// Rondas QR — servidor: API + las dos apps (guardia en / y panel en /panel).
+// Ronda — servidor: API + las dos apps (guardia en / y panel en /panel).
 // Arranque: `npm run demo` (siembra datos de prueba si no hay) o `npm start`.
 const path = require('path');
 const express = require('express');
@@ -1557,7 +1557,7 @@ if (require.main === module) {
   // Con Sentry activo se espera a que el evento salga antes de cerrar.
   errores.instalarRedProceso(process, code => sentry.vaciar().then(() => process.exit(code)));
   app.listen(puerto, () => {
-    console.log(`Rondas QR — servidor en http://localhost:${puerto}`);
+    console.log(`Ronda — servidor en http://localhost:${puerto}`);
     console.log(`  App del guardia:     http://localhost:${puerto}/`);
     console.log(`  Panel administrador: http://localhost:${puerto}/panel`);
     console.log('  Avisos de ronda: panel (pestaña Avisos) y consola');

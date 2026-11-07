@@ -41,7 +41,7 @@ async function login(usuario, pin) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-salud-fab-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-salud-fab-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   // Sentry de mentira: un problema en aromos, ninguno en mirador, uno sin condominio.
@@ -154,7 +154,7 @@ test('/fabrica: errores de Sentry por condominio y los que no tienen, solo para 
 });
 
 test('/fabrica: sin token de lectura, dice qué falta y no llama a Sentry', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-salud-fab-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-salud-fab-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const otra = crearApp({ rutaDb, enviarPush: async () => {}, lectorSentry: crearLectorSentry({ env: { SENTRY_DSN: 'https://k@o1.ingest.sentry.io/2' }, fetch: () => { throw new Error('no debía llamar'); } }) });

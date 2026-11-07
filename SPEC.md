@@ -1,4 +1,4 @@
-# SPEC — Rondas QR (control de rondas de guardias)
+# SPEC — Ronda (control de rondas de guardias)
 
 **Fecha**: 2026-07-16 · **Estado**: aprobada por el orquestador (supuestos al final)
 

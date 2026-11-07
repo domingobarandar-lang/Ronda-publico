@@ -164,7 +164,7 @@ test('motivoMedio: espejo de la regla del servidor', () => {
 test('la chapita correcta entra a la cola con su serie y medio nfc', async () => {
   const app = cargarApp();
   conRonda(app);
-  app.correr(`chapitaLeida(${JSON.stringify({})})`); // sin mensaje: no es de Rondas QR
+  app.correr(`chapitaLeida(${JSON.stringify({})})`); // sin mensaje: no es de Ronda
   await tick();
   assert.equal(app.correr('estado.cola.length'), 0);
   app.ctx.__lectura = lectura(P_NFC.payload);

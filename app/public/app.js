@@ -7,6 +7,10 @@
 //   descarta, así que un teléfono con la app vieja nunca traba la cola.
 'use strict';
 
+// La clave conserva el nombre viejo de la app (Rondas QR) a propósito: es donde
+// cada teléfono ya tiene guardada la sesión y la cola de marcas sin enviar (también
+// la base de IndexedDB, que usa el mismo nombre). Renombrarla dejaría
+// a todos fuera y perdería las marcas pendientes.
 const CLAVE = 'rondasqr';
 // VERSION_APP: subirla en cada release junto con package.json, sw.js, el
 // <meta name="version-app"> de index.html y --version-app de estilos.css (los
@@ -1608,7 +1612,7 @@ function cerrarPantallasDeMarca() {
 async function chapitaLeida(evento) {
   const texto = textoDeChapita(evento.message);
   if (!texto || !texto.trim().toUpperCase().startsWith('RQR:')) {
-    aviso('Esa chapita no es de Rondas QR (está vacía o tiene otra cosa).', 'error');
+    aviso('Esa chapita no es de Ronda (está vacía o tiene otra cosa).', 'error');
     navigator.vibrate && navigator.vibrate([80, 60, 80]);
     return;
   }

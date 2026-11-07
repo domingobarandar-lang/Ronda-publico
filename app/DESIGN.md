@@ -1,4 +1,4 @@
-# DESIGN.md — sistema de diseño de Rondas QR
+# DESIGN.md — sistema de diseño de Ronda
 
 Dos apps, un sistema: la del guardia (`/`, tema nocturno) y la del panel (`/panel`, tema claro de oficina), cada una instalable con su propio ícono. Los tokens viven duplicados (a propósito, sin build step) en `public/estilos.css` (guardia) y `public/admin.css` (admin + informe + hoja QR): **mismos nombres, valores mapeados al tema**. Si agregas un color o radio, agrégalo en ambos.
 

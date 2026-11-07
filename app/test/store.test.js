@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { crearStore, resolverRutas } = require('../lib/store');
 
-const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-store-'));
+const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-store-'));
 const nuevo = () => {
   const ruta = path.join(carpeta(), 'rondas.sqlite');
   return { ruta, store: crearStore(ruta) };

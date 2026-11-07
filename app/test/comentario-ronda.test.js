@@ -43,7 +43,7 @@ async function rondaCerrada(cuerpo) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-com-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-com-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });

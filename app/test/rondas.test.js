@@ -1,4 +1,4 @@
-// QA de Rondas QR — cubre los casos de uso CU-01 a CU-14 del SPEC más
+// QA de Ronda — cubre los casos de uso CU-01 a CU-14 del SPEC más
 // escenarios adversariales (permisos cruzados, cierre repetido, escaneo tras
 // cierre). Todo en MOCK: cero llamadas externas.
 'use strict';
@@ -58,7 +58,7 @@ function payloadDe(paquete, rondaId, nombrePunto) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({

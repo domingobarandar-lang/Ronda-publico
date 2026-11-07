@@ -1,4 +1,4 @@
-# Brief — Rondas QR (control de rondas de guardias en condominios)
+# Brief — Ronda (control de rondas de guardias en condominios)
 
 **Fecha**: 2026-07-16
 **Estado**: Intake

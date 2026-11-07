@@ -30,7 +30,7 @@ const login = async (usuario, pin) => (await api('/api/login', { metodo: 'POST',
 const suscripcion = n => ({ endpoint: `https://push.ejemplo/${n}`, keys: { p256dh: 'p', auth: 'a' } });
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-alarma-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-alarma-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async (s, payload) => { enviados.push({ endpoint: s.endpoint, datos: JSON.parse(payload) }); } });

@@ -62,7 +62,7 @@ function crearPush(store, { enviar } = {}) {
       TTL: 12 * 3600,
       urgency: 'high',
       vapidDetails: {
-        subject: process.env.VAPID_SUBJECT || 'mailto:avisos@rondas-qr.app',
+        subject: process.env.VAPID_SUBJECT || 'mailto:avisos@ronda.app',
         publicKey,
         privateKey
       }

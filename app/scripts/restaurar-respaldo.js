@@ -24,7 +24,7 @@ const { pipeline } = require('stream/promises');
 const { DatabaseSync } = require('node:sqlite');
 const { resolverRutas } = require('../lib/store');
 
-// Qué trae un archivo de base. Lanza si no es una base de Rondas QR sana.
+// Qué trae un archivo de base. Lanza si no es una base de Ronda sana.
 function inspeccionar(ruta) {
   let sql;
   try {
@@ -32,7 +32,7 @@ function inspeccionar(ruta) {
     const integridad = sql.prepare('PRAGMA integrity_check').get();
     if (Object.values(integridad)[0] !== 'ok') throw new Error(`integrity_check: ${Object.values(integridad)[0]}`);
     const version = sql.prepare("SELECT valor FROM meta WHERE clave = 'version'").get();
-    if (!version) throw new Error('no tiene versión de esquema (¿es una base de Rondas QR?)');
+    if (!version) throw new Error('no tiene versión de esquema (¿es una base de Ronda?)');
     const n = tabla => sql.prepare(`SELECT COUNT(*) AS n FROM ${tabla}`).get().n;
     const largo = clave => {
       const fila = sql.prepare('SELECT valor FROM estado WHERE clave = ?').get(clave);

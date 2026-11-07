@@ -19,7 +19,7 @@ const ACCENT = '5E4B8B', ACCENT_L = 'B9AECF', TRACK = 'ECEAF2', HEADFILL = '5E4B
 const INK = '242230', GRAY = '6B6875', LINE = 'D9D5E2', WHITE = 'FFFFFF';
 const GREEN = '4E7A5B', OCHRE = 'B07D2B', RED = 'B23A48';
 const FONT = 'Calibri';
-// Logo de Rondas QR (el mismo ícono de la app del guardia), arriba a la
+// Logo de Ronda (el mismo ícono de la app del guardia), arriba a la
 // izquierda. Se lee una vez; si faltara el archivo, el informe sale sin logo.
 const LOGO = (() => { try { return fs.readFileSync(path.join(__dirname, '..', 'public', 'icono-192.png')); } catch { return null; } })();
 // Un color por guardia en el gráfico de rondas por día (orden fijo, validado
@@ -376,7 +376,7 @@ function barras(label, value, max, color = ACCENT) {
 // ---------- Construcción del documento ----------
 function generarDocx(d) {
   const titulo = [
-    P(run('Rondas QR — Informe semanal', { color: GRAY, size: 15, caps: true, spacing: 40, bold: true }), { spacing: { after: 40 } }),
+    P(run('Ronda — Informe semanal', { color: GRAY, size: 15, caps: true, spacing: 40, bold: true }), { spacing: { after: 40 } }),
     P(run('Informe Semanal de Rondas', { bold: true, size: 40 }), { spacing: { after: 40 } }),
     P(run(d.condominio, { bold: true, size: 26, color: ACCENT }), { spacing: { after: 20 } }),
     P(run(d.rango, { color: GRAY, size: 20 }), { spacing: { after: 40 } })
@@ -387,7 +387,7 @@ function generarDocx(d) {
     width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths: LOGO ? [1500, 7860] : [9360],
     borders: { ...NO_BORDER, bottom: { style: BorderStyle.SINGLE, size: 4, color: ACCENT } },
     rows: [new TableRow({ cantSplit: true, children: [
-      ...(LOGO ? [cell(new Paragraph({ children: [new ImageRun({ type: 'png', data: LOGO, transformation: { width: 80, height: 80 }, altText: { name: 'Rondas QR', title: 'Rondas QR', description: 'Logo de Rondas QR' } })] }), { width: 1500, valign: VerticalAlign.CENTER, ml: 0, mr: 200, mt: 0, mb: 120 })] : []),
+      ...(LOGO ? [cell(new Paragraph({ children: [new ImageRun({ type: 'png', data: LOGO, transformation: { width: 80, height: 80 }, altText: { name: 'Ronda', title: 'Ronda', description: 'Logo de Ronda' } })] }), { width: 1500, valign: VerticalAlign.CENTER, ml: 0, mr: 200, mt: 0, mb: 120 })] : []),
       cell(titulo, { width: LOGO ? 7860 : 9360, ml: 0, mt: 0, mb: 80 })
     ] })]
   }), P(run(''), { spacing: { after: 60 } })];
@@ -481,7 +481,7 @@ function generarDocx(d) {
   // 7 · Conclusión
   hijos.push(seccion('7', 'Conclusión'));
   hijos.push(P(run(d.conclusion, { size: 22 }), { spacing: { after: 120, line: 300 } }));
-  hijos.push(P(run(`Informe generado por Rondas QR el ${d.generado}. Todas las cifras y frases salen directamente de los registros de la app, con reglas fijas.`, { color: GRAY, size: 17, italics: true }), { spacing: { before: 200 } }));
+  hijos.push(P(run(`Informe generado por Ronda el ${d.generado}. Todas las cifras y frases salen directamente de los registros de la app, con reglas fijas.`, { color: GRAY, size: 17, italics: true }), { spacing: { before: 200 } }));
 
   return documento(d, hijos);
 }
@@ -618,13 +618,13 @@ function resumenIncidencias(d) {
 
 function documento(d, hijos) {
   return new Document({
-    creator: 'Rondas QR', title: 'Informe Semanal de Rondas',
+    creator: 'Ronda', title: 'Informe Semanal de Rondas',
     styles: { default: { document: { run: { font: FONT, size: 21, color: INK } } } },
     sections: [{
       properties: { page: { margin: { top: 1080, bottom: 1080, left: 1200, right: 1200 } } },
       footers: { default: new Footer({ children: [new Paragraph({
         border: { top: hairline(LINE) }, tabStops: [{ type: 'right', position: 9360 }],
-        children: [run('Rondas QR · Control de rondas de vigilancia', { color: GRAY, size: 16 }), new TextRun({ children: [new Tab(), 'Página ', PageNumber.CURRENT], font: FONT, color: GRAY, size: 16 })]
+        children: [run('Ronda · Control de rondas de vigilancia', { color: GRAY, size: 16 }), new TextRun({ children: [new Tab(), 'Página ', PageNumber.CURRENT], font: FONT, color: GRAY, size: 16 })]
       })] }) },
       children: hijos
     }]

@@ -2,6 +2,9 @@
 // sesión propios. Se instala/marca en el equipo del administrador (/panel).
 'use strict';
 
+// La clave conserva el nombre viejo de la app (Rondas QR) a propósito: es donde
+// cada teléfono ya tiene guardada la sesión del administrador. Renombrarla dejaría
+// a todos fuera.
 const CLAVE_ADMIN = 'rondasqr-admin';
 let sesion = cargarSesion();
 let secuencia = [];        // puntoIds elegidos para la ronda en edición

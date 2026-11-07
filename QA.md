@@ -1,4 +1,4 @@
-# QA — Rondas QR
+# QA — Ronda
 
 **Fecha**: 2026-07-16 · **Resultado**: ✅ 12/12 escenarios automatizados en verde + smoke test manual en navegador. Todo en MOCK, $0 gastado, cero llamadas externas.
 
