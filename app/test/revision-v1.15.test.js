@@ -7,8 +7,11 @@
 // servidor otra vez apenas se levantaba.
 'use strict';
 
-process.env.FABRICA_USUARIO = 'fabrica';
-process.env.FABRICA_PIN = '87654321';
+// Cuenta de la operación (acceso total): la única que configura los puntos.
+process.env.ADMIN_TOTAL_USUARIO = 'operacion';
+process.env.ADMIN_TOTAL_NOMBRE = 'Operación (test)';
+process.env.ADMIN_TOTAL_PIN = 'Prueba2026Total';
+process.env.ADMIN_TOTAL_CONDOMINIO = 'aromos';
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,6 +39,23 @@ async function api(ruta, { metodo = 'GET', cuerpo, token } = {}) {
 }
 
 const login = async (usuario, pin) => (await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } })).datos;
+
+// Los puntos los configura solo la cuenta de la operación (acceso total),
+// parada en el condominio que elige en el selector del panel (x-condominio).
+// Con `token` en las opciones se prueba la misma ruta con otra cuenta.
+let tokenOperacion;
+async function configurarPunto(resto, { metodo = 'GET', cuerpo, token } = {}, condominio = 'aromos') {
+  const pedir = (ruta, m, c, t) => fetch(base + ruta, {
+    method: m,
+    headers: { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}), 'x-condominio': condominio },
+    body: c ? JSON.stringify(c) : undefined
+  });
+  if (!token && !tokenOperacion) {
+    tokenOperacion = (await (await pedir('/api/login', 'POST', { usuario: 'operacion', pin: 'Prueba2026Total' })).json()).token;
+  }
+  const resp = await pedir(`/api/admin/puntos${resto}`, metodo, cuerpo, token || tokenOperacion);
+  return { status: resp.status, datos: await resp.json().catch(() => ({})) };
+}
 
 test.before(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-rev-'));
@@ -280,7 +300,7 @@ test('cambiar el modo de verificación no deja pegados los umbrales del modo ant
   const punto = (await api('/api/admin/puntos', {
     metodo: 'POST', token: admin.token, cuerpo: { nombre: 'Sala calderas rev' }
   })).datos;
-  const put = cuerpo => api(`/api/admin/puntos/${punto.id}`, { metodo: 'PUT', token: admin.token, cuerpo });
+  const put = cuerpo => configurarPunto(`/${punto.id}`, { metodo: 'PUT', cuerpo });
 
   await put({ lat: -33.45, lon: -70.66, precisionM: 8, verificacion: 'anclaje' });
   const anclado = (await put({ ventanaMin: '5', radioM: '55' })).datos;

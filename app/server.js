@@ -694,6 +694,21 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
 
   // ---------- Admin: puntos ----------
 
+  // Configurar un punto (renombrarlo, moverle o quitarle la ubicación, cambiarle
+  // la chapita, eliminarlo) cambia lo que el servidor le exige al guardia: un
+  // toque equivocado del administrador del condominio dejaba una ronda entera
+  // sin poder marcarse. Por eso solo lo hace la cuenta de la operación
+  // (accesoTotal), parada en el condominio que elige en el selector del panel.
+  // El administrador del condominio LEE los puntos (para armar rondas e
+  // imprimir la hoja de QR) y puede crear uno por nombre desde el editor de
+  // rondas: un punto recién creado no tiene ubicación ni chapita, así que no
+  // puede romper ninguna ronda.
+  function soloOperacion(req, res, next) {
+    if (!req.usuario.accesoTotal) return res.status(403).json({ error: 'Los puntos los configura el equipo de Rondas QR. Pídelo a soporte.' });
+    next();
+  }
+  const operacion = [...admin, soloOperacion];
+
   app.get('/api/admin/puntos', ...admin, (req, res) => {
     res.json(db.puntos.filter(p => p.condominioId === miCondominio(req)));
   });
@@ -704,7 +719,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   // ejecuciones: si falla o tarda, la tabla de puntos carga igual.
   const DIAS_SENAL = 30;
   const LIMITE_SENAL = 3000;
-  app.get('/api/admin/puntos/senal', ...admin, (req, res) => {
+  app.get('/api/admin/puntos/senal', ...operacion, (req, res) => {
     const condominioId = miCondominio(req);
     const desde = new Date(Date.now() - DIAS_SENAL * 86400000).toISOString();
     const ejecuciones = store.ejecuciones.listar({ condominioId, desde, limite: LIMITE_SENAL });
@@ -722,7 +737,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     // chapita en terreno. No sale en la hoja de QR, y hasta que la chapita
     // quede registrada el servidor lo trata como un punto sin chapita: se
     // marca con el código a mano (lo da el administrador).
-    if ((req.body || {}).medio === 'nfc') punto.nfcPendiente = true;
+    if (req.usuario.accesoTotal && (req.body || {}).medio === 'nfc') punto.nfcPendiente = true;
     db.puntos.push(punto);
     store.guardar();
     res.status(201).json(punto);
@@ -732,7 +747,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   // coordenada que los produjo.
   const EVIDENCIA_MEDICION = ['muestras', 'dispersionM', 'precisionDeclaradaM', 'medidoConVersion'];
 
-  app.put('/api/admin/puntos/:id', ...admin, (req, res) => {
+  app.put('/api/admin/puntos/:id', ...operacion, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
     const { lat, lon, precisionM, quitarUbicacion, verificacion, radioM, ventanaMin } = req.body || {};
@@ -838,7 +853,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   // Chrome, parado junto a la chapita— y recién al final, con el texto escrito y
   // verificado, manda acá la serie de fábrica que leyó. Desde ese momento el
   // punto solo acepta esa chapita (o el código a mano, ver lib/rondas.js).
-  app.put('/api/admin/puntos/:id/chapita', ...admin, (req, res) => {
+  app.put('/api/admin/puntos/:id/chapita', ...operacion, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
     const serie = normalizarSerie((req.body || {}).serie);
@@ -865,7 +880,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   // registrada y que tiene el código del punto, y la dejó de solo lectura
   // (makeReadOnly). Acá solo se anota. La serie tiene que ser la del punto:
   // así no se anota bloqueada una chapita que no es la que el punto exige.
-  app.put('/api/admin/puntos/:id/chapita/bloqueo', ...admin, (req, res) => {
+  app.put('/api/admin/puntos/:id/chapita/bloqueo', ...operacion, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
     if (!punto.nfcSerie) return res.status(409).json({ error: 'Este punto no tiene chapita: primero hay que grabarla.' });
@@ -881,7 +896,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
   });
 
   // "Volver a QR": el punto deja de tener chapita y se marca como siempre.
-  app.delete('/api/admin/puntos/:id/chapita', ...admin, (req, res) => {
+  app.delete('/api/admin/puntos/:id/chapita', ...operacion, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
     delete punto.nfcSerie;
@@ -893,7 +908,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     res.json(punto);
   });
 
-  app.delete('/api/admin/puntos/:id', ...admin, (req, res) => {
+  app.delete('/api/admin/puntos/:id', ...operacion, (req, res) => {
     const i = db.puntos.findIndex(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (i === -1) return res.status(404).json({ error: 'El punto no existe.' });
     const [punto] = db.puntos.splice(i, 1);

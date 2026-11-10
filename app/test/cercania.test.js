@@ -7,6 +7,11 @@
 'use strict';
 
 process.env.MOCK = 'true';
+// Cuenta de la operación (acceso total): la única que configura los puntos.
+process.env.ADMIN_TOTAL_USUARIO = 'operacion';
+process.env.ADMIN_TOTAL_NOMBRE = 'Operación (test)';
+process.env.ADMIN_TOTAL_PIN = 'Prueba2026Total';
+process.env.ADMIN_TOTAL_CONDOMINIO = 'aromos';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -35,6 +40,23 @@ async function login(usuario, pin) {
   const { status, datos } = await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } });
   assert.equal(status, 200);
   return datos;
+}
+
+// Los puntos los configura solo la cuenta de la operación (acceso total),
+// parada en el condominio que elige en el selector del panel (x-condominio).
+// Con `token` en las opciones se prueba la misma ruta con otra cuenta.
+let tokenOperacion;
+async function configurarPunto(resto, { metodo = 'GET', cuerpo, token } = {}, condominio = 'aromos') {
+  const pedir = (ruta, m, c, t) => fetch(base + ruta, {
+    method: m,
+    headers: { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}), 'x-condominio': condominio },
+    body: c ? JSON.stringify(c) : undefined
+  });
+  if (!token && !tokenOperacion) {
+    tokenOperacion = (await (await pedir('/api/login', 'POST', { usuario: 'operacion', pin: 'Prueba2026Total' })).json()).token;
+  }
+  const resp = await pedir(`/api/admin/puntos${resto}`, metodo, cuerpo, token || tokenOperacion);
+  return { status: resp.status, datos: await resp.json().catch(() => ({})) };
 }
 
 test.before(async () => {
@@ -119,9 +141,7 @@ test('motor: GPS_CERCANIA_MIN=0 la apaga', () => {
 test('API: la marca por cercanía entra, queda guardada y en el informe es una marca normal', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
-  const fijar = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: LAT, lon: LON, precisionM: 5 }
-  });
+  const fijar = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: LAT, lon: LON, precisionM: 5 } });
   assert.equal(fijar.status, 200);
 
   // El paquete trae los umbrales de la cercanía: la app decide sin señal con
@@ -176,7 +196,7 @@ test('API: la marca por cercanía entra, queda guardada y en el informe es una m
   assert.doesNotMatch(linea, /cercanía|⚠️|m del punto/, 'el informe la muestra como una marca normal');
   assert.equal(detalle.gps.acc, 15, 'la lectura del momento también queda en la marca');
 
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });
 
 // Para el estado de la ronda, la marca por cercanía es una marca normal: la
@@ -210,7 +230,7 @@ test('motor: una ronda completa con una marca por cercanía queda «completa», 
 test('API: una marca que entró por la lectura del momento no cambia en nada', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { lat: LAT, lon: LON, precisionM: 5 } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: LAT, lon: LON, precisionM: 5 } });
   const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
   const esc = await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
     metodo: 'POST', token: pedro.token, cuerpo: { codigo: 'PRT234', gps: lectura(5, 6, 1000) }
@@ -221,5 +241,5 @@ test('API: una marca que entró por la lectura del momento no cambia en nada', a
   assert.equal(detalle.porCercania, false);
   assert.ok(!('distanciaAhoraM' in detalle), 'una marca directa queda con la forma de siempre');
   assert.doesNotMatch(informeTexto(cierre.datos), /por cercanía/);
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });

@@ -1393,6 +1393,13 @@ async function cargarAvisos() {
 
 // ---------- Selector de condominio ----------
 
+function verPestanaPuntos(ver) {
+  const pestana = document.querySelector('.pestana[data-tab="puntos"]');
+  const nota = $('nota-puntos-soporte');
+  pestana.classList[ver ? 'remove' : 'add']('oculta');
+  nota.classList[ver ? 'add' : 'remove']('oculta');
+}
+
 // Carga los condominios en el selector de la barra. Si el guardado ya no existe
 // (lo borraron desde la fábrica, o es de una sesión vieja de cuando cualquier
 // admin veía todos), se cae al que diga el servidor.
@@ -1400,6 +1407,10 @@ async function cargarAvisos() {
 // Solo la cuenta de acceso total recibe más de uno. Con uno solo el selector
 // no sirve para nada: se esconde y queda el nombre del condominio.
 async function cargarSelectorCondominios() {
+  // La pestaña Puntos es solo de la cuenta de la operación. Parte escondida y
+  // se muestra recién cuando el servidor dice que esta cuenta es la de acceso
+  // total (si la consulta falla, queda escondida).
+  verPestanaPuntos(false);
   const sel = $('selector-condominio');
   const fijo = $('nombre-condominio');
   const mostrarFijo = nombre => {
@@ -1416,6 +1427,7 @@ async function cargarSelectorCondominios() {
     mostrarFijo(sesion.condominio && sesion.condominio.nombre);
     return;
   }
+  verPestanaPuntos(Boolean(datos.accesoTotal));
   const lista = datos.condominios || [];
   sel.innerHTML = lista.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('');
   const elegido = lista.some(c => c.id === condominioActivo())

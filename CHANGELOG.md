@@ -2,6 +2,17 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-09 · Los puntos solo se configuran desde la cuenta de la operación
+
+Renombrar un punto, moverle o quitarle la ubicación, cambiarle la chapita o eliminarlo cambia lo que el servidor le exige al guardia: un toque equivocado del administrador de un condominio dejaba la ronda entera sin poder marcarse.
+
+- **La pestaña Puntos del panel solo la ve la cuenta de acceso total** (`ADMIN_TOTAL_*`), que la usa como siempre sobre el condominio elegido en el selector. Parte escondida y se muestra cuando `GET /api/admin/condominios` confirma `accesoTotal`.
+- **El administrador de un condominio** ve Informes, Guardias, Rondas y Avisos. Sigue leyendo los puntos para armar rondas, y «Imprimir hoja de QR» también está en la pestaña Rondas. Escribir un nombre nuevo en el editor de rondas sigue creando un punto: nace sin ubicación ni chapita, así que no puede romper una ronda (y ya no puede nacer «con chapita»).
+- **Servidor:** `PUT`/`DELETE /api/admin/puntos/:id`, las tres rutas de `…/chapita` y `GET /api/admin/puntos/senal` responden **403** «Los puntos los configura el equipo de Rondas QR» a toda cuenta sin `accesoTotal`. Los cuerpos y las respuestas no cambiaron. La fábrica no cambia.
+- **Si `ADMIN_TOTAL_*` no está configurado, nadie puede configurar puntos.** En producción ya lo está.
+- **Fully Kiosk:** no cambia nada en la app del guardia.
+- Tests: `test/rondas.test.js` (solo la operación configura puntos; administrador, fábrica y guardia reciben 403), `test/chapita-nfc.test.js`, `test/senal-puntos.test.js`. `test/compat-qr.test.js`: mismos pasos, mismas respuestas que la v1.22.
+
 ## Sin publicar — 2026-11-05 · La configuración de Railway pasa a `.railway/railway.ts`
 
 Railway deja de leer `railway.json` el 1/12. El comando de arranque, lo único que venía de `app/railway.json`, ahora está guardado en el servicio (aplicado con `railway config apply`; la configuración que ya tenía, como el reinicio `ON_FAILURE`, no cambió). Su copia en código es `.railway/railway.ts`, y `app/railway.json` se borra. La app no cambia.

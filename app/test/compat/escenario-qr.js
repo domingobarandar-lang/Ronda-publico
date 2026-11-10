@@ -69,6 +69,13 @@ async function escenarioServidor({ crearApp, datosSemilla, calcularSemanal }) {
   const jorge = await login('jorge', '5555');
 
   // ---- Panel: puntos y ubicaciones
+  // En la v1.22 los configuraba el administrador del condominio; hoy solo la
+  // cuenta de la operación (acceso total). Los pasos y las respuestas tienen
+  // que ser idénticos: lo único que cambió es quién puede hacerlos. Para no
+  // sumar una cuenta que la referencia no tiene, Marta lleva la marca de acceso
+  // total solo mientras duran estos pasos.
+  const cuentaMarta = store.db.usuarios.find(u => u.usuario === 'marta');
+  cuentaMarta.accesoTotal = true;
   await api('admin puntos', '/api/admin/puntos', { token: marta });
   const nuevo = await api('admin agrega punto', '/api/admin/puntos', { metodo: 'POST', token: marta, cuerpo: { nombre: 'Jardín' } });
   await api('admin agrega punto sin nombre', '/api/admin/puntos', { metodo: 'POST', token: marta, cuerpo: { nombre: '  ' } });
@@ -90,6 +97,7 @@ async function escenarioServidor({ crearApp, datosSemilla, calcularSemanal }) {
   }
   await api('admin elimina punto', `/api/admin/puntos/${nuevo.id}`, { metodo: 'DELETE', token: marta });
   await api('admin elimina punto inexistente', '/api/admin/puntos/no-existe', { metodo: 'DELETE', token: marta });
+  delete cuentaMarta.accesoTotal;
 
   // ---- Guardia: paquete
   const paquete = await api('paquete pedro', '/api/mi/paquete', { token: pedro });

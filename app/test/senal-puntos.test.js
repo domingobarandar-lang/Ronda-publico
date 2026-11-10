@@ -1,6 +1,11 @@
 // Señal por punto (ADR-001, fase 2): la cuenta que ve el administrador en el
 // panel y que usa el diagnóstico de la base, con marcas y rechazos de verdad.
 process.env.MOCK = 'true';
+// Cuenta de la operación (acceso total): la única que configura los puntos.
+process.env.ADMIN_TOTAL_USUARIO = 'operacion';
+process.env.ADMIN_TOTAL_NOMBRE = 'Operación (test)';
+process.env.ADMIN_TOTAL_PIN = 'Prueba2026Total';
+process.env.ADMIN_TOTAL_CONDOMINIO = 'aromos';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -136,7 +141,7 @@ test('marcas sin GPS y rechazos de otros puntos', () => {
   assert.equal(s.rechazosGps, 0);
 });
 
-test('API: GET /api/admin/puntos/senal, solo el administrador y solo su condominio', async () => {
+test('API: la señal de los puntos de un condominio, solo para la cuenta de la operación', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-senal-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
@@ -154,7 +159,10 @@ test('API: GET /api/admin/puntos/senal, solo el administrador y solo su condomin
   try {
     const marta = (await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'marta', pin: '1111' } })).datos;
     const pedro = (await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'pedro', pin: '2222' } })).datos;
-    await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { lat: LAT, lon: LON, precisionM: 5 } });
+    // Los puntos (y su señal) son de la cuenta de la operación, no del administrador.
+    const operacion = (await api('/api/login', { metodo: 'POST', cuerpo: { usuario: 'operacion', pin: 'Prueba2026Total' } })).datos;
+    const configurarPunto = (resto, opciones = {}) => api(`/api/admin/puntos${resto}`, { token: operacion.token, ...opciones });
+    await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: LAT, lon: LON, precisionM: 5 } });
 
     // Una ronda de hoy y una de hace 40 días: la vieja no cuenta.
     const hoy = new Date().toISOString();
@@ -167,19 +175,22 @@ test('API: GET /api/admin/puntos/senal, solo el administrador y solo su condomin
       });
     }
 
-    const r = await api('/api/admin/puntos/senal', { token: marta.token });
+    const r = await configurarPunto('/senal', {});
     assert.equal(r.status, 200);
     assert.equal(r.datos.dias, 30);
     assert.equal(r.datos.ejecuciones, 1);
     const porteria = r.datos.puntos.find(s => s.puntoId === 'p-porteria');
     assert.equal(porteria.marcas, 3);
     assert.equal(porteria.nivel, 'buena');
-    // Solo los puntos del condominio del administrador.
+    // Solo los puntos del condominio pedido.
     const propios = store.db.puntos.filter(p => p.condominioId === 'aromos').map(p => p.id).sort();
     assert.deepEqual(r.datos.puntos.map(s => s.puntoId).sort(), propios);
 
-    const comoGuardia = await api('/api/admin/puntos/senal', { token: pedro.token });
-    assert.ok(comoGuardia.status === 401 || comoGuardia.status === 403, `el guardia recibió ${comoGuardia.status}`);
+    for (const [quien, token] of [['guardia', pedro.token], ['administrador', marta.token]]) {
+      const r = await configurarPunto('/senal', { token });
+      assert.equal(r.status, 403, `el ${quien} recibió ${r.status}`);
+    }
+    assert.equal((await api('/api/admin/puntos/senal', { token: marta.token })).status, 403, 'la ruta del panel ya no existe');
   } finally {
     servidor.close();
   }
