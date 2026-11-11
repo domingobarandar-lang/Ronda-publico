@@ -137,7 +137,7 @@ test('marcas sin GPS y rechazos de otros puntos', () => {
 });
 
 test('API: GET /api/admin/puntos/senal, solo el administrador y solo su condominio', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-senal-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-senal-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const { app, store } = crearApp({ rutaDb, enviarPush: async () => {} });

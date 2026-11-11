@@ -8,7 +8,7 @@ const path = require('path');
 const { crearStore } = require('../lib/store');
 const motor = require('../lib/rondas');
 
-const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-mig-')), 'rondas.sqlite'));
+const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-mig-')), 'rondas.sqlite'));
 
 test('iniciarEjecucion usa el repositorio: la nueva no se guarda sola y la repetida vuelve la guardada', () => {
   const store = nuevoStore();
@@ -127,7 +127,7 @@ async function api(ruta, { metodo = 'GET', cuerpo, token } = {}) {
 const login = async (usuario, pin) => (await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } })).datos;
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-mig-app-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-mig-app-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   app = crearApp({ rutaDb, enviarPush: async () => {} });

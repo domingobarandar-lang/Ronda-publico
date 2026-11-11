@@ -20,7 +20,7 @@ const COMENTARIOS = {
 };
 
 async function main(salida) {
-  const store = crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-ejemplo-')), 'rondas.sqlite'));
+  const store = crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-ejemplo-')), 'rondas.sqlite'));
   store.db.condominios.push({ id: 'c1', nombre: 'Condominio Los Aromos' });
   store.db.usuarios.push({ id: 'g1', nombre: 'Pedro Soto' }, { id: 'g2', nombre: 'Ana Rojas' }, { id: 'g3', nombre: 'Luis Díaz' });
   ['Portería', 'Estacionamiento visitas', 'Sala de bombas', 'Quincho', 'Piscina', 'Bodega norte']

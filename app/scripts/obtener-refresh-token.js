@@ -81,7 +81,7 @@ async function intercambiarCodigo(code) {
   if (!j.refresh_token) {
     console.error(
       'Google no mandó refresh_token (pasa si ya habías autorizado esta app antes).\n'
-      + 'Anda a https://myaccount.google.com/permissions, quita el acceso de "Rondas QR" '
+      + 'Anda a https://myaccount.google.com/permissions, quita el acceso de "Ronda" '
       + '(o el nombre que le hayas puesto al OAuth client) y vuelve a correr este script.'
     );
     process.exit(1);

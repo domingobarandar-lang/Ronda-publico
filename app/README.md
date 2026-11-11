@@ -1,4 +1,4 @@
-# Rondas QR
+# Ronda
 
 Control de rondas de seguridad para condominios: QR impresos en cada sector + el teléfono del guardia, en reemplazo de las chapitas físicas (iButton) y su lectora.
 
@@ -82,7 +82,7 @@ Cubre los casos de uso del SPEC y los adversariales (permisos cruzados entre con
 | `GMAIL_CLIENT_ID` | — | Client ID del OAuth client de Google (tipo "Desktop app", Gmail API habilitada) |
 | `GMAIL_CLIENT_SECRET` | — | Client secret de ese mismo OAuth client |
 | `GMAIL_REFRESH_TOKEN` | — | Se saca UNA VEZ desde tu compu con `node scripts/obtener-refresh-token.js`. Sin las 3 credenciales el informe semanal por correo queda en pausa (no rompe nada) |
-| `GMAIL_FROM` | `Rondas QR <tu-cuenta@gmail.com>` | Remitente. Tiene que ser la misma cuenta dueña del refresh token: Gmail rechaza mandar "de" otra cuenta |
+| `GMAIL_FROM` | `Ronda <tu-cuenta@gmail.com>` | Remitente. Tiene que ser la misma cuenta dueña del refresh token: Gmail rechaza mandar "de" otra cuenta |
 | `INFORME_TO` | — | Respaldo: a dónde va el informe de los condominios que aún no cargaron su correo en el panel. Vacío = esos no se envían |
 | `INFORME_DIA` / `INFORME_HORA` | `1` / `8` | Cuándo sale (1 = lunes, hora de Chile) |
 | `INFORME_CONDOMINIOS` | — | Lista blanca opcional de ids. Vacío = todos los que tengan correo cargado |

@@ -1,6 +1,16 @@
-# Cambios — Rondas QR
+# Cambios — Ronda
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
+
+## Sin publicar — 2026-11-07 · La app pasa a llamarse **Ronda**
+
+Con las chapitas NFC la app ya no es solo de QR. Cambia el nombre visible en todas partes: títulos y cabeceras de las tres apps, manifiestos de la PWA (el nombre del ícono instalado se actualiza solo cuando Chrome refresca el manifiesto), notificaciones, correos (informe, respaldo, avisos), el informe semanal en Word, la página de eliminar cuenta, los mensajes de los scripts y la documentación. También el paquete (`ronda`), el `release` de Sentry (`ronda@<versión>`) y el caché del service worker (`ronda-<versión>`; el viejo se borra al activar, como en cada versión).
+
+**No cambian, a propósito:**
+- Las claves de `localStorage` e IndexedDB de los teléfonos (`rondasqr`, `rondasqr-admin`, `rondas-qr-fabrica`, …): ahí está la sesión y la cola de marcas sin enviar; renombrarlas cerraría la sesión de todos y perdería las marcas pendientes.
+- El servicio, volumen y proyecto de Railway en `.railway/railway.ts`: si el archivo dice un nombre que Railway no tiene, `config apply` borra y crea, y el volumen es la base. Se renombran primero en Railway y después `railway config pull`.
+- El dominio `tu-servidor.example.com`: la PWA instalada y lo que guarda está atado al dominio, y las chapitas NFC ya grabadas apuntan a él.
+- El nombre del repositorio en GitHub (se cambia en Settings del repo).
 
 ## Sin publicar — 2026-11-05 · La configuración de Railway pasa a `.railway/railway.ts`
 

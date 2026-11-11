@@ -69,7 +69,7 @@ function fotoDelDia(store, { dir, fecha, conservar }) {
 
 function textoCorreo({ fecha, conteos, bytesGz, adjunto, aviso }) {
   const lineas = [
-    `Respaldo diario de la base de Rondas QR del ${fecha}.`,
+    `Respaldo diario de la base de Ronda del ${fecha}.`,
     '',
     `Contenido: ${conteos.condominios} condominios, ${conteos.usuarios} usuarios, ${conteos.puntos} puntos, `
       + `${conteos.ejecuciones} rondas, ${conteos.notificaciones} avisos.`,
@@ -80,7 +80,7 @@ function textoCorreo({ fecha, conteos, bytesGz, adjunto, aviso }) {
   lineas.push(adjunto
     ? 'Para restaurarlo: node scripts/restaurar-respaldo.js <archivo>.sqlite.gz --aplicar y reiniciar el servicio (ver entrega/OPERACION.md).'
     : 'La foto quedó en el volumen del servidor (/data/respaldos/), pero NO va adjunta por su tamaño.');
-  lineas.push('', 'Trae hashes de PIN, correos y ubicaciones GPS: no lo reenvíes ni lo guardes en carpetas compartidas.', '', '— Rondas QR');
+  lineas.push('', 'Trae hashes de PIN, correos y ubicaciones GPS: no lo reenvíes ni lo guardes en carpetas compartidas.', '', '— Ronda');
   return lineas.join('\n');
 }
 
@@ -125,7 +125,7 @@ async function revisar(store, {
     const conteos = store.conteos();
     const r = await enviar({
       to: op.to,
-      subject: `${aviso ? '⚠️ ' : ''}Respaldo Rondas QR — ${ahora.fecha}`,
+      subject: `${aviso ? '⚠️ ' : ''}Respaldo Ronda — ${ahora.fecha}`,
       texto: textoCorreo({ fecha: ahora.fecha, conteos, bytesGz: gz.length, adjunto, aviso }),
       adjuntos: adjunto ? [{ filename: `rondas-${ahora.fecha}.sqlite.gz`, content: gz, contentType: 'application/gzip' }] : [],
       grande: true

@@ -62,7 +62,7 @@ function marcar(token, ejecucionId, cuerpo) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-nfc-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-nfc-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });

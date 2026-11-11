@@ -38,7 +38,7 @@ async function login(usuario, pin) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-cercania-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-cercania-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });

@@ -61,7 +61,7 @@ function dsnConfigurado() {
 function configCliente() {
   const dsn = dsnConfigurado();
   if (!dsn) return {};
-  return { dsn, release: 'rondas-qr@' + require('../package.json').version, entorno: entornoActual() };
+  return { dsn, release: 'ronda@' + require('../package.json').version, entorno: entornoActual() };
 }
 
 // Inicia Sentry si hay DSN. Devuelve true si quedó activo. Nunca lanza.
@@ -72,7 +72,7 @@ function iniciar() {
     sdk = require('@sentry/node');
     sdk.init({
       dsn,
-      release: 'rondas-qr@' + require('../package.json').version,
+      release: 'ronda@' + require('../package.json').version,
       environment: entornoActual(),
       sendDefaultPii: false,
       tracesSampleRate: 0,

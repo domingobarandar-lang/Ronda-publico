@@ -39,7 +39,7 @@ const iso = t => new Date(t).toISOString();
 const MIN = 60000;
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-kiosco-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-kiosco-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async (s, payload) => { enviados.push({ endpoint: s.endpoint, datos: JSON.parse(payload) }); } });

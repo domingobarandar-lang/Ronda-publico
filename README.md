@@ -1,10 +1,10 @@
-# Rondas QR
+# Ronda
 
 Control de rondas de seguridad con QR para condominios: reemplaza las chapitas físicas (iButton) + lectora por QR impresos y el teléfono del guardia. Son **dos apps instalables** sobre el mismo servidor, cada una con su ícono y su acceso:
 
 | | Dirección | Para quién |
 |---|---|---|
-| 🛡️ **Rondas QR** | `/` | El guardia: hace la ronda escaneando los QR, con o sin señal (PWA offline-first). Ahí mismo crea su usuario. |
+| 🛡️ **Ronda** | `/` | El guardia: hace la ronda escaneando los QR, con o sin señal (PWA offline-first). Ahí mismo crea su usuario. |
 | 🗂️ **Panel del administrador** | `/panel` | El administrador: informes, puntos, guardias, rondas y avisos. |
 
 Usuarios de prueba: `guardia`/5678 (app del guardia) y `admin`/1234 (panel).

@@ -73,7 +73,7 @@ function armarBase(ruta, { guardias, rondas }) {
 }
 
 async function pruebaCarga({ guardias = 100, rondas = 100000, log = console.log } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-carga-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-carga-'));
   const ruta = path.join(dir, 'rondas.sqlite');
   const resultado = { guardias, rondas };
   try {

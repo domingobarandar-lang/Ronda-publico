@@ -66,7 +66,7 @@ function sinRastro(texto, ...datos) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-del-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-del-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });

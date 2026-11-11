@@ -15,7 +15,7 @@ const { hashPin } = require('../lib/auth');
 
 const APP = path.join(__dirname, '..');
 const silencio = { log: () => {} };
-const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-scripts-'));
+const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-scripts-'));
 
 // Una base sembrada con rondas y avisos en los dos condominios de la demo.
 function baseConHistorial(dir) {

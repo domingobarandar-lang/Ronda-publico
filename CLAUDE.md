@@ -1,4 +1,4 @@
-# Rondas QR
+# Ronda
 
 Control de rondas de seguridad con QR para condominios. Dos apps PWA sobre un
 mismo servidor Express: la del guardia (`/`) y el panel del administrador

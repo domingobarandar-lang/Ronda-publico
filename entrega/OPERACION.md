@@ -1,4 +1,4 @@
-# OPERACIÓN — Rondas QR
+# OPERACIÓN — Ronda
 
 Guía de administración y operación. Público: José (soporte) y el administrador del condominio (uso diario).
 

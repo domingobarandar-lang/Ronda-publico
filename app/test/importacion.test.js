@@ -10,7 +10,7 @@ const { crearStore } = require('../lib/store');
 const { datosSemilla, sembrar, estaVacia } = require('../seed');
 
 const silencio = { log: () => {} };
-const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-import-'));
+const carpeta = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-import-'));
 
 // Un db.json como el de producción: configuración, ejecuciones con escaneos,
 // GPS y rechazos, notificaciones de los dos medios, sesiones y claves VAPID.

@@ -13,7 +13,7 @@
 // VERSION: subirla en cada release (junto con package.json) — invalida el
 // caché viejo en activate.
 const VERSION = 'v1.27.0';
-const CACHE = 'rondasqr-' + VERSION;
+const CACHE = 'ronda-' + VERSION;
 const SHELL = [
   // App del guardia: sin esto no hay ronda sin señal.
   './',
@@ -102,7 +102,7 @@ self.addEventListener('push', e => {
     opciones.requireInteraction = true;
     opciones.vibrate = [400, 200, 400, 200, 400];
   }
-  e.waitUntil(self.registration.showNotification(datos.titulo || 'Rondas QR', opciones));
+  e.waitUntil(self.registration.showNotification(datos.titulo || 'Ronda', opciones));
 });
 
 // Tocar la notificación abre el informe de esa ronda (o enfoca la pestaña si ya está abierta).

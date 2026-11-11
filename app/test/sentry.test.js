@@ -89,7 +89,7 @@ test('GET /api/config-errores: vacío sin DSN, con dsn y release con DSN', async
     r = await fetch(url);
     const cfg = await r.json();
     assert.equal(cfg.dsn, process.env.SENTRY_DSN);
-    assert.equal(cfg.release, 'rondas-qr@' + require('../package.json').version);
+    assert.equal(cfg.release, 'ronda@' + require('../package.json').version);
     assert.ok(['production', 'development'].includes(cfg.entorno));
     assert.equal(r.headers.get('cache-control'), 'no-store');
   } finally {
@@ -142,12 +142,12 @@ function navegador({ cfg, conSdk = true } = {}) {
 }
 
 test('navegador: con DSN inicia Sentry sin integraciones y reporta con tope y dedupe', async () => {
-  const b = navegador({ cfg: { dsn: 'https://k@o0.ingest.sentry.io/1', release: 'rondas-qr@1.20.1', entorno: 'production' } });
+  const b = navegador({ cfg: { dsn: 'https://k@o0.ingest.sentry.io/1', release: 'ronda@1.20.1', entorno: 'production' } });
   b.window.__reportarError(new Error('antes de la config')); // queda en espera
   await b.listo(); await b.listo();
   assert.equal(b.llamadas.init.length, 1);
   const o = b.llamadas.init[0];
-  assert.equal(o.release, 'rondas-qr@1.20.1');
+  assert.equal(o.release, 'ronda@1.20.1');
   assert.equal(o.environment, 'production');
   assert.equal(o.defaultIntegrations, false, 'sin handlers globales ni breadcrumbs automáticos');
   assert.equal(o.integrations.length, 0);
