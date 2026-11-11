@@ -1,4 +1,4 @@
-// QA de Rondas QR — cubre los casos de uso CU-01 a CU-14 del SPEC más
+// QA de Ronda — cubre los casos de uso CU-01 a CU-14 del SPEC más
 // escenarios adversariales (permisos cruzados, cierre repetido, escaneo tras
 // cierre). Todo en MOCK: cero llamadas externas.
 'use strict';
@@ -75,7 +75,7 @@ function payloadDe(paquete, rondaId, nombrePunto) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({
@@ -298,7 +298,7 @@ test('CU-11: CRUD de puntos, guardias y rondas del panel admin', async () => {
   // dejaba la ronda sin poder marcarse. Eso lo hace la cuenta de la operación.
   const renombrar = await api(`/api/admin/puntos/${punto.datos.id}`, { metodo: 'PUT', token, cuerpo: { nombre: 'Otro nombre' } });
   assert.equal(renombrar.status, 403);
-  assert.match(renombrar.datos.error, /Rondas QR/);
+  assert.match(renombrar.datos.error, /equipo de Ronda/);
   assert.equal((await api(`/api/admin/puntos/${punto.datos.id}`, { metodo: 'DELETE', token })).status, 403);
   const intacto = (await api('/api/admin/puntos', { token })).datos.find(p => p.id === punto.datos.id);
   assert.equal(intacto.nombre, 'Antena');

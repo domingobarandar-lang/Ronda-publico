@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
 const { crearApp } = require('../server');
 const { datosSemilla } = require('../seed');
 
-const capturas = path.resolve(process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-nfc-')));
+const capturas = path.resolve(process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-nfc-')));
 fs.mkdirSync(capturas, { recursive: true });
 
 // La chapita de mentira: una serie fija y lo que el panel le escriba.
@@ -54,7 +54,7 @@ function revisar(nombre, ok, detalle = '') {
 }
 
 (async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-nfc-db-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-nfc-db-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const { app } = crearApp({ rutaDb, enviarPush: async () => {} });

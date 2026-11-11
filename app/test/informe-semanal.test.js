@@ -8,7 +8,7 @@ const path = require('path');
 const { crearStore } = require('../lib/store');
 const { calcular, revisarCoherencia, repartir, generarInformeSemanal } = require('../lib/informe-semanal');
 
-const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-inf-')), 'rondas.sqlite'));
+const nuevoStore = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-inf-')), 'rondas.sqlite'));
 const RANGO = { condominioId: 'c1', desde: '2026-09-14', hasta: '2026-09-20' };
 
 // Condominio con `n` puntos (P1..Pn, cargados en ese orden) y una ronda que los recorre todos.

@@ -7,6 +7,9 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
+// La clave conserva el nombre viejo de la app (Rondas QR) a propósito: es donde
+// cada teléfono ya tiene guardada la sesión de la fábrica. Renombrarla dejaría
+// a todos fuera.
 const CLAVE_SESION = 'rondas-qr-fabrica';
 
 let sesion = null;

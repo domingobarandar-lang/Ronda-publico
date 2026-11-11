@@ -41,7 +41,7 @@ function config() {
     clientId: process.env.GMAIL_CLIENT_ID,
     clientSecret: process.env.GMAIL_CLIENT_SECRET,
     refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-    from: process.env.GMAIL_FROM || 'Rondas QR <tu-cuenta@gmail.com>',
+    from: process.env.GMAIL_FROM || 'Ronda <tu-cuenta@gmail.com>',
     to: process.env.INFORME_TO
   };
 }
@@ -71,7 +71,7 @@ function texto(informes) {
   const rango = informes[0].datos.rango;
   if (informes.length === 1) {
     return `Adjunto el informe semanal de rondas de ${informes[0].datos.condominio}.\n\n`
-         + `Periodo: ${rango}\n\n— Rondas QR`;
+         + `Periodo: ${rango}\n\n— Ronda`;
   }
   const lista = informes.map(i => {
     const d = i.datos;
@@ -81,7 +81,7 @@ function texto(informes) {
          + (inc ? `, ${inc} incidencia${inc === 1 ? '' : 's'} que revisar` : ', sin incidencias');
   }).join('\n');
   return `Adjunto el informe semanal de rondas de tus ${informes.length} condominios.\n\n`
-       + `Periodo: ${rango}\n\n${lista}\n\n— Rondas QR`;
+       + `Periodo: ${rango}\n\n${lista}\n\n— Ronda`;
 }
 
 function base64url(texto) {
@@ -98,7 +98,7 @@ function cabeceraUtf8(texto) {
 // Gmail). Sin dependencias: es más simple que armar el MIME a mano con una
 // librería para un mensaje con texto plano + adjuntos .docx.
 function construirMime({ from, to, subject, texto: cuerpo, adjuntos }) {
-  const boundary = `rondasqr_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const boundary = `ronda_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const partes = [
     `From: ${from}`,
     `To: ${to.join(', ')}`,

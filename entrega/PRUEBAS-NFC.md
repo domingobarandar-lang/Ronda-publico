@@ -13,7 +13,7 @@ Las pruebas automáticas (`npm test`) y la simulación cubren la lógica: qué a
 Sirve para saber si el teléfono sirve, antes de comprar nada.
 
 1. **¿Tiene NFC?** Ajustes → buscar «NFC». Si no aparece, ese teléfono no tiene (el Redmi A7 Pro viene en una variante sin NFC). Un teléfono sin NFC no puede marcar puntos con chapita.
-2. **¿Lee algo?** Abrir la app del guardia en **Chrome** (no en Fully), iniciar una ronda de prueba que tenga un punto con chapita y tocar «Escanear». Acercar **cualquier tarjeta sin contacto**: la tarjeta bip!, una tarjeta bancaria con el símbolo de pago sin contacto, una credencial de oficina. La app debería decir «Esa chapita no es de Rondas QR» o «No se pudo leer la chapita». **Cualquiera de los dos prueba que la antena y el permiso funcionan.** De paso se aprende dónde tiene la antena ese teléfono (centro de la espalda, arriba, junto a la cámara).
+2. **¿Lee algo?** Abrir la app del guardia en **Chrome** (no en Fully), iniciar una ronda de prueba que tenga un punto con chapita y tocar «Escanear». Acercar **cualquier tarjeta sin contacto**: la tarjeta bip!, una tarjeta bancaria con el símbolo de pago sin contacto, una credencial de oficina. La app debería decir «Esa chapita no es de Ronda» o «No se pudo leer la chapita». **Cualquiera de los dos prueba que la antena y el permiso funcionan.** De paso se aprende dónde tiene la antena ese teléfono (centro de la espalda, arriba, junto a la cámara).
 3. **Los mensajes de error**, uno por uno:
    - NFC apagado en Ajustes → la app tiene que decir que está apagado y ofrecer Reintentar.
    - Negar el permiso la primera vez → la app tiene que decir cómo darlo (candado junto a la dirección → Permisos → NFC).

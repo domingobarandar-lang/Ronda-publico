@@ -28,7 +28,7 @@ const { chromium } = require('playwright');
 const { crearApp } = require('../server');
 const { datosSemilla } = require('../seed');
 
-const capturas = path.resolve(process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-sesion-')));
+const capturas = path.resolve(process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-sesion-')));
 fs.mkdirSync(capturas, { recursive: true });
 
 const resultados = [];
@@ -39,7 +39,7 @@ function revisar(nombre, ok, detalle = '') {
 const espera = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-sesion-db-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-sesion-db-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const { app, store } = crearApp({ rutaDb, enviarPush: async () => {} });

@@ -58,7 +58,7 @@ async function configurarPunto(resto, { metodo = 'GET', cuerpo, token } = {}, co
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-rev-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-rev-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });

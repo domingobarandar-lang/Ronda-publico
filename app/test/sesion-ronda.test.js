@@ -199,7 +199,7 @@ test('sin nada en el teléfono, al entrar se retoma la ronda abierta que tiene e
 // ---------- El servidor: GET /api/mi/ronda-en-curso ----------
 
 test('servidor: /api/mi/ronda-en-curso devuelve solo la ronda abierta del propio guardia', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-sesion-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-sesion-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const { app } = crearApp({ rutaDb, enviarPush: async () => {} });

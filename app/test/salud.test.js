@@ -19,7 +19,7 @@ const DIA = 24 * 60 * MIN;
 const AHORA = Date.parse('2026-10-31T15:00:00Z');
 const iso = t => new Date(t).toISOString();
 
-const nuevo = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-salud-')), 'rondas.sqlite'));
+const nuevo = () => crearStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-salud-')), 'rondas.sqlite'));
 
 const ejec = (id, condominioId, inicio, extra = {}) => ({
   id, rondaId: 'r1', condominioId, guardiaId: 'g1', inicio: iso(inicio), fin: null,
@@ -327,7 +327,7 @@ test('borrar la cuenta del guardia suelta su id de los eventos, que siguen conta
 });
 
 test('el registro sabe desde cuándo mide, y reabrir la base no lo reinicia', () => {
-  const ruta = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-salud-')), 'rondas.sqlite');
+  const ruta = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-salud-')), 'rondas.sqlite');
   const store = crearStore(ruta);
   const desde = store.salud.desde();
   assert.ok(!Number.isNaN(Date.parse(desde)), desde);

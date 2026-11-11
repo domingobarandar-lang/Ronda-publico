@@ -34,7 +34,7 @@ const LON = -70.6693;
 
 async function escenarioServidor({ crearApp, datosSemilla, calcularSemanal }) {
   process.env.MOCK = 'true';
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-compat-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-compat-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const push = [];

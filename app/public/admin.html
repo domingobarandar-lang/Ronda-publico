@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0e0e13">
-  <title>Rondas QR — Panel del administrador</title>
+  <title>Ronda — Panel del administrador</title>
   <!-- Manifiesto propio: el panel se instala como app aparte de la del guardia. -->
   <link rel="manifest" href="panel.webmanifest">
   <link rel="icon" href="icono-panel.svg" type="image/svg+xml">
@@ -16,7 +16,7 @@
   <section id="vista-login" class="login oculta">
     <div class="login-caja">
       <h1>🗂️ Panel del administrador</h1>
-      <p class="nota">Informes, puntos, guardias y avisos de Rondas QR</p>
+      <p class="nota">Informes, puntos, guardias y avisos de Ronda</p>
       <label>Usuario <input id="campo-usuario" autocapitalize="none" placeholder="ej: admin"></label>
       <label>PIN <input id="campo-pin" type="password" autocapitalize="none" autocomplete="current-password"></label>
       <button id="btn-login" class="btn btn-principal">Entrar</button>
@@ -33,7 +33,7 @@
   <section id="vista-panel" class="oculta">
     <header class="barra">
       <div class="barra-titulo">
-        <strong>🛡️ Rondas QR</strong>
+        <strong>🛡️ Ronda</strong>
         <!-- Todo lo que se ve en el panel (puntos, rondas, guardias, informes)
              es del condominio elegido acá. Con un solo condominio (toda cuenta
              que no sea la de acceso total) el selector se esconde y queda el
@@ -133,7 +133,7 @@
         <h2>Rondas</h2>
         <p class="nota">Define qué puntos se recorren y en qué orden. Escribe cada punto con el nombre que uses en tu condominio. <a href="hoja-qr.html" target="_blank">🖨️ Imprimir hoja de QR</a></p>
         <p id="nota-puntos-soporte" class="nota">
-          El nombre, la ubicación y la chapita NFC de cada punto los configura el equipo de Rondas QR:
+          El nombre, la ubicación y la chapita NFC de cada punto los configura el equipo de Ronda:
           si necesitas cambiar o eliminar un punto, pídelo a soporte.
         </p>
         <div class="editor-ronda">

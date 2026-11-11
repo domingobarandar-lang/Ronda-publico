@@ -84,7 +84,7 @@ function marcar(token, ejecucionId, cuerpo) {
 }
 
 test.before(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rondasqr-nfc-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ronda-nfc-'));
   const rutaDb = path.join(dir, 'db.json');
   fs.writeFileSync(rutaDb, JSON.stringify(datosSemilla()));
   const creado = crearApp({ rutaDb, enviarPush: async () => {} });
@@ -141,7 +141,7 @@ test('grabar chapita: valida la serie, la normaliza y la guarda', async () => {
   assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: '04:11:22:33:44:55:66' } })).status, 403);
   const porElPanel = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: '04:11:22:33:44:55:66' } });
   assert.equal(porElPanel.status, 403);
-  assert.match(porElPanel.datos.error, /Rondas QR/);
+  assert.match(porElPanel.datos.error, /equipo de Ronda/);
   assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'DELETE', token: admin })).status, 403);
   assert.equal(store.db.puntos.find(p => p.id === 'p-piscina').nfcSerie, SERIE, 'la chapita sigue siendo la que grabó la operación');
 });
