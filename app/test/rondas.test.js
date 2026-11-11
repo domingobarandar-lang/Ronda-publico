@@ -50,6 +50,23 @@ async function login(usuario, pin) {
   return datos;
 }
 
+// Los puntos los configura solo la cuenta de la operación (acceso total),
+// parada en el condominio que elige en el selector del panel (x-condominio).
+// Con `token` en las opciones se prueba la misma ruta con otra cuenta.
+let tokenOperacion;
+async function configurarPunto(resto, { metodo = 'GET', cuerpo, token } = {}, condominio = 'aromos') {
+  const pedir = (ruta, m, c, t) => fetch(base + ruta, {
+    method: m,
+    headers: { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}), 'x-condominio': condominio },
+    body: c ? JSON.stringify(c) : undefined
+  });
+  if (!token && !tokenOperacion) {
+    tokenOperacion = (await (await pedir('/api/login', 'POST', { usuario: 'operacion', pin: 'Prueba2026Total' })).json()).token;
+  }
+  const resp = await pedir(`/api/admin/puntos${resto}`, metodo, cuerpo, token || tokenOperacion);
+  return { status: resp.status, datos: await resp.json().catch(() => ({})) };
+}
+
 // El payload QR de un punto, tal como saldría impreso en la hoja.
 function payloadDe(paquete, rondaId, nombrePunto) {
   const ronda = paquete.rondas.find(r => r.id === rondaId);
@@ -277,8 +294,21 @@ test('CU-11: CRUD de puntos, guardias y rondas del panel admin', async () => {
   });
   assert.equal(ajena.status, 422);
 
-  // Al eliminar el punto, sale de la ronda
-  await api(`/api/admin/puntos/${punto.datos.id}`, { metodo: 'DELETE', token });
+  // El administrador no renombra ni elimina puntos: un toque equivocado
+  // dejaba la ronda sin poder marcarse. Eso lo hace la cuenta de la operación.
+  const renombrar = await api(`/api/admin/puntos/${punto.datos.id}`, { metodo: 'PUT', token, cuerpo: { nombre: 'Otro nombre' } });
+  assert.equal(renombrar.status, 403);
+  assert.match(renombrar.datos.error, /equipo de Ronda/);
+  assert.equal((await api(`/api/admin/puntos/${punto.datos.id}`, { metodo: 'DELETE', token })).status, 403);
+  const intacto = (await api('/api/admin/puntos', { token })).datos.find(p => p.id === punto.datos.id);
+  assert.equal(intacto.nombre, 'Antena');
+  // Tampoco elige chapita NFC al crear: eso es de la cuenta de la operación.
+  const conMedio = await api('/api/admin/puntos', { metodo: 'POST', token, cuerpo: { nombre: 'Con medio', medio: 'nfc' } });
+  assert.equal(conMedio.datos.nfcPendiente, undefined);
+  await configurarPunto(`/${conMedio.datos.id}`, { metodo: 'DELETE' });
+
+  // Al eliminar el punto (la operación), sale de la ronda
+  assert.equal((await configurarPunto(`/${punto.datos.id}`, { metodo: 'DELETE' })).status, 200);
   const rondas = await api('/api/admin/rondas', { token });
   const prueba = rondas.datos.find(r => r.id === ronda.datos.id);
   assert.deepEqual(prueba.puntoIds, ['p-porteria']);
@@ -429,12 +459,13 @@ test('CU-22: un administrador normal queda encerrado en su condominio aunque man
   });
   assert.equal(creado.status, 201);
   assert.equal(creado.datos.condominioId, 'mirador', 'el punto nuevo cae en SU condominio');
-  await api(`/api/admin/puntos/${creado.datos.id}`, { metodo: 'DELETE', token: carmen.token });
+  await configurarPunto(`/${creado.datos.id}`, { metodo: 'DELETE' }, 'mirador');
 
   const puntoAromos = await api('/api/admin/puntos/p-porteria', {
     metodo: 'PUT', token: carmen.token, condominio: 'aromos', cuerpo: { lat: -33.41, lon: -70.6 }
   });
-  assert.equal(puntoAromos.status, 404, 'no puede fijar la ubicación de un punto ajeno');
+  assert.equal(puntoAromos.status, 403, 'no puede fijar la ubicación de ningún punto');
+  assert.equal(store.db.puntos.find(p => p.id === 'p-porteria').lat ?? null, null);
 
   // Informes y ejecuciones de Los Aromos: invisibles, y no las puede tocar.
   const pedro = await login('pedro', '2222');
@@ -482,11 +513,13 @@ test('CU-22: la cuenta de acceso total (creada desde el entorno) recorre todos l
     metodo: 'POST', token: op.token, condominio: 'mirador', cuerpo: { nombre: 'Bodega operación' }
   });
   assert.equal(creado.datos.condominioId, 'mirador');
+  // Es la única cuenta que configura puntos, parada en el condominio elegido.
   const ubicado = await api(`/api/admin/puntos/${creado.datos.id}`, {
     metodo: 'PUT', token: op.token, condominio: 'mirador', cuerpo: { lat: -33.41, lon: -70.6 }
   });
   assert.equal(ubicado.status, 200);
-  await api(`/api/admin/puntos/${creado.datos.id}`, { metodo: 'DELETE', token: op.token, condominio: 'mirador' });
+  assert.equal(ubicado.datos.lat, -33.41);
+  await configurarPunto(`/${creado.datos.id}`, { metodo: 'DELETE' }, 'mirador');
 
   // Cierra rondas de otro condominio, pero solo parada en ese condominio.
   const jorge = await login('jorge', '5555');
@@ -603,18 +636,12 @@ test('CU-15/16/18: el GPS BLOQUEA la marca fuera del radio + presupuesto de erro
   const pedro = await login('pedro', '2222');
 
   // La administradora fija la ubicación real de Portería, midiendo con ±5 m.
-  const fijar = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
-  });
+  const fijar = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 } });
   assert.equal(fijar.status, 200);
   assert.equal(fijar.datos.precisionM, 5, 'queda registrado con qué precisión se midió');
-  const invalida = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: 999, lon: 0 }
-  });
+  const invalida = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: 999, lon: 0 } });
   assert.equal(invalida.status, 422);
-  const precisionMala = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 900 }
-  });
+  const precisionMala = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 900 } });
   assert.equal(precisionMala.status, 422);
 
   // El paquete que baja el teléfono trae ubicación, calidad de la medición y
@@ -712,7 +739,7 @@ test('CU-15/16/18: el GPS BLOQUEA la marca fuera del radio + presupuesto de erro
   assert.equal(duplicado.datos.duplicado, true);
 
   // Limpiar: quitar la ubicación para no afectar otros escenarios.
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });
 
 test('push: ronda incompleta → notificación al teléfono del admin suscrito', async () => {
@@ -797,10 +824,8 @@ test('CU-19: anclaje — acepta el fix tomado en la entrada y rechaza el resto',
   const pedro = await login('pedro', '2222');
 
   // "Sala de bombas" pasa a verificarse por entrada.
-  const fijar = await api('/api/admin/puntos/p-bombas', {
-    metodo: 'PUT', token: marta.token,
-    cuerpo: { lat: -33.45, lon: -70.66, verificacion: 'anclaje' }
-  });
+  const fijar = await configurarPunto('/p-bombas', { metodo: 'PUT',
+    cuerpo: { lat: -33.45, lon: -70.66, verificacion: 'anclaje' } });
   assert.equal(fijar.status, 200);
   assert.equal(fijar.datos.verificacion, 'anclaje');
 
@@ -860,7 +885,7 @@ test('CU-19: anclaje — acepta el fix tomado en la entrada y rechaza el resto',
   assert.equal(detalle.edadGpsMs, 4 * 60000);
   assert.equal(cierre.datos.evaluacion.gpsLejos.length, 0);
 
-  await api('/api/admin/puntos/p-bombas', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-bombas', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
   const limpio = await api('/api/admin/puntos', { token: marta.token });
   const yaNo = limpio.datos.find(p => p.id === 'p-bombas');
   assert.equal(yaNo.lat, null);
@@ -870,10 +895,8 @@ test('CU-19: anclaje — acepta el fix tomado en la entrada y rechaza el resto',
 test('CU-19: radio y ventana propios del punto mandan sobre los defaults', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
-  await api('/api/admin/puntos/p-bombas', {
-    metodo: 'PUT', token: marta.token,
-    cuerpo: { lat: -33.45, lon: -70.66, verificacion: 'anclaje', radioM: 25, ventanaMin: 3 }
-  });
+  await configurarPunto('/p-bombas', { metodo: 'PUT',
+    cuerpo: { lat: -33.45, lon: -70.66, verificacion: 'anclaje', radioM: 25, ventanaMin: 3 } });
 
   async function marcar(gps) {
     const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-nocturna' } });
@@ -891,24 +914,18 @@ test('CU-19: radio y ventana propios del punto mandan sobre los defaults', async
   assert.equal((await marcar({ lat: -33.4501, lon: -70.66, acc: 12, edadMs: 2 * 60000 })).status, 200);
 
   // Validaciones del panel.
-  const modoMalo = await api('/api/admin/puntos/p-bombas', {
-    metodo: 'PUT', token: marta.token, cuerpo: { verificacion: 'magia' }
-  });
+  const modoMalo = await configurarPunto('/p-bombas', { metodo: 'PUT', cuerpo: { verificacion: 'magia' } });
   assert.equal(modoMalo.status, 422);
-  const radioMalo = await api('/api/admin/puntos/p-bombas', {
-    metodo: 'PUT', token: marta.token, cuerpo: { radioM: 9000 }
-  });
+  const radioMalo = await configurarPunto('/p-bombas', { metodo: 'PUT', cuerpo: { radioM: 9000 } });
   assert.equal(radioMalo.status, 422);
 
   // Vaciar el campo vuelve al default del entorno.
-  const reset = await api('/api/admin/puntos/p-bombas', {
-    metodo: 'PUT', token: marta.token, cuerpo: { radioM: null, ventanaMin: null }
-  });
+  const reset = await configurarPunto('/p-bombas', { metodo: 'PUT', cuerpo: { radioM: null, ventanaMin: null } });
   assert.equal(reset.status, 200);
   assert.equal(reset.datos.radioM, undefined);
   assert.equal((await marcar({ lat: -33.45056, lon: -70.66, acc: 15, edadMs: 60000 })).status, 200);
 
-  await api('/api/admin/puntos/p-bombas', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-bombas', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });
 
 test('CU-17: marcas en ráfaga → ronda SOSPECHOSA + aviso al admin', async () => {
@@ -961,7 +978,7 @@ test('CU-17: GPS fuerte — la marca que se cuela igual queda SOSPECHOSA en el i
   const express = paquete.rondas.find(r => r.id === 'ronda-express');
 
   // Portería arranca SIN ubicación: las marcas pasan sin verificación.
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 
   // Ronda completa y bien espaciada; solo cambia el GPS de Portería. Se fija la
   // ubicación del punto entre el último escaneo y el cierre.
@@ -979,11 +996,9 @@ test('CU-17: GPS fuerte — la marca que se cuela igual queda SOSPECHOSA en el i
       });
       assert.equal(esc.status, 200, 'sin ubicación fijada la marca entra');
     }
-    await api('/api/admin/puntos/p-porteria', {
-      metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
-    });
+    await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66 } });
     const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
-    await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+    await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
     return cierre.datos;
   }
 
@@ -1008,9 +1023,7 @@ test('CU-17: GPS fuerte — la marca que se cuela igual queda SOSPECHOSA en el i
 test('CU-18: los umbrales de GPS se ajustan por entorno sin tocar código', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66 } });
 
   // Marca a ~30 m con un GPS que declara ±40 m de precisión. El punto se fijó
   // sin registrar la calidad de la medición (como todos los anteriores a v1.13),
@@ -1071,7 +1084,7 @@ test('CU-18: los umbrales de GPS se ajustan por entorno sin tocar código', asyn
   // Y el bloqueo volvió solo.
   assert.equal((await marcarLejos()).esc.status, 422);
 
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });
 
 // ---------- CU-23: calidad de la medición del punto (v1.13) ----------
@@ -1094,9 +1107,7 @@ test('CU-23: la precisión con que se midió el punto entra en el presupuesto', 
 
   // Punto medido BIEN (±3 m) + teléfono con buena señal (±5 m): tope 28 m. Una
   // marca a 30 m no tiene excusa y se rechaza. La exigencia sigue existiendo.
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 3 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 3 } });
   const conBuenPunto = await marcarA30m();
   assert.equal(conBuenPunto.status, 422);
   assert.equal(conBuenPunto.datos.presencia.topeM, 28);
@@ -1104,27 +1115,19 @@ test('CU-23: la precisión con que se midió el punto entra en el presupuesto', 
   // El MISMO punto medido mal (±40 m): el sistema sabe que su coordenada es
   // dudosa y afloja el tope a 20 + 40 = 60 m. La misma marca ahora entra: el
   // guardia no puede pagar el error de medición del administrador.
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 40 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 40 } });
   assert.equal((await marcarA30m()).status, 200);
 
   // Volver a fijar sin informar precisión NO hereda la anterior: la calidad de
   // la medición vieja no dice nada de la coordenada nueva.
-  const reFijado = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
-  });
+  const reFijado = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66 } });
   assert.equal(reFijado.datos.precisionM, undefined);
   // Sin dato se asume ±15 m → tope 20 + 15 + 5 = 40 m: la marca a 30 m entra.
   assert.equal((await marcarA30m()).status, 200);
 
   // Un 422 de validación no puede dejar el punto a medio escribir.
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 8 }
-  });
-  const rechazado = await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.44, lon: -70.65, precisionM: -3 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 8 } });
+  const rechazado = await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.44, lon: -70.65, precisionM: -3 } });
   assert.equal(rechazado.status, 422);
   const puntos = await api('/api/admin/puntos', { token: marta.token });
   const porteria = puntos.datos.find(p => p.id === 'p-porteria');
@@ -1132,7 +1135,7 @@ test('CU-23: la precisión con que se midió el punto entra en el presupuesto', 
   assert.equal(porteria.precisionM, 8);
 
   // Quitar la ubicación limpia también la precisión.
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
   const limpio = await api('/api/admin/puntos', { token: marta.token });
   assert.equal(limpio.datos.find(p => p.id === 'p-porteria').precisionM, undefined);
 });
@@ -1140,15 +1143,13 @@ test('CU-23: la precisión con que se midió el punto entra en el presupuesto', 
 test('CU-23: señal imprecisa se informa, pero no acusa al guardia', async () => {
   const marta = await login('marta', '1111');
   const pedro = await login('pedro', '2222');
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 } });
 
   // Con el bloqueo puesto la marca imprecisa ni entra. Llega a la base por el
   // mismo camino que las demás no verificadas: ubicación fijada DESPUÉS de la
   // ronda. Ahí el informe tiene que distinguir "no había señal buena" de "apagó
   // el GPS": lo primero es del edificio, lo segundo huele a fraude.
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
   const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
   const { datos: paquete } = await api('/api/mi/paquete', { token: pedro.token });
   const express = paquete.rondas.find(r => r.id === 'ronda-express');
@@ -1163,9 +1164,7 @@ test('CU-23: señal imprecisa se informa, pero no acusa al guardia', async () =>
       }
     });
   }
-  await api('/api/admin/puntos/p-porteria', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 }
-  });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { lat: -33.45, lon: -70.66, precisionM: 5 } });
   const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
 
   assert.equal(cierre.datos.evaluacion.gpsImpreciso.length, 1);
@@ -1175,7 +1174,7 @@ test('CU-23: señal imprecisa se informa, pero no acusa al guardia', async () =>
   assert.equal(cierre.datos.evaluacion.sospechas.length, 0, 'la señal mala no es una acusación');
   assert.equal(cierre.datos.estado, 'completa_obs');
 
-  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+  await configurarPunto('/p-porteria', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
 });
 
 test('CU-17: duración mínima por ronda — cerrarla muy rápido es SOSPECHOSA', async () => {
@@ -1335,6 +1334,44 @@ test('CU-21: la fábrica da de alta un condominio con cuenta de panel (opcional)
   assert.equal(guardia.status, 201);
 });
 
+test('puntos: solo la cuenta de la operación los configura, condominio por condominio', async () => {
+  // Alta con QR y con chapita, en el condominio elegido en el selector.
+  const qr = await configurarPunto('', { metodo: 'POST', cuerpo: { nombre: 'Mirador norte' } }, 'mirador');
+  assert.equal(qr.status, 201);
+  assert.equal(qr.datos.condominioId, 'mirador');
+  const nfc = await configurarPunto('', { metodo: 'POST', cuerpo: { nombre: 'Caldera', medio: 'nfc' } }, 'mirador');
+  assert.equal(nfc.datos.nfcPendiente, true);
+
+  // Nombre, ubicación y señal.
+  const renombrado = await configurarPunto(`/${qr.datos.id}`, { metodo: 'PUT', cuerpo: { nombre: 'Mirador sur', lat: -33.41, lon: -70.6, precisionM: 6 } }, 'mirador');
+  assert.equal(renombrado.status, 200);
+  assert.equal(renombrado.datos.nombre, 'Mirador sur');
+  assert.equal(renombrado.datos.lat, -33.41);
+  assert.equal((await configurarPunto('/senal', {}, 'mirador')).status, 200);
+  // El administrador del condominio lo ve (para armar la ronda), tal como quedó.
+  const carmen = await login('carmen', '4444');
+  const enPanel = (await api('/api/admin/puntos', { token: carmen.token })).datos.find(p => p.id === qr.datos.id);
+  assert.equal(enPanel.nombre, 'Mirador sur');
+
+  // Parada en otro condominio, la operación no encuentra ese punto.
+  assert.equal((await configurarPunto(`/${qr.datos.id}`, { metodo: 'PUT', cuerpo: { nombre: 'X' } })).status, 404);
+  assert.equal((await configurarPunto(`/${qr.datos.id}`, { metodo: 'DELETE' })).status, 404);
+
+  // Nadie más los toca: ni el administrador del condominio, ni la fábrica, ni
+  // un guardia. Tampoco ven la señal.
+  const jefe = await login('fabrica', '87654321');
+  const jorge = await login('jorge', '5555');
+  for (const token of [carmen.token, jefe.token, jorge.token]) {
+    assert.equal((await configurarPunto(`/${qr.datos.id}`, { metodo: 'PUT', token, cuerpo: { nombre: 'Roto' } }, 'mirador')).status, 403);
+    assert.equal((await configurarPunto(`/${qr.datos.id}/chapita`, { metodo: 'PUT', token, cuerpo: { serie: '04:a2:3b:4c:5d:6e:80' } }, 'mirador')).status, 403);
+    assert.equal((await configurarPunto(`/${qr.datos.id}`, { metodo: 'DELETE', token }, 'mirador')).status, 403);
+    assert.equal((await configurarPunto('/senal', { token }, 'mirador')).status, 403);
+  }
+  assert.equal(store.db.puntos.find(p => p.id === qr.datos.id).nombre, 'Mirador sur');
+
+  for (const p of [qr, nfc]) assert.equal((await configurarPunto(`/${p.datos.id}`, { metodo: 'DELETE' }, 'mirador')).status, 200);
+});
+
 test('CU-21: el alta rechaza duplicados y datos malos sin tocar la base', async () => {
   const jefe = await login('fabrica', '87654321');
   const condominiosAntes = store.db.condominios.length;
@@ -1491,14 +1528,11 @@ test('CU-24: los rechazos por GPS quedan registrados (telemetría, no control)',
 
 test('CU-23: la evidencia de la medición viaja con la coordenada y muere con ella', async () => {
   const marta = await login('marta', '1111');
-  const medido = await api('/api/admin/puntos/p-quincho', {
-    metodo: 'PUT',
-    token: marta.token,
+  const medido = await configurarPunto('/p-quincho', { metodo: 'PUT',
     cuerpo: {
       lat: -33.451, lon: -70.661, precisionM: 7,
       muestras: 34, dispersionM: 6, precisionDeclaradaM: 12, medidoConVersion: 'v1.14.0'
-    }
-  });
+    } });
   assert.equal(medido.status, 200);
   assert.equal(medido.datos.muestras, 34);
   assert.equal(medido.datos.dispersionM, 6);
@@ -1508,18 +1542,14 @@ test('CU-23: la evidencia de la medición viaja con la coordenada y muere con el
   // Una app vieja manda solo lat/lon/precisionM: la evidencia de la medición
   // anterior no puede quedar pegada a una coordenada distinta, igual que
   // precisionM. Sin dispersionM el panel lo marca como "conviene re-medir".
-  const conAppVieja = await api('/api/admin/puntos/p-quincho', {
-    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.452, lon: -70.662, precisionM: 9 }
-  });
+  const conAppVieja = await configurarPunto('/p-quincho', { metodo: 'PUT', cuerpo: { lat: -33.452, lon: -70.662, precisionM: 9 } });
   assert.equal(conAppVieja.datos.precisionM, 9);
   assert.equal(conAppVieja.datos.dispersionM, undefined);
   assert.equal(conAppVieja.datos.muestras, undefined);
   assert.equal(conAppVieja.datos.medidoConVersion, undefined);
 
   // Y quitar la ubicación se lleva todo: no queda calidad huérfana.
-  const sinUbicacion = await api('/api/admin/puntos/p-quincho', {
-    metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true }
-  });
+  const sinUbicacion = await configurarPunto('/p-quincho', { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
   assert.equal(sinUbicacion.datos.lat, null);
   assert.equal(sinUbicacion.datos.precisionM, undefined);
   assert.equal(sinUbicacion.datos.dispersionM, undefined);

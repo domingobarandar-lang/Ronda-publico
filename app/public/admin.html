@@ -49,7 +49,10 @@
 
     <nav class="pestanas">
       <button data-tab="informes" class="pestana activa">Informes</button>
-      <button data-tab="puntos" class="pestana">Puntos</button>
+      <!-- Solo la cuenta de la operación (acceso total) la ve: admin.js la
+           muestra cuando el servidor lo confirma. El servidor rechaza igual
+           (403) cualquier cambio de puntos de otra cuenta. -->
+      <button data-tab="puntos" class="pestana oculta">Puntos</button>
       <button data-tab="guardias" class="pestana">Guardias</button>
       <button data-tab="rondas" class="pestana">Rondas</button>
       <button data-tab="avisos" class="pestana">Avisos</button>
@@ -128,7 +131,11 @@
 
       <div id="tab-rondas" class="tab oculta">
         <h2>Rondas</h2>
-        <p class="nota">Define qué puntos se recorren y en qué orden. Escribe cada punto con el nombre que uses en tu condominio.</p>
+        <p class="nota">Define qué puntos se recorren y en qué orden. Escribe cada punto con el nombre que uses en tu condominio. <a href="hoja-qr.html" target="_blank">🖨️ Imprimir hoja de QR</a></p>
+        <p id="nota-puntos-soporte" class="nota">
+          El nombre, la ubicación y la chapita NFC de cada punto los configura el equipo de Ronda:
+          si necesitas cambiar o eliminar un punto, pídelo a soporte.
+        </p>
         <div class="editor-ronda">
           <input id="ronda-nombre" placeholder="Nombre de la ronda (ej: Nocturna completa)">
           <div class="fila-form">

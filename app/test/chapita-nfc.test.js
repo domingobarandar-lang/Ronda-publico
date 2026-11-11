@@ -9,6 +9,11 @@
 'use strict';
 
 process.env.MOCK = 'true';
+// Cuenta de la operación (acceso total): la única que configura los puntos.
+process.env.ADMIN_TOTAL_USUARIO = 'operacion';
+process.env.ADMIN_TOTAL_NOMBRE = 'Operación (test)';
+process.env.ADMIN_TOTAL_PIN = 'Prueba2026Total';
+process.env.ADMIN_TOTAL_CONDOMINIO = 'aromos';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -37,6 +42,23 @@ async function login(usuario, pin) {
   const { status, datos } = await api('/api/login', { metodo: 'POST', cuerpo: { usuario, pin } });
   assert.equal(status, 200);
   return datos.token;
+}
+
+// Los puntos los configura solo la cuenta de la operación (acceso total),
+// parada en el condominio que elige en el selector del panel (x-condominio).
+// Con `token` en las opciones se prueba la misma ruta con otra cuenta.
+let tokenOperacion;
+async function configurarPunto(resto, { metodo = 'GET', cuerpo, token } = {}, condominio = 'aromos') {
+  const pedir = (ruta, m, c, t) => fetch(base + ruta, {
+    method: m,
+    headers: { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}), 'x-condominio': condominio },
+    body: c ? JSON.stringify(c) : undefined
+  });
+  if (!token && !tokenOperacion) {
+    tokenOperacion = (await (await pedir('/api/login', 'POST', { usuario: 'operacion', pin: 'Prueba2026Total' })).json()).token;
+  }
+  const resp = await pedir(`/api/admin/puntos${resto}`, metodo, cuerpo, token || tokenOperacion);
+  return { status: resp.status, datos: await resp.json().catch(() => ({})) };
 }
 
 // Serie de un NTAG213 tal como la entrega Web NFC, y la misma normalizada.
@@ -106,28 +128,36 @@ test('punto sin chapita: idéntico a antes, y cada marca anota su medio', async 
 
 test('grabar chapita: valida la serie, la normaliza y la guarda', async () => {
   const admin = await login('marta', '1111');
-  assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: 'hola' } })).status, 422);
-  assert.equal((await api('/api/admin/puntos/no-existe/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: SERIE_WEB } })).status, 404);
-  const r = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: SERIE_WEB, bloqueada: true } });
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', cuerpo: { serie: 'hola' } })).status, 422);
+  assert.equal((await configurarPunto('/no-existe/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE_WEB } })).status, 404);
+  const r = await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE_WEB, bloqueada: true } });
   assert.equal(r.status, 200);
   assert.equal(r.datos.nfcSerie, SERIE);
   assert.equal(r.datos.nfcBloqueada, true);
-  // Un guardia no graba chapitas.
+  // Un guardia no graba chapitas, y el administrador del condominio tampoco:
+  // solo la cuenta de la operación.
   const guardia = await login('pedro', '2222');
-  assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: '04:11:22:33:44:55:66' } })).status, 403);
+  const porElPanel = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: '04:11:22:33:44:55:66' } });
+  assert.equal(porElPanel.status, 403);
+  assert.match(porElPanel.datos.error, /equipo de Ronda/);
+  assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'DELETE', token: admin })).status, 403);
+  assert.equal(store.db.puntos.find(p => p.id === 'p-piscina').nfcSerie, SERIE, 'la chapita sigue siendo la que grabó la operación');
 });
 
 test('bloquear la chapita es un paso aparte, y solo con la chapita registrada', async () => {
   const marta = await login('marta', '1111');
   // Se graba sin bloquear (como lo hace el panel).
-  const grabada = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } });
+  const grabada = await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE } });
   assert.equal(grabada.datos.nfcBloqueada, false);
-  const bloqueo = cuerpo => api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: marta, cuerpo });
+  const bloqueo = cuerpo => configurarPunto('/p-piscina/chapita/bloqueo', { metodo: 'PUT', cuerpo });
   assert.equal((await bloqueo({ serie: '04:11:22:33:44:55:66' })).status, 422, 'otra chapita no se anota bloqueada');
   assert.equal((await bloqueo({})).status, 422);
-  assert.equal((await api('/api/admin/puntos/p-quincho/chapita/bloqueo', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } })).status, 409, 'un punto sin chapita no se bloquea');
+  assert.equal((await configurarPunto('/p-quincho/chapita/bloqueo', { metodo: 'PUT', cuerpo: { serie: SERIE } })).status, 409, 'un punto sin chapita no se bloquea');
   const guardia = await login('pedro', '2222');
-  assert.equal((await api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
+  assert.equal((await configurarPunto('/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: guardia, cuerpo: { serie: SERIE } })).status, 403);
+  assert.equal((await api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } })).status, 403, 'el administrador no bloquea chapitas');
   const ok = await bloqueo({ serie: SERIE_WEB });
   assert.equal(ok.status, 200);
   assert.equal(ok.datos.nfcBloqueada, true);
@@ -135,9 +165,8 @@ test('bloquear la chapita es un paso aparte, y solo con la chapita registrada', 
   // Repetir no cambia nada.
   const otraVez = await bloqueo({ serie: SERIE });
   assert.equal(otraVez.datos.nfcBloqueadaEn, ok.datos.nfcBloqueadaEn);
-  // Un administrador de otro condominio no lo ve.
-  const carmen = await login('carmen', '4444');
-  assert.equal((await api('/api/admin/puntos/p-piscina/chapita/bloqueo', { metodo: 'PUT', token: carmen, cuerpo: { serie: SERIE } })).status, 404);
+  // El punto es de Los Aromos: pedido dentro de otro condominio, no existe.
+  assert.equal((await configurarPunto('/p-piscina/chapita/bloqueo', { metodo: 'PUT', cuerpo: { serie: SERIE } }, 'mirador')).status, 404);
   // Bloquear no cambia cómo se marca: la misma chapita sigue valiendo.
   const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
   const ej = await iniciar(guardia);
@@ -146,17 +175,16 @@ test('bloquear la chapita es un paso aparte, y solo con la chapita registrada', 
 
 test('una chapita no puede pertenecer a dos puntos, tampoco de otro condominio', async () => {
   const marta = await login('marta', '1111');
-  const otro = await api('/api/admin/puntos/p-quincho/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } });
+  const otro = await configurarPunto('/p-quincho/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE } });
   assert.equal(otro.status, 409);
   assert.match(otro.datos.error, /Piscina/);
-  const carmen = await login('carmen', '4444');
-  const ajeno = await api('/api/admin/puntos/p-m-terraza/chapita', { metodo: 'PUT', token: carmen, cuerpo: { serie: SERIE_WEB } });
+  const ajeno = await configurarPunto('/p-m-terraza/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE_WEB } }, 'mirador');
   assert.equal(ajeno.status, 409);
   // Sin revelar el nombre de un punto de otro condominio.
   assert.doesNotMatch(ajeno.datos.error, /Piscina/);
   assert.match(ajeno.datos.error, /otro condominio/);
   // Re-grabar la misma chapita en su propio punto (Reemplazar) sí se puede.
-  assert.equal((await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'PUT', token: marta, cuerpo: { serie: SERIE } })).status, 200);
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE } })).status, 200);
 });
 
 test('el paquete del guardia lleva qué puntos son NFC y la huella de la serie, no la serie', async () => {
@@ -332,7 +360,7 @@ test('mover un punto con chapita a otro lugar de la ronda no obliga a regrabarla
 
 test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   const admin = await login('marta', '1111');
-  const r = await api('/api/admin/puntos/p-piscina/chapita', { metodo: 'DELETE', token: admin });
+  const r = await configurarPunto('/p-piscina/chapita', { metodo: 'DELETE' });
   assert.equal(r.status, 200);
   assert.equal(r.datos.nfcSerie, undefined);
   const guardia = await login('pedro', '2222');
@@ -341,13 +369,13 @@ test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   const ej = await iniciar(guardia);
   assert.equal((await marcar(guardia, ej, { codigo: piscina.payload })).status, 200);
   // Y la serie queda libre para otro punto.
-  assert.equal((await api('/api/admin/puntos/p-quincho/chapita', { metodo: 'PUT', token: admin, cuerpo: { serie: SERIE } })).status, 200);
-  await api('/api/admin/puntos/p-quincho/chapita', { metodo: 'DELETE', token: admin });
+  assert.equal((await configurarPunto('/p-quincho/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE } })).status, 200);
+  await configurarPunto('/p-quincho/chapita', { metodo: 'DELETE' });
 });
 
 test('agregar un punto "con chapita" lo deja pendiente, fuera de la hoja de QR, y se marca a mano hasta grabarla', async () => {
   const admin = await login('marta', '1111');
-  const creado = await api('/api/admin/puntos', { metodo: 'POST', token: admin, cuerpo: { nombre: 'Sala de calderas', medio: 'nfc' } });
+  const creado = await configurarPunto('', { metodo: 'POST', cuerpo: { nombre: 'Sala de calderas', medio: 'nfc' } });
   assert.equal(creado.status, 201);
   assert.equal(creado.datos.nfcPendiente, true);
   assert.equal(creado.datos.nfcSerie, undefined);
@@ -364,7 +392,7 @@ test('agregar un punto "con chapita" lo deja pendiente, fuera de la hoja de QR, 
   assert.equal((await marcar(guardia, ej, { codigo: creado.datos.codigoCorto })).status, 200);
   assert.equal(store.ejecuciones.obtener(ej).escaneos[0].puntoNfc, undefined);
   await api(`/api/admin/rondas/${ronda.datos.id}`, { metodo: 'DELETE', token: admin });
-  const grabado = await api(`/api/admin/puntos/${creado.datos.id}/chapita`, { metodo: 'PUT', token: admin, cuerpo: { serie: '04:99:88:77:66:55:44' } });
+  const grabado = await configurarPunto(`/${creado.datos.id}/chapita`, { metodo: 'PUT', cuerpo: { serie: '04:99:88:77:66:55:44' } });
   assert.equal(grabado.datos.nfcPendiente, undefined, 'con la chapita grabada deja de estar pendiente');
-  for (const id of [creado.datos.id, qr.datos.id]) await api(`/api/admin/puntos/${id}`, { metodo: 'DELETE', token: admin });
+  for (const id of [creado.datos.id, qr.datos.id]) await configurarPunto(`/${id}`, { metodo: 'DELETE' });
 });
