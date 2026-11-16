@@ -2,6 +2,10 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-15 · `.railway/railway.ts` con el nombre nuevo del servicio
+
+Con el renombre de la app, el servicio de Railway pasó de `rondas-QR` a `Ronda`, pero `railway.ts` seguía diciendo `rondas-QR`. El archivo identifica el servicio por su nombre, así que su `railway config plan` proponía **borrar el servicio de producción** y crear uno vacío. No se aplicó nada: ahora el archivo dice `service("Ronda", …)` y el plan queda *«already up to date»*. En Railway no cambia nada; `entrega/RAILWAY-IAC.md` anota la regla.
+
 ## Sin publicar — 2026-11-09 · Los puntos solo se configuran desde la cuenta de la operación
 
 Renombrar un punto, moverle o quitarle la ubicación, cambiarle la chapita o eliminarlo cambia lo que el servidor le exige al guardia: un toque equivocado del administrador de un condominio dejaba la ronda entera sin poder marcarse.

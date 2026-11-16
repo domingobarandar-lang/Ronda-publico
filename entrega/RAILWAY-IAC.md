@@ -1,7 +1,7 @@
 # Configuración de Railway: `.railway/railway.ts`
 
 Railway dejó de aceptar `railway.json` / `railway.toml` (Config as Code, se dejan de leer el **2026-12-01**).
-Desde el **2026-11-05** la configuración del servicio `rondas-QR` vive **guardada en el propio servicio**,
+Desde el **2026-11-05** la configuración del servicio `Ronda` (se llamaba `rondas-QR` hasta el renombre de la app) vive **guardada en el propio servicio**,
 y su copia en código es [`.railway/railway.ts`](../.railway/railway.ts) (Infrastructure as Code). `app/railway.json` se borró.
 
 **Railway no lee `.railway/` al desplegar.** Un push a `main` despliega el código con la configuración que ya tiene
@@ -20,6 +20,11 @@ el servicio. Para cambiar esa configuración desde el archivo hay que correr `ra
 **Si se agrega una variable en Railway** (por ejemplo `SENTRY_TOKEN_LECTURA` en su momento), hay que sumarla al archivo
 como `NOMBRE: preserve()` **antes del próximo `apply`**, o ese `apply` la borra. Ante la duda, `railway config pull --force`
 vuelve a importar todo lo que hay; después hay que comparar con `git diff` y devolver el comando de arranque si se perdió.
+
+**Si se renombra el servicio en Railway**, hay que cambiar el nombre en `service("…")`. El archivo identifica el servicio
+por su nombre: con el nombre viejo, el `plan` propone *«Create service rondas-QR · Delete service Ronda»*, o sea **borrar el
+servicio de producción** y crear uno vacío. Pasó con el renombre a Ronda: se detectó en el plan del 2026-11-15, antes de
+cualquier `apply`.
 
 > Así casi pasó: el archivo que generó `railway config migrate` traía solo el comando de arranque, y su `plan` proponía
 > **borrar las 19 variables, desconectar el repo y soltar el volumen**. No se aplicó; se rehízo con `config pull`.

@@ -17,7 +17,10 @@ export default defineRailway(() => {
     sizeMB: 5000,
   });
 
-  const rondasQR = service("rondas-QR", {
+  // El nombre tiene que ser el del servicio en Railway. Si se renombra allá,
+  // cambiarlo aquí: con el nombre viejo, `apply` borraría el servicio de
+  // producción y crearía uno nuevo vacío.
+  const ronda = service("Ronda", {
     source: github("domingobarandar-lang/rondas-qr", { checkSuites: false, rootDirectory: "app" }),
     // Sin seed: con la base vacía (volumen perdido, DB_PATH mal escrito) el
     // seed crearía las cuentas de demo, con PIN publicados en git, y la app
@@ -53,6 +56,6 @@ export default defineRailway(() => {
   });
 
   return project("rondas-qr", {
-    resources: [rondasQR, rondasQrVolume],
+    resources: [ronda, rondasQrVolume],
   });
 });
