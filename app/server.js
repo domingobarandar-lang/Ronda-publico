@@ -1555,7 +1555,7 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
-  return { app, store, push, cerrarAbandonadas };
+  return { app, store, push, cerrarAbandonadas, lectorSentry };
 }
 
 if (require.main === module) {
@@ -1570,7 +1570,7 @@ if (require.main === module) {
     if (err.cause) console.error(err.cause);
     process.exit(1);
   }
-  const { app, store, push, cerrarAbandonadas } = creado;
+  const { app, store, push, cerrarAbandonadas, lectorSentry } = creado;
   sentry.iniciar();
   // Con Sentry activo se espera a que el evento salga antes de cerrar.
   errores.instalarRedProceso(process, code => sentry.vaciar().then(() => process.exit(code)));
@@ -1586,7 +1586,7 @@ if (require.main === module) {
     console.log(`    ${c.condominios} condominios, ${c.usuarios} usuarios, ${c.puntos} puntos, ${c.rondas} rondas configuradas, `
               + `${c.ejecuciones} ejecuciones, ${c.notificaciones} avisos`);
   });
-  programador.iniciar(store); // respaldo diario de la base y envío semanal del informe por correo
+  programador.iniciar(store, { lectorSentry }); // respaldo diario, informe semanal y correo de salud de los lunes
   recordatorios.iniciar(store, push); // alarma de ronda a los teléfonos de cada condominio
   // Rondas abandonadas: al arrancar y cada 5 min (lib/rondas.js, estaAbandonada).
   const abandonadas = () => cerrarAbandonadas()
