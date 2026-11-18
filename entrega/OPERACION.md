@@ -176,6 +176,19 @@ railway ssh -- node scripts/salud-ahora.js --mostrar  # solo lo muestra en la co
 
 El envío a mano no cuenta como el del lunes: el programado sale igual. El correo trae nombres de condominios y conteos, ningún dato de los guardias.
 
+### Alertas inmediatas por correo
+
+Además del correo de los lunes, a `SALUD_TO` le llega un correo **apenas** pasa una de estas dos cosas (se revisa cada 5 minutos):
+
+| Alerta | Cuándo | Variable |
+|---|---|---|
+| 🔴 **Horas sin rondas** | Un condominio lleva **12 horas** sin que empiece ninguna ronda. Una ronda en curso cuenta como actividad. Se avisa una vez; vuelve a avisar después de que haya otra ronda y pasen otras 12 h. | `ALERTA_SIN_RONDA_HORAS` (`12`; `0` la apaga) |
+| 🟡 **Pocas rondas en el día** | Apenas termina el día (medianoche de Chile), un condominio que hizo menos rondas que su mínimo. Una vez por día. | `ALERTA_MIN_RONDAS_DIA` |
+
+**El mínimo diario**, con `ALERTA_MIN_RONDAS_DIA` vacío, es automático y distinto para cada condominio: **la mitad de su promedio diario de las 4 semanas anteriores** (al menos 1). Un condominio que hace 20 rondas al día avisa con menos de 10; uno que hace 4, con menos de 2. Así no hay que poner un número para cada cliente, y el número se ajusta solo si un cliente cambia su frecuencia. Un condominio con menos de 7 días de historia no se revisa. Con un número (`ALERTA_MIN_RONDAS_DIA=6`), ese mínimo vale para todos; con `0` se apaga. El correo de los lunes muestra el promedio diario de cada condominio y el mínimo con el que avisaría.
+
+No toda alerta es un problema: puede que ese día no hubiera rondas por algo del cliente. Es para ir a mirar (panel, `/fabrica`, llamar a la garita). No alertan los condominios sin rondas configuradas ni los que nunca han tenido una (esos salen en el correo de los lunes). Si Gmail falla, se reintenta en la revisión siguiente.
+
 ## Deploy a producción (cuando José apruebe)
 
 - **Railway** (o VPS): `npm install && npm start`, variable `PORT` la pone la plataforma. Railway da HTTPS solo — necesario para la cámara. Costo estimado: plan chico (~US$5/mes). **Runtime sin LLM: el uso diario cuesta $0 en APIs.**

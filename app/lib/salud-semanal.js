@@ -32,6 +32,7 @@ const correo = require('./correo');
 const salud = require('./salud');
 const { normalizarCorreos } = require('./destinatarios');
 const { TZ, isoChile } = require('./fechas-chile');
+const alertas = require('./alertas-rondas');
 
 const DIA_ENVIO = 1; // lunes
 const URGENTE_PCT = 20;
@@ -122,7 +123,7 @@ function semaforo({ s, sentry, rondasConfiguradas, ultimaRonda }) {
 
 function lineaResumen(f) {
   const n = NIVEL[f.nivel];
-  const detalle = f.motivos.length ? f.motivos.join(' · ') : rondas(f.salud.rondas.total);
+  const detalle = f.motivos.length ? f.motivos.join(' · ') : `${rondas(f.salud.rondas.total)} (${alertas.unaDecimal(f.promedioDia)} por día)`;
   return `${n.icono} ${f.nombre} — ${n.texto}: ${detalle}`;
 }
 
@@ -148,6 +149,8 @@ function detalle(f, { sentryConectado }) {
       : 'Sin rondas configuradas todavía.');
   } else {
     L.push(`Rondas: ${r.total} (${r.cerradas} cerradas${r.enCurso ? `, ${r.enCurso} en curso` : ''})`);
+    L.push(`  Promedio: ${alertas.unaDecimal(f.promedioDia)} rondas por día`
+      + (f.minimo ? ` · alerta si un día tiene menos de ${f.minimo.minimo}${f.minimo.automatico ? ' (la mitad de su promedio de 4 semanas)' : ''}` : ''));
     L.push(`  Completas ${r.completas} (${r.porcentaje.completas}%) · Incompletas ${r.incompletas} (${r.porcentaje.incompletas}%)`
       + ` · Con sospechas ${r.sospechosas} (${r.porcentaje.sospechosas}%) · Cerradas automáticamente ${r.automaticas} (${r.porcentaje.automaticas}%)`);
     L.push(`Rondas con dificultades técnicas: ${rondas(d.rondas)} (${d.porcentaje}%)`);
@@ -173,7 +176,7 @@ function detalle(f, { sentryConectado }) {
 }
 
 // Arma el correo (sin mandarlo). `lectorSentry`: el de lib/sentry-lectura.js.
-async function armar(store, { lectorSentry, ahora = Date.now() } = {}) {
+async function armar(store, { lectorSentry, ahora = Date.now(), env = process.env } = {}) {
   const db = store.db;
   const conectado = Boolean(lectorSentry && lectorSentry.configurado);
   const [sinCondominio, ...porCondominio] = conectado
@@ -185,7 +188,10 @@ async function armar(store, { lectorSentry, ahora = Date.now() } = {}) {
     const sentry = conectado ? porCondominio[i] : null;
     const rondasConfiguradas = db.rondas.filter(x => x.condominioId === c.id).length;
     const ultimaRonda = (store.ejecuciones.ultimaDe(c.id) || {}).inicio || null;
-    return { id: c.id, nombre: c.nombre, salud: s, sentry, rondasConfiguradas, ultimaRonda, ...semaforo({ s, sentry, rondasConfiguradas, ultimaRonda }) };
+    const promedioDia = s.rondas.total / s.dias;
+    // El mínimo con el que alertas-rondas.js avisaría hoy, para que se vea.
+    const minimo = alertas.minimoDiario(store, c.id, isoChile(ahora), alertas.opcionesDesdeEnv(env));
+    return { id: c.id, nombre: c.nombre, salud: s, sentry, rondasConfiguradas, ultimaRonda, promedioDia, minimo, ...semaforo({ s, sentry, rondasConfiguradas, ultimaRonda }) };
   }).sort((a, b) => NIVEL[a.nivel].orden - NIVEL[b.nivel].orden || a.nombre.localeCompare(b.nombre, 'es'));
 
   const cuenta = nivel => filas.filter(f => f.nivel === nivel).length;
@@ -240,7 +246,7 @@ async function revisar(store, {
     if (!correo.configurado() && enviar === correo.enviarCorreo) {
       return { enviada: false, error: `correo sin configurar (falta ${correo.FALTA_CREDENCIALES})` };
     }
-    const c = await armar(store, { lectorSentry, ahora: reloj });
+    const c = await armar(store, { lectorSentry, ahora: reloj, env });
     const r = await enviar({ to: op.to, subject: c.subject, texto: c.texto });
     if (r.enviada) {
       // El envío a mano no cuenta como el del lunes: el programado sale igual.

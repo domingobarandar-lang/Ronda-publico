@@ -21,6 +21,7 @@
 const correo = require('./correo');
 const respaldo = require('./respaldo');
 const saludSemanal = require('./salud-semanal');
+const alertasRondas = require('./alertas-rondas');
 const { crearLectorSentry } = require('./sentry-lectura');
 const errores = require('./errores');
 const { agruparPorDestinatario } = require('./destinatarios');
@@ -113,9 +114,26 @@ function iniciarSalud(store, { lectorSentry = crearLectorSentry() } = {}) {
   return setInterval(tick, 5 * 60000); // y luego cada 5 min: sale a las 06:30, no a las 07:xx
 }
 
+// Alertas inmediatas (lib/alertas-rondas.js): horas sin rondas y pocas rondas
+// en el día, a SALUD_TO. Cada 5 min.
+function iniciarAlertas(store) {
+  const op = alertasRondas.opcionesDesdeEnv();
+  if (!op.to.length) {
+    console.log('[alertas] SALUD_TO vacío: las alertas de rondas no se mandan.');
+    return null;
+  }
+  const min = op.minRondasDia == null ? 'la mitad del promedio de cada condominio' : op.minRondasDia || 'apagado';
+  console.log(`[alertas] a ${op.to.join(', ')}: sin rondas en ${op.sinRondaHoras || '(apagado)'} h; mínimo diario: ${min}.`);
+  const tick = () => alertasRondas.revisar(store)
+    .catch(e => { console.warn('[alertas] error:', e.message); errores.reportar('alertas', e); });
+  setTimeout(tick, 120000);
+  return setInterval(tick, 5 * 60000);
+}
+
 function iniciar(store, { lectorSentry } = {}) {
   iniciarRespaldo(store);
   iniciarSalud(store, { lectorSentry });
+  iniciarAlertas(store);
   if (!correo.configurado()) {
     console.log(`[informe-email] faltan credenciales de Gmail (${correo.FALTA_CREDENCIALES}) — envío semanal en pausa.`);
     return null;
@@ -127,4 +145,4 @@ function iniciar(store, { lectorSentry } = {}) {
   return setInterval(tick, 3600000);  // y luego cada hora
 }
 
-module.exports = { iniciar, iniciarRespaldo, iniciarSalud, revisar, ahoraChile, lunesDeLaSemana };
+module.exports = { iniciar, iniciarRespaldo, iniciarSalud, iniciarAlertas, revisar, ahoraChile, lunesDeLaSemana };

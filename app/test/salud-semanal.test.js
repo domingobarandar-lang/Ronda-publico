@@ -101,7 +101,7 @@ test('el correo trae el resumen ordenado por gravedad, los condominios sin ronda
   assert.match(resumen, /🔴 El Mirador — urgente: sin ninguna ronda en 7 días \(última: 06-11-2026\)/);
   assert.match(resumen, /🔴 Reserva Norte — urgente: .*4 errores en Sentry/);
   assert.match(resumen, /🟡 Condominio Nuevo — mirar: sin rondas configuradas todavía/);
-  assert.match(resumen, /🟢 Los Aromos — todo bien: 5 rondas/);
+  assert.match(resumen, /🟢 Los Aromos — todo bien: 5 rondas \(0,7 por día\)/);
   assert.match(resumen, /Sin ninguna ronda en la semana .*: El Mirador, Condominio Nuevo\./);
 
   // Los números del detalle son los de salud.resumen(), los mismos de /fabrica.
@@ -109,6 +109,7 @@ test('el correo trae el resumen ordenado por gravedad, los condominios sin ronda
   assert.equal(s.rondas.total, 3);
   const detalle = c.texto.split('== 🔴 Reserva Norte ==')[1].split('==')[0];
   assert.match(detalle, /Rondas: 3 \(3 cerradas\)/);
+  assert.match(detalle, /  Promedio: 0,4 rondas por día/);
   assert.match(detalle, /Completas 2 \(67%\) · Incompletas 0 \(0%\) · Con sospechas 0 \(0%\) · Cerradas automáticamente 1 \(33%\)/);
   assert.match(detalle, /Fallo de la aplicación o del teléfono: 2 rondas \(67%\)/);
   assert.match(detalle, /· GPS: sin señal, ubicación vieja o imprecisa: 1 ronda \(33%, 2 rechazos\)/);
