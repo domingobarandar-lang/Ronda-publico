@@ -14,8 +14,13 @@
 //
 // También programa el respaldo diario de la base (lib/respaldo.js), que corre
 // SIEMPRE: la foto en el volumen no depende de tener Gmail configurado.
+//
+// Y el correo de salud de los lunes para la operación (lib/salud-semanal.js),
+// a SALUD_TO desde SALUD_HORA (hora de Chile). Sin SALUD_TO no hace nada.
 const correo = require('./correo');
 const respaldo = require('./respaldo');
+const saludSemanal = require('./salud-semanal');
+const { crearLectorSentry } = require('./sentry-lectura');
 const errores = require('./errores');
 const { agruparPorDestinatario } = require('./destinatarios');
 
@@ -87,8 +92,29 @@ function iniciarRespaldo(store) {
   return setInterval(tick, 3600000);  // y luego cada hora
 }
 
-function iniciar(store) {
+// El correo de salud: se revisa cada hora como el informe; sale el lunes desde
+// SALUD_HORA, una vez por semana (saludEmailEstado). `lectorSentry`: el mismo
+// de /fabrica (comparte su caché).
+function iniciarSalud(store, { lectorSentry = crearLectorSentry() } = {}) {
+  const op = saludSemanal.opcionesDesdeEnv();
+  if (!op.to.length) {
+    console.log('[salud-email] SALUD_TO vacío: el correo de salud de los lunes no se manda.');
+    return null;
+  }
+  console.log(`[salud-email] correo de salud los lunes desde las ${op.hora}:00 Chile a ${op.to.join(', ')}`
+            + (correo.configurado() ? '.' : ` (en pausa: falta ${correo.FALTA_CREDENCIALES}).`));
+  const tick = () => {
+    const ahora = ahoraChile();
+    return saludSemanal.revisar(store, { ahora, semana: lunesDeLaSemana(ahora.fecha), lectorSentry })
+      .catch(e => { console.warn('[salud-email] error:', e.message); errores.reportar('salud-email', e); });
+  };
+  setTimeout(tick, 90000);            // primera revisión ~1,5 min tras arrancar
+  return setInterval(tick, 3600000);  // y luego cada hora
+}
+
+function iniciar(store, { lectorSentry } = {}) {
   iniciarRespaldo(store);
+  iniciarSalud(store, { lectorSentry });
   if (!correo.configurado()) {
     console.log(`[informe-email] faltan credenciales de Gmail (${correo.FALTA_CREDENCIALES}) — envío semanal en pausa.`);
     return null;
@@ -100,4 +126,4 @@ function iniciar(store) {
   return setInterval(tick, 3600000);  // y luego cada hora
 }
 
-module.exports = { iniciar, iniciarRespaldo, revisar, ahoraChile, lunesDeLaSemana };
+module.exports = { iniciar, iniciarRespaldo, iniciarSalud, revisar, ahoraChile, lunesDeLaSemana };

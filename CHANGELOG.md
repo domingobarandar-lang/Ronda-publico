@@ -2,6 +2,18 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-18 · Correo de salud de los lunes para la operación
+
+José se enteraba de los problemas por el administrador o mirando el panel y `/fabrica` (INC-004 se descubrió así). Ahora, **todos los lunes, siempre** (aunque todo esté bien), le llega un correo con la salud de cada condominio de los últimos 7 días, para leerlo en 30 minutos sin abrir la pantalla.
+
+- **Lo mismo que `/fabrica`, sin calcularlo de nuevo** (`lib/salud-semanal.js` usa `salud.resumen()` y el lector de Sentry de la v1.26): rondas completas, incompletas, con sospechas y cerradas automáticamente; rondas con dificultades técnicas separadas en fallo de la aplicación o del teléfono (GPS con sus rechazos, sesión cortada, el teléfono no terminó la ronda, la chapita no lee) y fallo del usuario; y los errores de Sentry sin resolver de cada condominio y los sin condominio, si hay `SENTRY_TOKEN_LECTURA` (sin token el correo lo dice y sale igual).
+- **Arriba, una línea por condominio con un semáforo**, lo más grave primero: 🔴 urgente (ninguna ronda en 7 días teniendo rondas configuradas, o fallo de la app en el 20 % o más de las rondas), 🟡 mirar (cualquier fallo de la app, cerradas automáticamente, incompletas, sospechas, fallo del usuario en el 20 % o más, errores de Sentry) y 🟢 todo bien. El asunto lleva el peor color y cuántos hay de cada uno. Debajo, **los condominios sin ninguna ronda en la semana**.
+- **Variables nuevas**: `SALUD_TO` (vacío = no se manda, no falla nada) y `SALUD_HORA` (hora de Chile, por defecto 8). Sale con la cuenta de Gmail del informe semanal, programado en `lib/programador.js` como el informe y el respaldo: se revisa cada hora, sale una vez por semana (`saludEmailEstado` en la base) y si Gmail falla se reintenta a la hora siguiente. El lector de Sentry es el mismo de `/fabrica`, con su caché.
+- **`scripts/salud-ahora.js`** lo manda a mano (`--mostrar`: solo lo imprime), para probarlo el día del deploy. No cuenta como el envío del lunes.
+- **Para activarlo en Railway:** `SALUD_TO` (y `SALUD_HORA` si no sirve las 8). `entrega/OPERACION.md` («Correo de salud de los lunes») describe el correo y el semáforo.
+- La app del guardia, el panel y `/fabrica` no cambian.
+- Tests: `test/salud-semanal.test.js` (el semáforo, el orden y el contenido del correo contra `salud.resumen()`, Sentry conectado, caído y sin token, el día y la hora, una vez por semana, el reintento si Gmail falla, el envío a mano, y el script corrido con `TZ=UTC`, como Railway, con las horas en hora de Chile).
+
 ## Sin publicar — 2026-11-15 · `.railway/railway.ts` con el nombre nuevo del servicio
 
 Con el renombre de la app, el servicio de Railway pasó de `rondas-QR` a `Ronda`, pero `railway.ts` seguía diciendo `rondas-QR`. El archivo identifica el servicio por su nombre, así que su `railway config plan` proponía **borrar el servicio de producción** y crear uno vacío. No se aplicó nada: ahora el archivo dice `service("Ronda", …)` y el plan queda *«already up to date»*. En Railway no cambia nada; `entrega/RAILWAY-IAC.md` anota la regla.
