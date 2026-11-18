@@ -1419,7 +1419,15 @@ function medioDe(punto, texto, nfc) {
 // que medioDeLaMarca() en el servidor: la app no puede aceptar lo que el
 // servidor va a rechazar, porque el guardia ya habría visto el ✅.
 function motivoMedio(punto, texto, nfc) {
-  if (!punto.nfc) return null;
+  // Una chapita en un punto que se marca con QR (después de la v1.27.0): la que quedó pegada
+  // después de «Volver a QR», o un tag con el texto del QR copiado. Lleva el
+  // mismo texto que el QR, pero no hay serie contra qué comparar: no prueba
+  // nada y el servidor la rechaza (medioDeLaMarca). Mismo texto que allá.
+  if (!punto.nfc) {
+    return nfc
+      ? `Este punto se marca con QR, no con chapita: escanea el QR de "${punto.nombre}" o escribe su código. Si quedó una chapita pegada ahí, avisa al administrador.`
+      : null;
+  }
   if (medioDe(punto, texto, nfc) === 'manual') {
     // La regla del código a mano en puntos con chapita la decide el servidor
     // (MANUAL_EN_PUNTO_NFC) y viaja en el paquete. Un paquete anterior a la

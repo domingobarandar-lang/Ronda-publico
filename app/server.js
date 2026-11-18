@@ -550,8 +550,8 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     // reapertura se guarda solo si la marca entra (y no era repetida).
     const reabierta = ejecucion.guardiaId === req.usuario.id && motor.reabrirSiAutomatica(ejecucion);
     const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps, nfc, cercania });
-    // Un QR (o una chapita ajena) en un punto con chapita NFC: queda en el
-    // registro de rechazos igual que los del GPS. La app ya lo rechaza sin
+    // Un QR (o una chapita ajena) en un punto con chapita NFC, o una chapita en
+    // un punto de QR: queda en el registro de rechazos igual que los del GPS. La app ya lo rechaza sin
     // encolar; llega acá desde una app vieja o un cliente que no es la app.
     // Si esta petición reabrió una ronda cerrada por el sistema, no se guarda:
     // la reapertura vale solo cuando la marca entra (ver arriba).
@@ -895,7 +895,10 @@ function crearApp({ rutaDb, enviarPush, lectorSentry = crearLectorSentry() } = {
     res.json(punto);
   });
 
-  // "Volver a QR": el punto deja de tener chapita y se marca como siempre.
+  // "Volver a QR": el punto deja de tener chapita y se marca como siempre, con
+  // su QR o el código a mano. La chapita vieja deja de marcar aunque siga
+  // pegada: lleva el mismo texto que el QR, pero el teléfono manda su serie y
+  // medioDeLaMarca (lib/rondas.js) rechaza toda chapita en un punto sin chapita.
   app.delete('/api/admin/puntos/:id/chapita', ...operacion, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });

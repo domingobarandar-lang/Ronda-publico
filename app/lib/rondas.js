@@ -514,6 +514,12 @@ function esPuntoNfc(punto) {
   return Boolean(punto && punto.nfcSerie);
 }
 
+// El rechazo de una chapita en un punto que se marca con QR. La app del guardia
+// (motivoMedio en public/app.js) dice el mismo texto.
+function motivoChapitaEnPuntoQr(punto) {
+  return `Este punto se marca con QR, no con chapita: escanea el QR de "${punto.nombre}" o escribe su código. Si quedó una chapita pegada ahí, avisa al administrador.`;
+}
+
 // Con qué se hizo la marca: 'qr' | 'nfc' | 'manual'. En un punto NFC devuelve
 // { error } si el medio no sirve. `nfc` es lo que mandó el teléfono: { serie }.
 function medioDeLaMarca(punto, interpretado, nfc) {
@@ -523,11 +529,18 @@ function medioDeLaMarca(punto, interpretado, nfc) {
     }
     return { medio: 'manual' };
   }
-  const serie = nfc && typeof nfc === 'object' ? normalizarSerie(nfc.serie) : null;
+  const porNfc = Boolean(nfc && typeof nfc === 'object');
+  const serie = porNfc ? normalizarSerie(nfc.serie) : null;
   if (!esPuntoNfc(punto)) {
-    // Punto sin chapita: idéntico a antes. Si igual llegó por NFC (alguien grabó
-    // el texto del QR en un tag, o el administrador acaba de volver a QR), lo
-    // que valida es el payload, como con el QR.
+    // Punto sin chapita: el QR y el código a mano, idénticos a antes. Lo que
+    // NO entra es una lectura de chapita (el teléfono mandó `nfc`). La chapita
+    // lleva grabado el mismo texto del QR, así que hasta la v1.27.0 una
+    // chapita que quedaba pegada después de «Volver a QR» seguía marcando, sin
+    // control de serie y anotada como 'qr' (José en terreno, 2026-11-11). Pasa
+    // lo mismo con un tag donde alguien grabó el texto del QR y con un punto
+    // "con chapita" que todavía no la tiene registrada (nfcPendiente): sin
+    // serie que comparar, la chapita no prueba nada.
+    if (porNfc) return { error: motivoChapitaEnPuntoQr(punto) };
     return { medio: 'qr' };
   }
   if (!serie) {

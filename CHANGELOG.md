@@ -2,6 +2,16 @@
 
 Las versiones anteriores a la 1.17 están descritas en `app/README.md` (cada función lleva la versión en que entró).
 
+## Sin publicar — 2026-11-18 · La chapita vieja deja de marcar después de «Volver a QR» (INC-005)
+
+José lo vio en terreno: pasó un punto de chapita a QR, acercó el teléfono a la chapita que seguía pegada y la marca entró. La chapita lleva grabado el mismo texto que el QR (`RQR:<condominio>:<punto>:<código>`), «Volver a QR» solo borra la serie del punto y el servidor validaba solo el texto: la marca quedaba como `qr`, sin control de serie.
+
+- **Servidor** (`medioDeLaMarca`, `lib/rondas.js`): en un punto **sin** chapita, una marca que llega por NFC (el teléfono manda `nfc`) responde **422** «Este punto se marca con QR, no con chapita: escanea el QR de "…" o escribe su código. Si quedó una chapita pegada ahí, avisa al administrador.» y queda en los rechazos, como los demás. Vale también para un tag con el texto del QR copiado y para un punto creado «con chapita» que todavía no la tiene registrada. El QR y el código a mano no cambian. Un reenvío de una marca que ya entró sigue siendo duplicado, no rechazo.
+- **App del guardia** (`motivoMedio`, `public/app.js`): el mismo rechazo, en el momento y sin el ✅, con el mismo texto. Se registra sin números de GPS, así que en `/fabrica` cuenta como «QR, chapita o código equivocado» (fallo del usuario), no como GPS.
+- **Cola sin señal:** una marca de chapita hecha sin señal antes de «Volver a QR» que llega después se rechaza (422). La cola la descarta sin reintentarla, avisa al guardia y sigue con las demás marcas (la regla de la v1.20.2). Se eligió rechazarla porque la hora la pone el teléfono y el servidor ya no tiene la serie contra qué comparar. Por eso «Volver a QR» conviene hacerlo sin rondas en curso (`entrega/OPERACION.md`).
+- **Fully Kiosk:** no cambia nada (no lee chapitas).
+- Tests: `test/chapita-nfc.test.js` (la chapita vieja tras «Volver a QR» → 422, rechazo registrado una vez y contado como medio en `/fabrica`; QR y código siguen marcando; punto pendiente), `test/app-nfc.test.js` (la app la rechaza sin encolar marca). El test «punto sin chapita» decía que una chapita con el texto de un punto QR marcaba: ahora dice que no. `test/compat-qr.test.js`: mismos pasos, mismas respuestas que la v1.22 (un condominio de puros QR no manda `nfc` nunca).
+
 ## Sin publicar — 2026-11-15 · `.railway/railway.ts` con el nombre nuevo del servicio
 
 Con el renombre de la app, el servicio de Railway pasó de `rondas-QR` a `Ronda`, pero `railway.ts` seguía diciendo `rondas-QR`. El archivo identifica el servicio por su nombre, así que su `railway config plan` proponía **borrar el servicio de producción** y crear uno vacío. No se aplicó nada: ahora el archivo dice `service("Ronda", …)` y el plan queda *«already up to date»*. En Railway no cambia nada; `entrega/RAILWAY-IAC.md` anota la regla.

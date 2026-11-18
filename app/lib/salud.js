@@ -98,7 +98,8 @@ function esGps(r) {
 //   chapita   «La chapita no lee», o el teléfono no entregó su serie.
 // Fallo del usuario:
 //   lejos     el GPS, con buena señal, lo ubica más allá del error posible.
-//   medio     un QR en un punto con chapita, una chapita de otro punto o el
+//   medio     un QR en un punto con chapita, una chapita de otro punto, una
+//             chapita en un punto de QR (la vieja tras «Volver a QR») o el
 //             código a mano donde no sirve.
 //   terminar  marcó todos los puntos pero no tocó «Terminar ronda».
 //
