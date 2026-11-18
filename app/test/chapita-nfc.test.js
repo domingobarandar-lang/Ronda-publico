@@ -1,5 +1,7 @@
 // CU-28: puntos con chapita NFC. Lo que importa probar:
-//   · un punto SIN chapita sigue idéntico (QR y código a mano, medio anotado);
+//   · un punto SIN chapita sigue idéntico con QR y código a mano (medio
+//     anotado), y una chapita en él no marca: es la que quedó tras «Volver a QR»
+//     o una copia del QR;
 //   · en un punto CON chapita la marca solo entra con la serie que coincide, o
 //     con el código a mano (observado); un QR o una chapita ajena → 422, y
 //     queda en el registro de rechazos;
@@ -115,9 +117,11 @@ test('punto sin chapita: idéntico a antes, y cada marca anota su medio', async 
   const ej = await iniciar(guardia);
   const qr = await marcar(guardia, ej, { codigo: porteria.payload });
   assert.equal(qr.status, 200);
-  // Una chapita con el texto de un punto QR no rompe nada: vale el payload.
+  // Una chapita con el texto de un punto QR no marca (después de la v1.27.0 ya no
+  // vale solo el payload: ver «Volver a QR» más abajo). Su QR sí.
   const quincho = puntoDe(paquete, 'ronda-express', 'p-quincho');
-  assert.equal((await marcar(guardia, ej, { codigo: quincho.payload, nfc: { serie: SERIE_WEB } })).status, 200);
+  assert.equal((await marcar(guardia, ej, { codigo: quincho.payload, nfc: { serie: SERIE_WEB } })).status, 422);
+  assert.equal((await marcar(guardia, ej, { codigo: quincho.payload })).status, 200);
   assert.equal((await marcar(guardia, ej, { codigo: 'PSC234' })).status, 200);
   const marcas = store.ejecuciones.obtener(ej).escaneos;
   assert.deepEqual(marcas.map(m => m.medio), ['qr', 'qr', 'manual']);
@@ -373,6 +377,51 @@ test('"Volver a QR" quita la chapita y el QR vuelve a valer', async () => {
   await configurarPunto('/p-quincho/chapita', { metodo: 'DELETE' });
 });
 
+// José en terreno, 2026-11-11: pasó un punto a QR con «Volver a QR», acercó
+// el teléfono a la chapita vieja y la marca entró, como 'qr' y sin control de
+// serie. La chapita lleva el mismo texto que el QR; lo que la delata es que el
+// teléfono manda su serie.
+test('"Volver a QR": la chapita vieja ya no marca (422, rechazo registrado); el QR y el código sí', async () => {
+  const guardia = await login('pedro', '2222');
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'PUT', cuerpo: { serie: SERIE } })).status, 200);
+  const piscina = puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina');
+  assert.equal(piscina.nfc, true);
+  assert.equal((await configurarPunto('/p-piscina/chapita', { metodo: 'DELETE' })).status, 200);
+  assert.equal(puntoDe(await paqueteDe(guardia), 'ronda-express', 'p-piscina').nfc, false);
+
+  const ej = await iniciar(guardia);
+  const ts = '2026-11-11T22:00:00.000Z';
+  const vieja = await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE_WEB }, ts });
+  assert.equal(vieja.status, 422, 'la chapita vieja no marca');
+  assert.match(vieja.datos.error, /Este punto se marca con QR/);
+  // Un tag cualquiera con el texto del QR copiado, o uno que no entregó la serie: tampoco.
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: '04:11:22:33:44:55:66' }, ts })).status, 422);
+  assert.equal((await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: null }, ts })).status, 422);
+  // La cola reenvía la misma marca: el rechazo no se duplica.
+  await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE_WEB }, ts });
+
+  let ejecucion = store.ejecuciones.obtener(ej);
+  assert.equal(ejecucion.escaneos.length, 0);
+  assert.equal(ejecucion.rechazos.length, 1, 'queda registrado, una vez');
+  const [rechazo] = ejecucion.rechazos;
+  assert.equal(rechazo.puntoId, 'p-piscina');
+  // En /fabrica cuenta como medio equivocado (fallo del usuario), no como GPS.
+  const { dificultades } = require('../lib/salud');
+  const d = dificultades({ rechazos: ejecucion.rechazos });
+  assert.deepEqual([[...d.usuario], [...d.app], d.rechazosGps], [['medio'], [], 0]);
+
+  // El QR de siempre y el código a mano siguen marcando.
+  const qr = await marcar(guardia, ej, { codigo: piscina.payload });
+  assert.equal(qr.status, 200);
+  assert.equal(store.ejecuciones.obtener(ej).escaneos[0].medio, 'qr');
+  // Y la chapita, ya con la marca hecha, es un reenvío: duplicado, no rechazo.
+  const reenvio = await marcar(guardia, ej, { codigo: piscina.payload, nfc: { serie: SERIE_WEB } });
+  assert.equal(reenvio.status, 200);
+  assert.equal(reenvio.datos.duplicado, true);
+  assert.equal(store.ejecuciones.obtener(ej).rechazos.length, 1);
+  assert.equal((await marcar(guardia, ej, { codigo: 'QCH789' })).status, 200, 'código a mano en otro punto QR');
+});
+
 test('agregar un punto "con chapita" lo deja pendiente, fuera de la hoja de QR, y se marca a mano hasta grabarla', async () => {
   const admin = await login('marta', '1111');
   const creado = await configurarPunto('', { metodo: 'POST', cuerpo: { nombre: 'Sala de calderas', medio: 'nfc' } });
@@ -389,6 +438,9 @@ test('agregar un punto "con chapita" lo deja pendiente, fuera de la hoja de QR, 
   const ronda = await api('/api/admin/rondas', { metodo: 'POST', token: admin, cuerpo: { nombre: 'Prueba NFC', puntoIds: [creado.datos.id] } });
   const guardia = await login('pedro', '2222');
   const ej = await iniciar(guardia, ronda.datos.id);
+  // Una chapita sin serie registrada todavía no prueba nada: no marca.
+  const payload = puntoDe(await paqueteDe(guardia), ronda.datos.id, creado.datos.id).payload;
+  assert.equal((await marcar(guardia, ej, { codigo: payload, nfc: { serie: '04:99:88:77:66:55:44' } })).status, 422);
   assert.equal((await marcar(guardia, ej, { codigo: creado.datos.codigoCorto })).status, 200);
   assert.equal(store.ejecuciones.obtener(ej).escaneos[0].puntoNfc, undefined);
   await api(`/api/admin/rondas/${ronda.datos.id}`, { metodo: 'DELETE', token: admin });

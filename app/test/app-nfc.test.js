@@ -149,6 +149,8 @@ test('motivoMedio: espejo de la regla del servidor', () => {
   const lector = serie => ({ serie, huella: huellaSerie(serie) });
   assert.equal(motivo(P_QR, P_QR.payload, null), null, 'punto QR: igual que siempre');
   assert.equal(motivo(P_QR, 'PRT234', null), null);
+  assert.match(motivo(P_QR, P_QR.payload, lector(SERIE)), /^Este punto se marca con QR/, 'chapita en un punto QR (la que quedó tras «Volver a QR»)');
+  assert.match(motivo(P_QR, P_QR.payload, { serie: null }), /^Este punto se marca con QR/);
   assert.match(motivo(P_NFC, P_NFC.payload, null), /^Este punto se marca con la chapita NFC/);
   assert.match(motivo(P_NFC, P_NFC.payload, lector('04112233445566')), /no es la registrada/);
   assert.match(motivo(P_NFC, P_NFC.payload, { serie: null }), /número de serie/);
@@ -199,6 +201,22 @@ test('QR, chapita ajena o código a mano en un punto NFC: rechazo registrado, nu
   app.correr(`procesarCodigo(${JSON.stringify(P_QR.payload)})`);
   assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'qr');
   assert.equal(app.correr('estado.cola[3].nfc'), null);
+});
+
+test('la chapita vieja de un punto que volvió a QR: rechazo registrado, nunca una marca ni ✅', async () => {
+  const app = cargarApp();
+  conRonda(app);
+  app.ctx.__vieja = lectura(P_QR.payload);
+  app.correr('chapitaLeida(__vieja)');
+  await tick();
+  const cola = app.correr('estado.cola');
+  assert.deepEqual([...cola].map(e => e.tipo), ['rechazo']);
+  assert.match(cola[0].motivo, /^Este punto se marca con QR, no con chapita/);
+  assert.equal(cola[0].distanciaM, null, 'sin números: en /fabrica cuenta como medio equivocado, no GPS');
+  assert.equal(app.correr('estado.ejecucion.escaneos.length'), 0);
+  // El QR del mismo punto marca como siempre.
+  app.correr(`procesarCodigo(${JSON.stringify(P_QR.payload)})`);
+  assert.equal(app.correr('estado.ejecucion.escaneos[0].medio'), 'qr');
 });
 
 test('sin Web NFC: cada teléfono recibe un mensaje claro', () => {
