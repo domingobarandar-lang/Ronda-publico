@@ -114,10 +114,13 @@ lib/fabrica.js          alta de condominios y de cuentas de administrador
 lib/informe-semanal.js  informe semanal del condominio en Word (.docx)
 lib/destinatarios.js    a quién le llega el informe (agrupa por administrador)
 lib/correo.js           envío por Gmail (OAuth2), con un .docx por condominio adjunto
+lib/salud-semanal.js    correo de salud de los lunes para la operación (semáforo por condominio)
+lib/alertas-rondas.js   alertas inmediatas: horas sin rondas y pocas rondas en el día
 scripts/obtener-refresh-token.js  saca el GMAIL_REFRESH_TOKEN una sola vez (se corre local)
 scripts/exportar-json.js          vuelta atrás: regenera el db.json que lee la v1.16
 scripts/restaurar-respaldo.js     valida un respaldo y lo deja listo para el próximo arranque
 scripts/respaldo-ahora.js         hace el respaldo del día ya (para probar el correo)
+scripts/salud-ahora.js            manda ya el correo de salud de los lunes (--mostrar: solo lo muestra)
 scripts/prueba-carga.js           N guardias a la vez sobre una base de M rondas (por defecto 100 y 100 mil)
 scripts/diagnostico-gps.js        señal por punto de toda la base, en solo lectura (en producción, solo con permiso)
 lib/programador.js      reloj: cada hora revisa el respaldo del día y, los lunes, el informe semanal

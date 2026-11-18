@@ -144,6 +144,51 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 
 > El canal **Telegram se eliminó en la v1.15**. Nunca se usó en producción y su llamada a la API no tenía tiempo máximo de espera: si Telegram no respondía, la petición del guardia al terminar la ronda quedaba colgada esperando a un tercero.
 
+## Correo de salud de los lunes (para la operación) *(sin publicar)*
+
+Para no tener que mirar `/fabrica`: **todos los lunes a las 06:30** (hora de Chile, `SALUD_HORA`), la app le manda a `SALUD_TO` la salud de cada condominio de los últimos 7 días. Sale **siempre**, aunque todo esté bien: un lunes sin correo ya es una señal de que algo se cortó (el servidor, Gmail o el programador).
+
+Los números son los mismos de la ficha de `/fabrica` (`lib/salud.js` y `lib/sentry-lectura.js`, no se calculan aparte): rondas completas, incompletas, con sospechas y cerradas automáticamente; rondas con dificultades técnicas, separadas en fallo de la aplicación o del teléfono (GPS, sesión cortada, el teléfono no terminó la ronda, la chapita no lee) y fallo del usuario; y los errores de Sentry sin resolver (sin `SENTRY_TOKEN_LECTURA`, el correo lo dice y sale igual).
+
+**Arriba, una línea por condominio** con un semáforo, ordenadas de lo más grave a lo menos:
+
+| | Cuándo |
+|---|---|
+| 🔴 urgente | **Ninguna ronda en 7 días** teniendo rondas configuradas (algo se cortó: el teléfono, la sesión, la app), o **fallo de la aplicación o del teléfono en el 20 % o más** de las rondas. |
+| 🟡 mirar | Cualquier fallo de la aplicación, rondas cerradas automáticamente, incompletas o con sospechas, fallo del usuario en el 20 % o más, errores de Sentry sin resolver o Sentry que no se pudo leer. También un condominio sin rondas configuradas todavía. |
+| 🟢 todo bien | Lo demás. |
+
+Debajo del resumen va la lista de los condominios sin ninguna ronda en la semana, y después el detalle de cada uno y los errores de Sentry sin condominio. Los umbrales están en `lib/salud-semanal.js` (`URGENTE_PCT`, `MIRAR_USUARIO_PCT`).
+
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `SALUD_TO` | — | Buzón que lo recibe (uno o varios, separados por coma). **Vacío = no se manda**; el log de arranque lo dice. |
+| `SALUD_HORA` | `06:30` | Hora de Chile (`HH:MM`, o solo la hora: `8` = 08:00) desde la que sale el lunes. Se revisa cada 5 minutos: sale entre las 06:30 y las 06:35. Con el servidor caído a esa hora, sale en la primera revisión después de levantarse, el mismo lunes. Mal escrita, vale 06:30 (el log de arranque dice cuál quedó). |
+
+Sale una vez por semana (la base guarda la semana enviada en `saludEmailEstado`: un reinicio no lo repite). Si Gmail falla, se reintenta en la revisión siguiente (5 minutos). Usa las mismas credenciales de Gmail del informe semanal: sin ellas queda en pausa.
+
+**Probarlo a mano** (el día del deploy, o después de cambiar `SALUD_TO`):
+
+```bash
+railway ssh -- node scripts/salud-ahora.js            # lo manda ahora a SALUD_TO
+railway ssh -- node scripts/salud-ahora.js --mostrar  # solo lo muestra en la consola
+```
+
+El envío a mano no cuenta como el del lunes: el programado sale igual. El correo trae nombres de condominios y conteos, ningún dato de los guardias.
+
+### Alertas inmediatas por correo
+
+Además del correo de los lunes, a `SALUD_TO` le llega un correo **apenas** pasa una de estas dos cosas (se revisa cada 5 minutos):
+
+| Alerta | Cuándo | Variable |
+|---|---|---|
+| 🔴 **Horas sin rondas** | Un condominio lleva **12 horas** sin que empiece ninguna ronda. Una ronda en curso cuenta como actividad. Se avisa una vez; vuelve a avisar después de que haya otra ronda y pasen otras 12 h. | `ALERTA_SIN_RONDA_HORAS` (`12`; `0` la apaga) |
+| 🟡 **Pocas rondas en el día** | Apenas termina el día (medianoche de Chile), un condominio que hizo menos rondas que su mínimo. Una vez por día. | `ALERTA_MIN_RONDAS_DIA` |
+
+**El mínimo diario**, con `ALERTA_MIN_RONDAS_DIA` vacío, es automático y distinto para cada condominio: **la mitad de su promedio diario de las 4 semanas anteriores** (al menos 1). Un condominio que hace 20 rondas al día avisa con menos de 10; uno que hace 4, con menos de 2. Así no hay que poner un número para cada cliente, y el número se ajusta solo si un cliente cambia su frecuencia. Un condominio con menos de 7 días de historia no se revisa. Con un número (`ALERTA_MIN_RONDAS_DIA=6`), ese mínimo vale para todos; con `0` se apaga. El correo de los lunes muestra el promedio diario de cada condominio y el mínimo con el que avisaría.
+
+No toda alerta es un problema: puede que ese día no hubiera rondas por algo del cliente. Es para ir a mirar (panel, `/fabrica`, llamar a la garita). No alertan los condominios sin rondas configuradas ni los que nunca han tenido una (esos salen en el correo de los lunes). Si Gmail falla, se reintenta en la revisión siguiente.
+
 ## Deploy a producción (cuando José apruebe)
 
 - **Railway** (o VPS): `npm install && npm start`, variable `PORT` la pone la plataforma. Railway da HTTPS solo — necesario para la cámara. Costo estimado: plan chico (~US$5/mes). **Runtime sin LLM: el uso diario cuesta $0 en APIs.**
@@ -237,7 +282,7 @@ En local es lo mismo sin `railway ssh --`, con el servidor detenido o reinicián
 
 ### Scripts de mantenimiento con el servidor andando
 
-`purga-demo.js --aplicar` y `migracion-rsf.js` escriben la configuración (usuarios, condominios…) directo en la base. El servidor que está corriendo tiene su copia en memoria y podría volver a escribir la versión vieja en su próximo guardado. **Después de aplicar uno de esos scripts, reiniciar el servicio.** `exportar-json.js`, `respaldo-ahora.js` y `restaurar-respaldo.js` (que solo deja el respaldo pendiente) no tienen ese problema.
+`purga-demo.js --aplicar` y `migracion-rsf.js` escriben la configuración (usuarios, condominios…) directo en la base. El servidor que está corriendo tiene su copia en memoria y podría volver a escribir la versión vieja en su próximo guardado. **Después de aplicar uno de esos scripts, reiniciar el servicio.** `exportar-json.js`, `respaldo-ahora.js`, `salud-ahora.js` y `restaurar-respaldo.js` (que solo deja el respaldo pendiente) no tienen ese problema.
 
 `diagnostico-gps.js` *(v1.27)* abre la base en **solo lectura** y da, por punto y condominio, cómo le fue al GPS en los últimos 30 días (`--dias N`, `--condominio ID`, `--json`): marcas, ± mediana y p90, marcas por cercanía y al borde del tope, rechazos por tipo (imprecisa, distancia, vencida, sin señal), rechazos con la entrada perdida en los puntos 🏠, y una clase (bajo losa, semi-techado, mal fijado, ancla perdida). Es la fase 0 del ADR-001. Lee nombres de puntos y ubicaciones de los guardias: en producción, **solo con permiso de José** (`railway ssh -- node scripts/diagnostico-gps.js`).
 
