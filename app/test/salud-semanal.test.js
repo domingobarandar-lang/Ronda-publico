@@ -246,3 +246,35 @@ test('sin SALUD_TO el script a mano lo dice y termina con error, sin mandar nada
   assert.equal(r.status, 1);
   assert.match(r.stderr, /SALUD_TO está vacío/);
 });
+
+test('por defecto sale el lunes a las 06:30 de Chile; SALUD_HORA acepta HH:MM o solo la hora', async () => {
+  assert.equal(saludSemanal.minutosDelDia('06:30'), 390);
+  assert.equal(saludSemanal.minutosDelDia('6:30'), 390);
+  assert.equal(saludSemanal.minutosDelDia('8'), 480);
+  for (const malo of ['', '24:00', '6:60', '6.30', 'seis']) assert.equal(saludSemanal.minutosDelDia(malo), null, malo);
+  assert.equal(saludSemanal.opcionesDesdeEnv({}).hora, '06:30');
+  assert.equal(saludSemanal.opcionesDesdeEnv({ SALUD_HORA: 'seis' }).hora, '06:30', 'mal escrita: la de por defecto');
+  assert.equal(saludSemanal.opcionesDesdeEnv({ SALUD_HORA: '7:15' }).hora, '07:15');
+
+  const { store } = base();
+  const b = buzon();
+  const vuelta = (hora, minuto) => saludSemanal.revisar(store, {
+    ahora: { fecha: '2026-11-16', hora, minuto, dia: 1 }, semana: '2026-11-16', env: { SALUD_TO: 'jose@ejemplo.cl' },
+    lectorSentry: lector(), enviar: b.enviar, log: silencio, reloj: AHORA
+  });
+  assert.equal(await vuelta(6, 29), null, '06:29 todavía no');
+  assert.equal((await vuelta(6, 30)).enviada, true, '06:30 sale');
+  assert.equal(b.enviados.length, 1);
+  store.cerrar();
+});
+
+test('ahoraChile trae el minuto, en hora de Chile también con TZ=UTC', () => {
+  const r = spawnSync(process.execPath, ['-e', `
+    const real = Date; const fijo = Date.parse('2026-11-16T09:30:00Z');
+    global.Date = class extends real { constructor(...a) { super(...(a.length ? a : [fijo])); } static now() { return fijo; } };
+    process.stdout.write(JSON.stringify(require('./lib/programador').ahoraChile()));`], {
+    cwd: APP, encoding: 'utf8', env: { ...process.env, TZ: 'UTC' }
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), { fecha: '2026-11-16', hora: 6, minuto: 30, dia: 1 });
+});

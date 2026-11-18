@@ -21,7 +21,8 @@
 //   🟢 todo bien lo demás.
 //
 //   SALUD_TO    destinatario(s), separados por coma. Vacío = no se manda.
-//   SALUD_HORA  hora de Chile desde la que sale el lunes (por defecto 8).
+//   SALUD_HORA  hora de Chile desde la que sale el lunes, HH:MM (por defecto
+//               06:30). También acepta solo la hora ("8" = 08:00).
 //
 // Se programa en lib/programador.js; scripts/salud-ahora.js lo manda a mano.
 // Nunca lanza: devuelve { enviada, error? }.
@@ -42,10 +43,20 @@ const NIVEL = {
   bien: { orden: 2, icono: '🟢', texto: 'todo bien' }
 };
 
-const numero = (v, porDefecto) => (v == null || v === '' || !Number.isFinite(Number(v)) ? porDefecto : Number(v));
+const HORA_POR_DEFECTO = '06:30';
+
+// "6:30", "06:30" o "8" → minutos desde la medianoche. Mal escrita, la de por
+// defecto (y el log de arranque muestra cuál quedó).
+function minutosDelDia(texto) {
+  const m = String(texto == null ? '' : texto).trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m || Number(m[1]) > 23 || Number(m[2] || 0) > 59) return null;
+  return Number(m[1]) * 60 + Number(m[2] || 0);
+}
+const comoHora = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
 function opcionesDesdeEnv(env = process.env) {
-  return { to: normalizarCorreos(env.SALUD_TO), hora: numero(env.SALUD_HORA, 8) };
+  const minutos = minutosDelDia(env.SALUD_HORA) ?? minutosDelDia(HORA_POR_DEFECTO);
+  return { to: normalizarCorreos(env.SALUD_TO), minutos, hora: comoHora(minutos) };
 }
 
 // Las mismas etiquetas que /fabrica (CAUSAS en public/fabrica.js).
@@ -210,9 +221,10 @@ async function armar(store, { lectorSentry, ahora = Date.now() } = {}) {
   return { subject, texto: L.join('\n'), filas, urgentes, aMirar };
 }
 
-// Una revisión: se llama cada hora desde lib/programador.js. Sale una vez por
+// Una revisión: se llama cada 5 minutos desde lib/programador.js. Sale una vez por
 // semana, el lunes desde SALUD_HORA (store.db.saludEmailEstado guarda la
-// semana ya enviada, así un reinicio no lo repite). `ahora`: ahoraChile().
+// semana ya enviada, así un reinicio no lo repite). `ahora`: ahoraChile()
+// ({ dia, hora, minuto }).
 // `forzar`: sin mirar día, hora ni si ya salió (scripts/salud-ahora.js).
 async function revisar(store, {
   ahora, semana, forzar = false, env = process.env, lectorSentry, enviar = correo.enviarCorreo,
@@ -222,7 +234,7 @@ async function revisar(store, {
     const op = opcionesDesdeEnv(env);
     if (!op.to.length) return null; // sin destinatario no se manda, y no es un error
     if (!forzar) {
-      if (ahora.dia !== DIA_ENVIO || ahora.hora < op.hora) return null;
+      if (ahora.dia !== DIA_ENVIO || ahora.hora * 60 + (ahora.minuto || 0) < op.minutos) return null;
       if ((store.db.saludEmailEstado || {}).semana === semana) return null;
     }
     if (!correo.configurado() && enviar === correo.enviarCorreo) {
@@ -247,4 +259,4 @@ async function revisar(store, {
   }
 }
 
-module.exports = { armar, revisar, semaforo, opcionesDesdeEnv, fechaHora, DIA_ENVIO, URGENTE_PCT, MIRAR_USUARIO_PCT };
+module.exports = { armar, revisar, semaforo, opcionesDesdeEnv, minutosDelDia, fechaHora, DIA_ENVIO, URGENTE_PCT, MIRAR_USUARIO_PCT };

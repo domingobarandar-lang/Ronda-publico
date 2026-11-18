@@ -16,7 +16,8 @@
 // SIEMPRE: la foto en el volumen no depende de tener Gmail configurado.
 //
 // Y el correo de salud de los lunes para la operación (lib/salud-semanal.js),
-// a SALUD_TO desde SALUD_HORA (hora de Chile). Sin SALUD_TO no hace nada.
+// a SALUD_TO desde SALUD_HORA (HH:MM de Chile, por defecto 06:30). Sin
+// SALUD_TO no hace nada.
 const correo = require('./correo');
 const respaldo = require('./respaldo');
 const saludSemanal = require('./salud-semanal');
@@ -29,13 +30,13 @@ function ahoraChile() {
   const partes = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
     year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', hour12: false, weekday: 'short'
+    hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short'
   }).formatToParts(new Date());
   const val = t => (partes.find(x => x.type === t) || {}).value;
   const dias = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   let hora = Number(val('hour'));
   if (hora === 24) hora = 0; // algunos runtimes devuelven '24' a medianoche
-  return { fecha: `${val('year')}-${val('month')}-${val('day')}`, hora, dia: dias[val('weekday')] };
+  return { fecha: `${val('year')}-${val('month')}-${val('day')}`, hora, minuto: Number(val('minute')), dia: dias[val('weekday')] };
 }
 
 // Lunes de la semana de esa fecha: clave estable que cambia una vez por semana.
@@ -92,7 +93,7 @@ function iniciarRespaldo(store) {
   return setInterval(tick, 3600000);  // y luego cada hora
 }
 
-// El correo de salud: se revisa cada hora como el informe; sale el lunes desde
+// El correo de salud: se revisa cada 5 minutos (tiene hora y minuto); sale el lunes desde
 // SALUD_HORA, una vez por semana (saludEmailEstado). `lectorSentry`: el mismo
 // de /fabrica (comparte su caché).
 function iniciarSalud(store, { lectorSentry = crearLectorSentry() } = {}) {
@@ -101,7 +102,7 @@ function iniciarSalud(store, { lectorSentry = crearLectorSentry() } = {}) {
     console.log('[salud-email] SALUD_TO vacío: el correo de salud de los lunes no se manda.');
     return null;
   }
-  console.log(`[salud-email] correo de salud los lunes desde las ${op.hora}:00 Chile a ${op.to.join(', ')}`
+  console.log(`[salud-email] correo de salud los lunes desde las ${op.hora} Chile a ${op.to.join(', ')}`
             + (correo.configurado() ? '.' : ` (en pausa: falta ${correo.FALTA_CREDENCIALES}).`));
   const tick = () => {
     const ahora = ahoraChile();
@@ -109,7 +110,7 @@ function iniciarSalud(store, { lectorSentry = crearLectorSentry() } = {}) {
       .catch(e => { console.warn('[salud-email] error:', e.message); errores.reportar('salud-email', e); });
   };
   setTimeout(tick, 90000);            // primera revisión ~1,5 min tras arrancar
-  return setInterval(tick, 3600000);  // y luego cada hora
+  return setInterval(tick, 5 * 60000); // y luego cada 5 min: sale a las 06:30, no a las 07:xx
 }
 
 function iniciar(store, { lectorSentry } = {}) {

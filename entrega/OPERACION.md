@@ -146,7 +146,7 @@ Además hay dos canales que sí salen del servidor y se configuran aparte:
 
 ## Correo de salud de los lunes (para la operación) *(sin publicar)*
 
-Para no tener que mirar `/fabrica`: **todos los lunes**, desde `SALUD_HORA` (hora de Chile), la app le manda a `SALUD_TO` la salud de cada condominio de los últimos 7 días. Sale **siempre**, aunque todo esté bien: un lunes sin correo ya es una señal de que algo se cortó (el servidor, Gmail o el programador).
+Para no tener que mirar `/fabrica`: **todos los lunes a las 06:30** (hora de Chile, `SALUD_HORA`), la app le manda a `SALUD_TO` la salud de cada condominio de los últimos 7 días. Sale **siempre**, aunque todo esté bien: un lunes sin correo ya es una señal de que algo se cortó (el servidor, Gmail o el programador).
 
 Los números son los mismos de la ficha de `/fabrica` (`lib/salud.js` y `lib/sentry-lectura.js`, no se calculan aparte): rondas completas, incompletas, con sospechas y cerradas automáticamente; rondas con dificultades técnicas, separadas en fallo de la aplicación o del teléfono (GPS, sesión cortada, el teléfono no terminó la ronda, la chapita no lee) y fallo del usuario; y los errores de Sentry sin resolver (sin `SENTRY_TOKEN_LECTURA`, el correo lo dice y sale igual).
 
@@ -163,9 +163,9 @@ Debajo del resumen va la lista de los condominios sin ninguna ronda en la semana
 | Variable | Por defecto | Qué hace |
 |---|---|---|
 | `SALUD_TO` | — | Buzón que lo recibe (uno o varios, separados por coma). **Vacío = no se manda**; el log de arranque lo dice. |
-| `SALUD_HORA` | `8` | Hora de Chile desde la que sale el lunes. Se revisa cada hora: con el servidor caído a esa hora, sale en la primera revisión después de levantarse, el mismo lunes. |
+| `SALUD_HORA` | `06:30` | Hora de Chile (`HH:MM`, o solo la hora: `8` = 08:00) desde la que sale el lunes. Se revisa cada 5 minutos: sale entre las 06:30 y las 06:35. Con el servidor caído a esa hora, sale en la primera revisión después de levantarse, el mismo lunes. Mal escrita, vale 06:30 (el log de arranque dice cuál quedó). |
 
-Sale una vez por semana (la base guarda la semana enviada en `saludEmailEstado`: un reinicio no lo repite). Si Gmail falla, se reintenta a la hora siguiente. Usa las mismas credenciales de Gmail del informe semanal: sin ellas queda en pausa.
+Sale una vez por semana (la base guarda la semana enviada en `saludEmailEstado`: un reinicio no lo repite). Si Gmail falla, se reintenta en la revisión siguiente (5 minutos). Usa las mismas credenciales de Gmail del informe semanal: sin ellas queda en pausa.
 
 **Probarlo a mano** (el día del deploy, o después de cambiar `SALUD_TO`):
 
