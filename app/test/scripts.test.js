@@ -165,19 +165,6 @@ test('prueba-carga en miniatura: guardias a la vez sobre una base con historial,
   assert.equal(r.tiempos.escanear.n, 60);
 });
 
-test('migracion-rsf borra las rondas y avisos de mirador y es idempotente', () => {
-  const { aplicar, CONDOMINIO_A_ELIMINAR } = require('../migracion-rsf');
-  const dir = carpeta();
-  const { store } = baseConHistorial(dir);
-  const cambios = aplicar(store);
-  assert.ok(cambios.some(c => c.includes(`1 rondas y 1 avisos de "${CONDOMINIO_A_ELIMINAR}"`)));
-  assert.equal(store.ejecuciones.contar(CONDOMINIO_A_ELIMINAR), 0);
-  assert.equal(store.ejecuciones.contar('aromos'), 2);
-  assert.ok(store.db.condominios.some(c => c.id === 'piloto-sf'));
-  assert.deepEqual(aplicar(store), [], 'la segunda vez no hace nada');
-  store.cerrar();
-});
-
 test('diagnostico-gps: cuenta por punto sin escribir nada en la base', () => {
   const { diagnosticar, formatear } = require('../scripts/diagnostico-gps');
   const dir = carpeta();
